@@ -1,0 +1,12 @@
+{
+  "name": "alldaypick-order-poller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "poll": "node poller.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

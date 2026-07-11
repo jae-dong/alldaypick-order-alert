@@ -58,6 +58,14 @@
     .event-card.active{background:#111827;color:#fff;border-color:#111827}
     .event-card.active span{color:#d1d5db}
     .alert-settings{display:grid;gap:10px}
+    .integration-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+    .integration-card{border:1px solid var(--line);border-radius:14px;padding:13px;background:#fafafa}
+    .integration-head{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .integration-head b{font-size:14px}
+    .connection-badge{font-size:11px;padding:5px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-weight:800}
+    .connection-badge.ready{background:#d1fae5;color:#065f46}
+    .integration-card small{display:block;color:var(--muted);margin-top:7px}
+
     .alert-row{display:grid;grid-template-columns:1fr 150px;gap:12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:12px;background:#fafafa}
     .alert-row b{display:block}.alert-row small{color:var(--muted)}
     .alert-row select{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}
@@ -110,6 +118,7 @@
       .event-grid{grid-template-columns:repeat(2,1fr)}
       .event-card:last-child{grid-column:1/-1}
       .alert-row{grid-template-columns:1fr}
+      .integration-grid{grid-template-columns:1fr}
       .market{padding:13px;border-radius:13px}
       .market span{font-size:22px}
       .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -249,6 +258,18 @@
   </section>
 
 
+
+  <section class="card section">
+    <div class="section-head">
+      <h2>쇼핑몰 자동연동</h2>
+      <span style="color:var(--muted);font-size:12px">10분마다 자동 확인</span>
+    </div>
+    <div class="integration-grid" id="integrationGrid"></div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+      API 비밀키는 웹페이지에 저장하지 않고 GitHub Actions Secrets에만 보관합니다.
+    </div>
+  </section>
+
   <section class="card section">
     <div class="section-head"><h2>백그라운드 푸시</h2><span style="color:var(--muted);font-size:12px">사이트를 닫아도 알림</span></div>
     <div class="form">
@@ -358,6 +379,42 @@ const db=firebase.firestore();
 let messaging=null;
 try{ messaging=firebase.messaging(); }catch(e){ console.warn('Messaging unavailable',e); }
 
+
+const integrationNames=[
+  ['coupang','쿠팡'],
+  ['smartstore','스마트스토어'],
+  ['elevenst','11번가'],
+  ['gmarket','G마켓'],
+  ['auction','옥션'],
+  ['lotteon','롯데온']
+];
+
+function renderIntegrations(status={}){
+  $('integrationGrid').innerHTML=integrationNames.map(([key,name])=>{
+    const connected=Boolean(status[key]?.connected);
+    const lastRun=status[key]?.lastRun
+      ? new Date(status[key].lastRun).toLocaleString('ko-KR')
+      : '아직 실행되지 않음';
+    return `<div class="integration-card">
+      <div class="integration-head">
+        <b>${name}</b>
+        <span class="connection-badge ${connected?'ready':''}">${connected?'연결됨':'미연결'}</span>
+      </div>
+      <small>최근 확인: ${lastRun}</small>
+    </div>`;
+  }).join('');
+}
+
+async function subscribeIntegrationStatus(){
+  try{
+    db.collection('system').doc('integrations').onSnapshot(doc=>{
+      renderIntegrations(doc.exists ? doc.data() : {});
+    },()=>renderIntegrations({}));
+  }catch(e){
+    renderIntegrations({});
+  }
+}
+
 async function initCloud(){
   try{
     await auth.signInAnonymously();
@@ -368,6 +425,7 @@ async function initCloud(){
       $('cloudStatus').textContent='클라우드 연결됨';
       $('cloudStatus').style.color='#059669';
       subscribeOrders();
+      subscribeIntegrationStatus();
     });
   }catch(err){
     $('cloudStatus').textContent='클라우드 연결 실패: '+err.message;
