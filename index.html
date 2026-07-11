@@ -50,6 +50,18 @@
     .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
     .section h2{font-size:18px;margin:0}
     .market-list{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .home-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+    .event-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+    .event-card{border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px 8px;text-align:center;cursor:pointer}
+    .event-card span{display:block;font-size:12px;color:var(--muted)}
+    .event-card strong{display:block;font-size:24px;margin-top:4px}
+
+    .compact-list{display:grid;gap:8px}
+    .compact-item{width:100%;border:1px solid var(--line);background:#fafafa;border-radius:13px;padding:11px;text-align:left;cursor:pointer}
+    .compact-item strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .compact-item small{display:flex;justify-content:space-between;gap:8px;color:var(--muted);margin-top:5px}
+    .rank-dot{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;background:#111827;color:#fff;font-size:12px;font-weight:900;margin-right:7px}
+
     .market{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fafafa;cursor:pointer;transition:.18s}.market:hover{transform:translateY(-2px);background:#fff}
     .market b{display:block;font-size:15px}.market span{font-size:24px;font-weight:800}.market small{color:var(--muted)}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
@@ -87,6 +99,9 @@
       .section-head{align-items:flex-start;flex-direction:column;margin-bottom:10px}
       .section-head .actions{grid-template-columns:repeat(2,1fr)}
       .market-list{grid-template-columns:repeat(2,1fr);gap:8px}
+      .home-two{grid-template-columns:1fr;gap:0;margin-top:0}
+      .event-grid{grid-template-columns:repeat(2,1fr)}
+      .event-card:last-child{grid-column:1/-1}
       .market{padding:13px;border-radius:13px}
       .market span{font-size:22px}
       .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -151,6 +166,12 @@
     <div class="card metric" id="allCard"><div class="label">전체 주문</div><div class="value" id="allCount">0</div><div class="sub">저장된 전체 주문</div></div>
   </section>
 
+
+  <section class="card section">
+    <div class="section-head"><h2>처리 알림</h2><span style="color:var(--muted);font-size:12px">오늘 기준</span></div>
+    <div class="event-grid" id="eventGrid"></div>
+  </section>
+
   <div class="tabs">
     <button class="tab active" id="ordersTab">주문 현황</button>
     <button class="tab" id="statsTab">주문 통계</button>
@@ -161,6 +182,18 @@
     <div class="section-head"><h2>쇼핑몰별 주문</h2><span style="color:var(--muted);font-size:13px">오늘 기준</span></div>
     <div class="market-list" id="marketList"></div>
   </section>
+
+
+  <div class="home-two">
+    <section class="card section">
+      <div class="section-head"><h2>오늘 인기상품</h2><span style="color:var(--muted);font-size:12px">주문 건수 기준</span></div>
+      <div id="todayPopular" class="compact-list"></div>
+    </section>
+    <section class="card section">
+      <div class="section-head"><h2>최근 주문</h2><span style="color:var(--muted);font-size:12px">최근 5건</span></div>
+      <div id="recentOrders" class="compact-list"></div>
+    </section>
+  </div>
 
   <section class="card section">
     <div class="section-head">
@@ -175,7 +208,7 @@
       <input id="searchInput" placeholder="상품명, 주문번호, 구매자 검색" />
       <select id="marketFilter">
         <option value="">전체 쇼핑몰</option>
-        <option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>기타</option>
+        <option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option><option>기타</option>
       </select>
       <select id="statusFilter">
         <option value="">전체 상태</option>
@@ -227,7 +260,14 @@
   <div class="modal">
     <h3>주문 추가</h3>
     <form id="orderForm" class="form">
-      <label>쇼핑몰<select id="fMarket" required><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>기타</option></select></label>
+      <label>알림 종류<select id="fEventType" required>
+        <option value="order">신규주문</option>
+        <option value="cancel">주문취소</option>
+        <option value="exchange">교환요청</option>
+        <option value="return">반품요청</option>
+        <option value="inquiry">문의사항</option>
+      </select></label>
+      <label>쇼핑몰<select id="fMarket" required><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option><option>기타</option></select></label>
       <label>주문번호<input id="fOrderNo" required></label>
       <label>상품명<input id="fProduct" required></label>
       <label>수량<input id="fQty" type="number" min="1" value="1" required></label>
@@ -256,7 +296,7 @@
 
 <script>
 const KEY='alldaypick_orders_v1';
-const markets=['쿠팡','스마트스토어','11번가','G마켓','옥션','기타'];
+const markets=['쿠팡','스마트스토어','11번가','G마켓','옥션','롯데온','기타'];
 let orders=JSON.parse(localStorage.getItem(KEY)||'[]');
 
 const $=id=>document.getElementById(id);
@@ -274,10 +314,47 @@ function render(){
   $('allCount').textContent=orders.length;
   if($('statsPanel')?.classList.contains('active')) renderStats();
 
+  const eventLabels={
+    order:'신규주문',
+    cancel:'주문취소',
+    exchange:'교환요청',
+    return:'반품요청',
+    inquiry:'문의사항'
+  };
+  const eventTypes=['order','cancel','exchange','return','inquiry'];
+  $('eventGrid').innerHTML=eventTypes.map(type=>{
+    const list=todayOrders.filter(o=>(o.eventType||'order')===type);
+    return `<button class="event-card" onclick="showEventDetails('${type}')">
+      <span>${eventLabels[type]}</span><strong>${list.length}</strong>
+    </button>`;
+  }).join('');
+
   $('marketList').innerHTML=markets.map(m=>{
     const cnt=todayOrders.filter(o=>o.market===m).length;
     return `<div class="market" onclick="showOrderDetails('market','${m}')"><b>${m}</b><span>${cnt}</span> <small>건</small></div>`
   }).join('');
+
+  const popularMap={};
+  todayOrders.forEach(o=>{
+    const name=(o.product||'상품명 없음').trim();
+    if(!popularMap[name]) popularMap[name]={orders:0,qty:0,sales:0};
+    popularMap[name].orders++;
+    popularMap[name].qty+=Number(o.qty||0);
+    popularMap[name].sales+=Number(o.amount||0);
+  });
+  const popular=Object.entries(popularMap).sort((a,b)=>b[1].orders-a[1].orders||b[1].qty-a[1].qty).slice(0,5);
+  $('todayPopular').innerHTML=popular.length?popular.map(([name,v],i)=>`
+    <button class="compact-item" onclick="showProductByName('${encodeURIComponent(name)}')">
+      <strong><span class="rank-dot">${i+1}</span>${escapeHtml(name)}</strong>
+      <small><span>주문 ${v.orders}건 · ${v.qty}개</span><span>${fmt(v.sales)}</span></small>
+    </button>`).join(''):`<div class="detail-empty">오늘 주문이 없습니다.</div>`;
+
+  const recent=[...orders].sort((a,b)=>b.datetime.localeCompare(a.datetime)).slice(0,5);
+  $('recentOrders').innerHTML=recent.length?recent.map(o=>`
+    <button class="compact-item" onclick="showSingleOrder('${o.id}')">
+      <strong>${escapeHtml(o.product)}</strong>
+      <small><span>${escapeHtml(o.market)} · ${o.qty}개</span><span>${o.datetime.replace('T',' ')}</span></small>
+    </button>`).join(''):`<div class="detail-empty">최근 주문이 없습니다.</div>`;
 
   const q=$('searchInput').value.trim().toLowerCase();
   const mf=$('marketFilter').value, sf=$('statusFilter').value;
@@ -310,7 +387,7 @@ $('addBtn').onclick=()=>{$('fOrderNo').value='';$('fProduct').value='';$('fQty')
 $('cancelBtn').onclick=()=>$('orderDialog').close();
 $('orderForm').onsubmit=e=>{
   e.preventDefault();
-  const o={id:crypto.randomUUID(),datetime:new Date().toISOString().slice(0,16),market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),status:'new'};
+  const o={id:crypto.randomUUID(),datetime:new Date().toISOString().slice(0,16),eventType:$('fEventType').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),status:'new'};
   orders.push(o);save();$('orderDialog').close();notifyOrder(o);toast('새 주문이 등록되었습니다.');
 };
 
@@ -333,11 +410,21 @@ function renderDetailList(list,title){
         <span>주문번호: ${escapeHtml(o.orderNo)}</span>
         <span>금액: ${fmt(o.amount)}</span>
         <span>주문일시: ${o.datetime.replace('T',' ')}</span>
+        <span>알림종류: ${{order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'}[o.eventType||'order']}</span>
         <span>상태: ${o.status==='new'?'미확인':'확인완료'}</span>
       </div>
     </div>`).join('')}</div>`:`<div class="detail-empty">해당 주문이 없습니다.</div>`;
   $('detailDialog').showModal();
 }
+
+window.showEventDetails=type=>{
+  const labels={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
+  const today=todayStr();
+  const list=orders.filter(o=>o.datetime.slice(0,10)===today&&(o.eventType||'order')===type)
+    .sort((a,b)=>b.datetime.localeCompare(a.datetime));
+  renderDetailList(list,labels[type]);
+};
+
 window.showOrderDetails=(type,value)=>{
   const today=todayStr();
   let list=[], title='주문 상세';
@@ -378,16 +465,32 @@ function beep(){
   }catch(e){}
 }
 function notifyOrder(o){
-  beep();speak(`${o.market}에서 신규 주문 1건이 들어왔습니다.`);
+  const labels={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
+  const label=labels[o.eventType||'order'];
+  beep();speak(`${o.market} ${label}`);
   if('Notification' in window && Notification.permission==='granted'){
-    new Notification('신규 주문 알림',{body:`${o.market} · ${o.product} · ${o.qty}개`});
+    new Notification(`${o.market} ${label}`,{body:`${o.product} · ${o.qty}개`});
   }
 }
-$('testBtn').onclick=()=>notifyOrder({market:'테스트 쇼핑몰',product:'테스트 상품',qty:1});
+let testIndex=0;
+const testSamples=[
+  {market:'쿠팡',eventType:'order'},
+  {market:'스마트스토어',eventType:'cancel'},
+  {market:'11번가',eventType:'exchange'},
+  {market:'G마켓',eventType:'return'},
+  {market:'옥션',eventType:'inquiry'},
+  {market:'롯데온',eventType:'order'}
+];
+$('testBtn').onclick=()=>{
+  const t=testSamples[testIndex%testSamples.length];
+  testIndex++;
+  notifyOrder({...t,product:'테스트 상품',qty:1});
+};
 
 $('exportBtn').onclick=()=>{
-  const head=['주문일시','쇼핑몰','주문번호','상품명','수량','구매자','주문금액','상태'];
-  const rows=orders.map(o=>[o.datetime,o.market,o.orderNo,o.product,o.qty,o.buyer,o.amount,o.status==='new'?'미확인':'확인완료']);
+  const head=['주문일시','알림종류','쇼핑몰','주문번호','상품명','수량','구매자','주문금액','상태'];
+  const labelMap={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
+  const rows=orders.map(o=>[o.datetime,labelMap[o.eventType||'order'],o.market,o.orderNo,o.product,o.qty,o.buyer,o.amount,o.status==='new'?'미확인':'확인완료']);
   const csv='\uFEFF'+[head,...rows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='주문목록.csv';a.click();URL.revokeObjectURL(a.href);
 };
@@ -399,7 +502,8 @@ $('fileInput').onchange=async e=>{
   if(lines.length<2) return toast('CSV 내용이 없습니다.');
   const parse=line=>{const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(c===','&&!q){out.push(cur);cur=''}else cur+=c}out.push(cur);return out};
   const data=lines.slice(1).map(parse);
-  data.forEach(r=>orders.push({id:crypto.randomUUID(),datetime:r[0]||new Date().toISOString().slice(0,16),market:r[1]||'기타',orderNo:r[2]||'',product:r[3]||'',qty:Number(r[4]||1),buyer:r[5]||'',amount:Number(r[6]||0),status:r[7]==='확인완료'?'done':'new'}));
+  const reverseLabel={'신규주문':'order','주문취소':'cancel','교환요청':'exchange','반품요청':'return','문의사항':'inquiry'};
+  data.forEach(r=>orders.push({id:crypto.randomUUID(),datetime:r[0]||new Date().toISOString().slice(0,16),eventType:reverseLabel[r[1]]||'order',market:r[2]||'기타',orderNo:r[3]||'',product:r[4]||'',qty:Number(r[5]||1),buyer:r[6]||'',amount:Number(r[7]||0),status:r[8]==='확인완료'?'done':'new'}));
   save();toast(`${data.length}건을 불러왔습니다.`);e.target.value='';
 };
 
@@ -476,6 +580,13 @@ function renderStats(){
     </div>`).join(''):`<div class="detail-empty">통계에 표시할 주문이 없습니다.</div>`;
 }
 
+window.showProductByName=encodedName=>{
+  const current=$('statsPeriod').value;
+  $('statsPeriod').value='30';
+  showProductStats(encodedName);
+  $('statsPeriod').value=current;
+};
+
 window.showProductStats=encodedName=>{
   const name=decodeURIComponent(encodedName);
   const list=filteredStatsOrders().filter(o=>(o.product||'상품명 없음').trim()===name)
@@ -519,6 +630,7 @@ window.showProductStats=encodedName=>{
         <span>구매자: ${escapeHtml(o.buyer)}</span>
         <span>주문번호: ${escapeHtml(o.orderNo)}</span>
         <span>주문일시: ${o.datetime.replace('T',' ')}</span>
+        <span>알림종류: ${{order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'}[o.eventType||'order']}</span>
         <span>상태: ${o.status==='new'?'미확인':'확인완료'}</span>
       </div>
     </div>`).join('');
