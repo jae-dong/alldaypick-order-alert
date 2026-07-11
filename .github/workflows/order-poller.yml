@@ -8,10 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: order-poller
+  cancel-in-progress: false
+
 jobs:
   poll-orders:
-    runs-on: self-hosted
-    timeout-minutes: 5
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 8
+
     defaults:
       run:
         working-directory: backend
@@ -20,15 +25,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show runner information
+        shell: powershell
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "OS: $env:RUNNER_OS"
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Check marketplace integrations
+      - name: Collect marketplace orders
         run: npm run poll
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}

@@ -1,0 +1,21 @@
+올데이픽 주문알림 v12 적용 순서
+
+1. 이 압축파일을 풉니다.
+2. 압축을 푼 폴더 안의 모든 파일과 폴더를 기존 alldaypick-order-alert 폴더에 덮어씁니다.
+   중요: .github 폴더도 반드시 함께 복사합니다.
+3. GitHub Desktop에서 Summary에 v12 최종본 입력 → Commit to main → Push origin.
+4. Self-hosted Runner PowerShell 창에 Listening for Jobs가 표시된 상태로 둡니다.
+5. GitHub 저장소 → Actions → Order Poller → Run workflow.
+6. 성공 로그의 Show runner information에서 OS: Windows가 보이면 집 PC에서 실행된 것입니다.
+7. 주문알림 사이트를 Ctrl+F5로 새로고침합니다.
+
+필수 GitHub Secrets
+- FIREBASE_SERVICE_ACCOUNT_JSON
+- COUPANG_ACCESS_KEY
+- COUPANG_SECRET_KEY
+- COUPANG_VENDOR_ID
+
+주의
+- API 키를 파일, 채팅, Firestore에 넣지 마세요.
+- PC와 Runner가 꺼져 있으면 10분 자동수집도 멈춥니다.
+- 현재 v12는 쿠팡 신규주문(결제완료/ACCEPT) 실수집부터 동작합니다.
