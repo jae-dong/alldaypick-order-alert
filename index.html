@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>올데이픽 주문알림</title>
+  
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#111827; --muted:#6b7280; --line:#e5e7eb;
+      --primary:#111827; --primary2:#374151; --ok:#059669; --warn:#d97706; --danger:#dc2626;
+      --shadow:0 10px 30px rgba(17,24,39,.08); --radius:18px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;background:var(--bg);color:var(--text)}
+    button,input,select{font:inherit}
+    .app{max-width:1180px;margin:0 auto;padding:18px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+    .brand h1{font-size:24px;margin:0}.brand p{margin:4px 0 0;color:var(--muted);font-size:14px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .btn{border:0;border-radius:12px;padding:11px 14px;font-weight:700;cursor:pointer}
+    .btn.primary{background:var(--primary);color:white}.btn.light{background:white;color:var(--text);border:1px solid var(--line)}
+    .btn.green{background:var(--ok);color:#fff}.btn.red{background:var(--danger);color:#fff}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .metric{padding:18px;cursor:pointer;transition:.18s}.metric:hover{transform:translateY(-2px)}.metric .label{color:var(--muted);font-size:14px}.metric .value{font-size:30px;font-weight:800;margin-top:7px}
+    .metric .sub{font-size:13px;margin-top:6px;color:var(--muted)}
+    .section{margin-top:14px;padding:18px}
+    .tabs{display:flex;gap:8px;margin:14px 0}
+    .tab{border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer}
+    .tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    .stats-panel{display:none}.stats-panel.active{display:block}
+    .rank-list{display:grid;gap:10px}
+    .rank-item{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:13px;background:#fafafa}
+    .rank-no{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#e5e7eb;font-weight:900}
+    .rank-item b{display:block}.rank-item small{color:var(--muted)}
+    .rank-value{text-align:right;font-weight:900}
+    .market-breakdown{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+    .market-chip{font-size:12px;padding:5px 8px;border-radius:999px;background:#e5e7eb;color:#374151}
+    .product-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+    .product-summary .mini-card{background:#fff}
+    .detail-section-title{font-size:15px;font-weight:900;margin:18px 0 10px}
+    @media(max-width:700px){.product-summary{grid-template-columns:repeat(2,1fr)}}
+    .period-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .mini-card{border:1px solid var(--line);border-radius:14px;padding:15px;background:#fafafa}
+    .mini-card .label{font-size:13px;color:var(--muted)}.mini-card .num{font-size:24px;font-weight:900;margin-top:5px}
+    .bar-wrap{height:9px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:8px}.bar{height:100%;background:#111827;border-radius:999px}
+
+    .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+    .section h2{font-size:18px;margin:0}
+    .market-list{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .market{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fafafa;cursor:pointer;transition:.18s}.market:hover{transform:translateY(-2px);background:#fff}
+    .market b{display:block;font-size:15px}.market span{font-size:24px;font-weight:800}.market small{color:var(--muted)}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .toolbar input,.toolbar select{border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:#fff}
+    .toolbar input{flex:1;min-width:220px}
+    .table-wrap{overflow:auto}
+    table{width:100%;border-collapse:collapse;min-width:850px}
+    th,td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+    th{color:var(--muted);font-size:13px;background:#fafafa;position:sticky;top:0}
+    .badge{display:inline-flex;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:700}
+    .badge.new{background:#fee2e2;color:#991b1b}.badge.done{background:#d1fae5;color:#065f46}
+    .empty{text-align:center;color:var(--muted);padding:36px}
+    .footer{color:var(--muted);text-align:center;font-size:12px;padding:22px}
+    dialog{border:0;border-radius:18px;padding:0;max-width:520px;width:calc(100% - 28px);box-shadow:0 25px 80px rgba(0,0,0,.25)}
+    dialog::backdrop{background:rgba(17,24,39,.55)}
+    .modal{padding:20px}.modal h3{margin:0 0 16px}.form{display:grid;gap:12px}
+    .form label{font-size:13px;font-weight:700}.form input,.form select{width:100%;padding:11px;border:1px solid var(--line);border-radius:11px;margin-top:6px}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+    .detail-list{display:grid;gap:10px}.detail-item{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fafafa}.detail-item b{display:block;font-size:15px;margin-bottom:8px}.detail-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;color:var(--muted);font-size:13px}.detail-empty{text-align:center;color:var(--muted);padding:28px}.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:white;padding:12px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:999}
+    .toast.show{opacity:1}
+    .pulse{animation:pulse 1.2s infinite}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+    @media(max-width:800px){
+      body{background:#eef1f5}
+      .app{padding:10px 10px 92px}
+      .topbar{position:sticky;top:0;z-index:20;background:rgba(238,241,245,.96);backdrop-filter:blur(10px);padding:10px 0 8px;margin-bottom:10px;align-items:flex-start;flex-direction:column}
+      .brand h1{font-size:21px}.brand p{font-size:12px}
+      .actions{width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+      .actions .btn{width:100%;padding:11px 8px;font-size:13px}
+      .grid{grid-template-columns:repeat(2,1fr);gap:8px}
+      .metric{padding:14px;border-radius:15px;min-height:108px}
+      .metric .label{font-size:12px}.metric .value{font-size:25px}.metric .sub{font-size:11px}
+      .tabs{position:sticky;top:116px;z-index:15;background:#eef1f5;padding:6px 0;margin:8px 0}
+      .tab{flex:1;padding:11px 10px;font-size:14px}
+      .section{padding:13px;margin-top:10px;border-radius:15px}
+      .section-head{align-items:flex-start;flex-direction:column;margin-bottom:10px}
+      .section-head .actions{grid-template-columns:repeat(2,1fr)}
+      .market-list{grid-template-columns:repeat(2,1fr);gap:8px}
+      .market{padding:13px;border-radius:13px}
+      .market span{font-size:22px}
+      .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .toolbar input{grid-column:1/-1;min-width:0;width:100%}
+      .toolbar select{width:100%;min-width:0}
+      .table-wrap{overflow:visible}
+      table{min-width:0;width:100%;display:block}
+      thead{display:none}
+      tbody{display:grid;gap:9px}
+      tr{display:block;background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px;box-shadow:0 5px 16px rgba(17,24,39,.05)}
+      td{display:flex;justify-content:space-between;gap:12px;border:0;padding:5px 0;font-size:13px;text-align:right}
+      td::before{content:attr(data-label);color:var(--muted);font-weight:700;text-align:left}
+      td:nth-child(5){display:block;text-align:left;font-size:15px;font-weight:800;padding:8px 0}
+      td:nth-child(5)::before{display:none}
+      td:last-child{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px}
+      td:last-child::before{display:none}
+      td:last-child .btn{width:100%;padding:10px 8px}
+      .period-grid{grid-template-columns:1fr;gap:8px}
+      .mini-card{padding:13px}.mini-card .num{font-size:22px}
+      .rank-item{grid-template-columns:38px 1fr;gap:9px;padding:12px}
+      .rank-no{width:32px;height:32px}
+      .rank-value{grid-column:2;text-align:left;font-size:13px}
+      .market-breakdown{gap:5px}.market-chip{font-size:11px;padding:4px 7px}
+      .product-summary{grid-template-columns:1fr 1fr;gap:8px}
+      dialog{width:calc(100% - 16px);max-height:88vh}
+      .modal{padding:15px;max-height:88vh;overflow:auto}
+      .detail-meta{grid-template-columns:1fr;gap:4px}
+      .footer{padding:16px 8px}
+    }
+    @media(max-width:480px){
+      .actions{grid-template-columns:1fr 1fr}
+      .actions #addBtn{grid-column:1/-1}
+      .grid{grid-template-columns:1fr 1fr}
+      .metric .value{font-size:23px}
+      .tabs{top:155px}
+      .product-summary{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <h1>올데이픽 주문알림</h1>
+      <p>여러 쇼핑몰의 신규 주문을 한곳에서 확인합니다.</p>
+    </div>
+    <div class="actions">
+      <button class="btn light" id="notifyBtn">알림 권한</button>
+      <button class="btn light" id="testBtn">알림 테스트</button>
+      <button class="btn primary" id="addBtn">+ 주문 추가</button>
+    </div>
+  </div>
+
+  <div class="card section" style="display:none" id="mobileHint">
+    <div style="font-size:13px;color:var(--muted)">모바일 화면에 맞춰 주문 카드형 보기와 세로형 통계를 적용했습니다.</div>
+  </div>
+
+  <section class="grid">
+    <div class="card metric" id="todayCard"><div class="label">오늘 주문</div><div class="value" id="todayCount">0</div><div class="sub">오늘 들어온 전체 주문</div></div>
+    <div class="card metric" id="newCard"><div class="label">미확인 주문</div><div class="value" id="newCount">0</div><div class="sub">확인이 필요한 주문</div></div>
+    <div class="card metric" id="salesCard"><div class="label">오늘 매출</div><div class="value" id="todaySales">0원</div><div class="sub">입력된 주문금액 합계</div></div>
+    <div class="card metric" id="allCard"><div class="label">전체 주문</div><div class="value" id="allCount">0</div><div class="sub">저장된 전체 주문</div></div>
+  </section>
+
+  <div class="tabs">
+    <button class="tab active" id="ordersTab">주문 현황</button>
+    <button class="tab" id="statsTab">주문 통계</button>
+  </div>
+
+  <div id="ordersPanel" class="stats-panel active">
+  <section class="card section">
+    <div class="section-head"><h2>쇼핑몰별 주문</h2><span style="color:var(--muted);font-size:13px">오늘 기준</span></div>
+    <div class="market-list" id="marketList"></div>
+  </section>
+
+  <section class="card section">
+    <div class="section-head">
+      <h2>주문 목록</h2>
+      <div class="actions">
+        <button class="btn light" id="importBtn">CSV 불러오기</button>
+        <button class="btn light" id="exportBtn">CSV 내보내기</button>
+        <input type="file" id="fileInput" accept=".csv" hidden>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="searchInput" placeholder="상품명, 주문번호, 구매자 검색" />
+      <select id="marketFilter">
+        <option value="">전체 쇼핑몰</option>
+        <option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>기타</option>
+      </select>
+      <select id="statusFilter">
+        <option value="">전체 상태</option>
+        <option value="new">미확인</option><option value="done">확인완료</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>상태</th><th>주문일시</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead>
+        <tbody id="orderBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  </div>
+
+  <div id="statsPanel" class="stats-panel">
+    <section class="card section">
+      <div class="section-head">
+        <h2>기간별 주문 통계</h2>
+        <select id="statsPeriod">
+          <option value="7">최근 7일</option>
+          <option value="30">최근 30일</option>
+          <option value="all">전체 기간</option>
+        </select>
+      </div>
+      <div class="period-grid">
+        <div class="mini-card"><div class="label">주문 건수</div><div class="num" id="statOrders">0건</div></div>
+        <div class="mini-card"><div class="label">판매 수량</div><div class="num" id="statQty">0개</div></div>
+        <div class="mini-card"><div class="label">주문 금액</div><div class="num" id="statSales">0원</div></div>
+      </div>
+    </section>
+
+    <section class="card section">
+      <div class="section-head"><h2>많이 주문된 상품</h2><span style="color:var(--muted);font-size:13px">상품명 기준 합산</span></div>
+      <div id="productRank" class="rank-list"></div>
+    </section>
+
+    <section class="card section">
+      <div class="section-head"><h2>쇼핑몰별 통계</h2></div>
+      <div id="marketStats" class="rank-list"></div>
+    </section>
+  </div>
+
+  <div class="footer">주문 정보와 통계는 현재 기기의 브라우저에 저장됩니다.</div>
+</div>
+
+<dialog id="orderDialog">
+  <div class="modal">
+    <h3>주문 추가</h3>
+    <form id="orderForm" class="form">
+      <label>쇼핑몰<select id="fMarket" required><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>기타</option></select></label>
+      <label>주문번호<input id="fOrderNo" required></label>
+      <label>상품명<input id="fProduct" required></label>
+      <label>수량<input id="fQty" type="number" min="1" value="1" required></label>
+      <label>구매자<input id="fBuyer" required></label>
+      <label>주문금액<input id="fAmount" type="number" min="0" value="0" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn light" id="cancelBtn">취소</button>
+        <button type="submit" class="btn primary">저장</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+
+<dialog id="detailDialog">
+  <div class="modal">
+    <div class="section-head">
+      <h3 id="detailTitle">주문 상세</h3>
+      <button type="button" class="btn light" id="detailCloseBtn" style="position:sticky;top:0">닫기</button>
+    </div>
+    <div id="detailContent"></div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY='alldaypick_orders_v1';
+const markets=['쿠팡','스마트스토어','11번가','G마켓','옥션','기타'];
+let orders=JSON.parse(localStorage.getItem(KEY)||'[]');
+
+const $=id=>document.getElementById(id);
+const fmt=n=>Number(n||0).toLocaleString('ko-KR')+'원';
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const save=()=>{localStorage.setItem(KEY,JSON.stringify(orders));render();}
+const toast=msg=>{const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
+
+function render(){
+  const today=todayStr();
+  const todayOrders=orders.filter(o=>o.datetime.slice(0,10)===today);
+  $('todayCount').textContent=todayOrders.length;
+  $('newCount').textContent=orders.filter(o=>o.status==='new').length;
+  $('todaySales').textContent=fmt(todayOrders.reduce((a,b)=>a+Number(b.amount||0),0));
+  $('allCount').textContent=orders.length;
+  if($('statsPanel')?.classList.contains('active')) renderStats();
+
+  $('marketList').innerHTML=markets.map(m=>{
+    const cnt=todayOrders.filter(o=>o.market===m).length;
+    return `<div class="market" onclick="showOrderDetails('market','${m}')"><b>${m}</b><span>${cnt}</span> <small>건</small></div>`
+  }).join('');
+
+  const q=$('searchInput').value.trim().toLowerCase();
+  const mf=$('marketFilter').value, sf=$('statusFilter').value;
+  const list=[...orders].filter(o=>{
+    const hit=!q||[o.orderNo,o.product,o.buyer].some(v=>(v||'').toLowerCase().includes(q));
+    return hit&&(!mf||o.market===mf)&&(!sf||o.status===sf);
+  }).sort((a,b)=>b.datetime.localeCompare(a.datetime));
+
+  $('orderBody').innerHTML=list.length?list.map(o=>`
+    <tr onclick="showSingleOrder('${o.id}')" style="cursor:pointer">
+      <td data-label="상태"><span class="badge ${o.status}">${o.status==='new'?'미확인':'확인완료'}</span></td>
+      <td data-label="주문일시">${o.datetime.replace('T',' ')}</td>
+      <td data-label="쇼핑몰">${o.market}</td>
+      <td data-label="주문번호">${escapeHtml(o.orderNo)}</td>
+      <td>${escapeHtml(o.product)}</td>
+      <td data-label="수량">${o.qty}</td>
+      <td data-label="구매자">${escapeHtml(o.buyer)}</td>
+      <td data-label="금액">${fmt(o.amount)}</td>
+      <td>
+        <button class="btn ${o.status==='new'?'green':'light'}" onclick="event.stopPropagation();toggleStatus('${o.id}')">${o.status==='new'?'확인':'미확인'}</button>
+        <button class="btn light" onclick="event.stopPropagation();removeOrder('${o.id}')">삭제</button>
+      </td>
+    </tr>`).join(''):`<tr><td colspan="9" class="empty">등록된 주문이 없습니다.</td></tr>`;
+}
+function escapeHtml(s=''){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+window.toggleStatus=id=>{const o=orders.find(x=>x.id===id);if(o){o.status=o.status==='new'?'done':'new';save()}}
+window.removeOrder=id=>{if(confirm('이 주문을 삭제하시겠습니까?')){orders=orders.filter(x=>x.id!==id);save()}}
+
+$('addBtn').onclick=()=>{$('fOrderNo').value='';$('fProduct').value='';$('fQty').value=1;$('fBuyer').value='';$('fAmount').value=0;$('orderDialog').showModal()}
+$('cancelBtn').onclick=()=>$('orderDialog').close();
+$('orderForm').onsubmit=e=>{
+  e.preventDefault();
+  const o={id:crypto.randomUUID(),datetime:new Date().toISOString().slice(0,16),market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),status:'new'};
+  orders.push(o);save();$('orderDialog').close();notifyOrder(o);toast('새 주문이 등록되었습니다.');
+};
+
+['searchInput','marketFilter','statusFilter'].forEach(id=>$(id).addEventListener('input',render));
+
+async function askNotification(){
+  if(!('Notification' in window)) return toast('이 브라우저는 알림을 지원하지 않습니다.');
+  const p=await Notification.requestPermission();
+  toast(p==='granted'?'알림 권한이 허용되었습니다.':'알림 권한이 허용되지 않았습니다.');
+}
+
+function renderDetailList(list,title){
+  $('detailTitle').textContent=title;
+  $('detailContent').innerHTML=list.length?`<div class="detail-list">${list.map(o=>`
+    <div class="detail-item">
+      <b>${escapeHtml(o.product)} · ${o.qty}개</b>
+      <div class="detail-meta">
+        <span>쇼핑몰: ${escapeHtml(o.market)}</span>
+        <span>구매자: ${escapeHtml(o.buyer)}</span>
+        <span>주문번호: ${escapeHtml(o.orderNo)}</span>
+        <span>금액: ${fmt(o.amount)}</span>
+        <span>주문일시: ${o.datetime.replace('T',' ')}</span>
+        <span>상태: ${o.status==='new'?'미확인':'확인완료'}</span>
+      </div>
+    </div>`).join('')}</div>`:`<div class="detail-empty">해당 주문이 없습니다.</div>`;
+  $('detailDialog').showModal();
+}
+window.showOrderDetails=(type,value)=>{
+  const today=todayStr();
+  let list=[], title='주문 상세';
+  if(type==='today'){list=orders.filter(o=>o.datetime.slice(0,10)===today);title='오늘 들어온 상품';}
+  if(type==='new'){list=orders.filter(o=>o.status==='new');title='미확인 주문 상품';}
+  if(type==='all'){list=[...orders];title='전체 주문 상품';}
+  if(type==='sales'){list=orders.filter(o=>o.datetime.slice(0,10)===today);title='오늘 매출 주문 상품';}
+  if(type==='market'){list=orders.filter(o=>o.datetime.slice(0,10)===today&&o.market===value);title=`${value} 오늘 주문 상품`;}
+  list.sort((a,b)=>b.datetime.localeCompare(a.datetime));
+  renderDetailList(list,title);
+};
+window.showSingleOrder=id=>{
+  const o=orders.find(x=>x.id===id);
+  if(o) renderDetailList([o],'주문 상세정보');
+};
+$('todayCard').onclick=()=>showOrderDetails('today');
+$('newCard').onclick=()=>showOrderDetails('new');
+$('salesCard').onclick=()=>showOrderDetails('sales');
+$('allCard').onclick=()=>showOrderDetails('all');
+$('detailCloseBtn').onclick=()=>$('detailDialog').close();
+
+$('notifyBtn').onclick=askNotification;
+
+function speak(text){
+  if('speechSynthesis' in window){
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1;
+    speechSynthesis.speak(u);
+  }
+}
+function beep(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(), gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);osc.frequency.value=880;
+    gain.gain.setValueAtTime(.18,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.6);
+    osc.start();osc.stop(ctx.currentTime+.6);
+  }catch(e){}
+}
+function notifyOrder(o){
+  beep();speak(`${o.market}에서 신규 주문 1건이 들어왔습니다.`);
+  if('Notification' in window && Notification.permission==='granted'){
+    new Notification('신규 주문 알림',{body:`${o.market} · ${o.product} · ${o.qty}개`});
+  }
+}
+$('testBtn').onclick=()=>notifyOrder({market:'테스트 쇼핑몰',product:'테스트 상품',qty:1});
+
+$('exportBtn').onclick=()=>{
+  const head=['주문일시','쇼핑몰','주문번호','상품명','수량','구매자','주문금액','상태'];
+  const rows=orders.map(o=>[o.datetime,o.market,o.orderNo,o.product,o.qty,o.buyer,o.amount,o.status==='new'?'미확인':'확인완료']);
+  const csv='\uFEFF'+[head,...rows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='주문목록.csv';a.click();URL.revokeObjectURL(a.href);
+};
+$('importBtn').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=async e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const text=await file.text();
+  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+  if(lines.length<2) return toast('CSV 내용이 없습니다.');
+  const parse=line=>{const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(c===','&&!q){out.push(cur);cur=''}else cur+=c}out.push(cur);return out};
+  const data=lines.slice(1).map(parse);
+  data.forEach(r=>orders.push({id:crypto.randomUUID(),datetime:r[0]||new Date().toISOString().slice(0,16),market:r[1]||'기타',orderNo:r[2]||'',product:r[3]||'',qty:Number(r[4]||1),buyer:r[5]||'',amount:Number(r[6]||0),status:r[7]==='확인완료'?'done':'new'}));
+  save();toast(`${data.length}건을 불러왔습니다.`);e.target.value='';
+};
+
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+
+function filteredStatsOrders(){
+  const p=$('statsPeriod').value;
+  if(p==='all') return [...orders];
+  const days=Number(p);
+  const cutoff=new Date();
+  cutoff.setHours(0,0,0,0);
+  cutoff.setDate(cutoff.getDate()-(days-1));
+  return orders.filter(o=>new Date(o.datetime)>=cutoff);
+}
+function renderStats(){
+  const list=filteredStatsOrders();
+  $('statOrders').textContent=list.length.toLocaleString('ko-KR')+'건';
+  $('statQty').textContent=list.reduce((a,b)=>a+Number(b.qty||0),0).toLocaleString('ko-KR')+'개';
+  $('statSales').textContent=fmt(list.reduce((a,b)=>a+Number(b.amount||0),0));
+
+  const products={};
+  list.forEach(o=>{
+    const key=(o.product||'상품명 없음').trim();
+    if(!products[key]) products[key]={orders:0,qty:0,sales:0};
+    products[key].orders+=1;
+    products[key].qty+=Number(o.qty||0);
+    products[key].sales+=Number(o.amount||0);
+  });
+  const ranked=Object.entries(products).sort((a,b)=>b[1].orders-a[1].orders || b[1].qty-a[1].qty);
+  const maxOrders=ranked[0]?.[1].orders||1;
+  $('productRank').innerHTML=ranked.length?ranked.slice(0,20).map(([name,v],i)=>{
+    const productOrders=list.filter(o=>(o.product||'상품명 없음').trim()===name);
+    const byMarket={};
+    productOrders.forEach(o=>{
+      const mk=o.market||'기타';
+      if(!byMarket[mk]) byMarket[mk]={orders:0,qty:0,sales:0};
+      byMarket[mk].orders++;
+      byMarket[mk].qty+=Number(o.qty||0);
+      byMarket[mk].sales+=Number(o.amount||0);
+    });
+    const chips=Object.entries(byMarket).sort((a,b)=>b[1].orders-a[1].orders).map(([mk,mv])=>`<span class="market-chip">${escapeHtml(mk)} ${mv.orders}건 · ${mv.qty}개</span>`).join('');
+    return `
+    <div class="rank-item" onclick="showProductStats('${encodeURIComponent(name)}')" style="cursor:pointer">
+      <div class="rank-no">${i+1}</div>
+      <div>
+        <b>${escapeHtml(name)}</b>
+        <small>주문 ${v.orders}건 · 총 ${v.qty}개 · ${fmt(v.sales)}</small>
+        <div class="market-breakdown">${chips}</div>
+        <div class="bar-wrap"><div class="bar" style="width:${Math.max(6,(v.orders/maxOrders)*100)}%"></div></div>
+      </div>
+      <div class="rank-value">${v.orders}건</div>
+    </div>`;
+  }).join(''):`<div class="detail-empty">통계에 표시할 주문이 없습니다.</div>`;
+
+  const marketAgg={};
+  list.forEach(o=>{
+    const key=o.market||'기타';
+    if(!marketAgg[key]) marketAgg[key]={orders:0,qty:0,sales:0};
+    marketAgg[key].orders++;
+    marketAgg[key].qty+=Number(o.qty||0);
+    marketAgg[key].sales+=Number(o.amount||0);
+  });
+  const marketRank=Object.entries(marketAgg).sort((a,b)=>b[1].orders-a[1].orders);
+  const maxMarket=marketRank[0]?.[1].orders||1;
+  $('marketStats').innerHTML=marketRank.length?marketRank.map(([name,v],i)=>`
+    <div class="rank-item">
+      <div class="rank-no">${i+1}</div>
+      <div>
+        <b>${escapeHtml(name)}</b>
+        <small>주문 ${v.orders}건 · 총 ${v.qty}개 · ${fmt(v.sales)}</small>
+        <div class="bar-wrap"><div class="bar" style="width:${Math.max(6,(v.orders/maxMarket)*100)}%"></div></div>
+      </div>
+      <div class="rank-value">${v.orders}건</div>
+    </div>`).join(''):`<div class="detail-empty">통계에 표시할 주문이 없습니다.</div>`;
+}
+
+window.showProductStats=encodedName=>{
+  const name=decodeURIComponent(encodedName);
+  const list=filteredStatsOrders().filter(o=>(o.product||'상품명 없음').trim()===name)
+    .sort((a,b)=>b.datetime.localeCompare(a.datetime));
+  if(!list.length) return;
+  const totalOrders=list.length;
+  const totalQty=list.reduce((a,b)=>a+Number(b.qty||0),0);
+  const totalSales=list.reduce((a,b)=>a+Number(b.amount||0),0);
+  const lastDate=list[0].datetime.replace('T',' ');
+  const period=$('statsPeriod').value;
+  let days=1;
+  if(period==='7') days=7;
+  else if(period==='30') days=30;
+  else {
+    const dates=list.map(o=>new Date(o.datetime));
+    const minDate=new Date(Math.min(...dates));
+    const maxDate=new Date(Math.max(...dates));
+    days=Math.max(1,Math.ceil((maxDate-minDate)/(1000*60*60*24))+1);
+  }
+  const avg=(totalQty/days).toFixed(1);
+
+  const byMarket={};
+  list.forEach(o=>{
+    const mk=o.market||'기타';
+    if(!byMarket[mk]) byMarket[mk]={orders:0,qty:0,sales:0};
+    byMarket[mk].orders++;
+    byMarket[mk].qty+=Number(o.qty||0);
+    byMarket[mk].sales+=Number(o.amount||0);
+  });
+  const marketRows=Object.entries(byMarket).sort((a,b)=>b[1].orders-a[1].orders).map(([mk,v],i)=>`
+    <div class="rank-item">
+      <div class="rank-no">${i+1}</div>
+      <div><b>${escapeHtml(mk)}</b><small>주문 ${v.orders}건 · 수량 ${v.qty}개 · ${fmt(v.sales)}</small></div>
+      <div class="rank-value">${v.orders}건</div>
+    </div>`).join('');
+
+  const recentRows=list.slice(0,20).map(o=>`
+    <div class="detail-item">
+      <b>${escapeHtml(o.market)} · ${o.qty}개 · ${fmt(o.amount)}</b>
+      <div class="detail-meta">
+        <span>구매자: ${escapeHtml(o.buyer)}</span>
+        <span>주문번호: ${escapeHtml(o.orderNo)}</span>
+        <span>주문일시: ${o.datetime.replace('T',' ')}</span>
+        <span>상태: ${o.status==='new'?'미확인':'확인완료'}</span>
+      </div>
+    </div>`).join('');
+
+  $('detailTitle').textContent='상품 판매 분석';
+  $('detailContent').innerHTML=`
+    <h3 style="margin-top:0">${escapeHtml(name)}</h3>
+    <div class="product-summary">
+      <div class="mini-card"><div class="label">주문 건수</div><div class="num">${totalOrders}건</div></div>
+      <div class="mini-card"><div class="label">총 판매 수량</div><div class="num">${totalQty}개</div></div>
+      <div class="mini-card"><div class="label">주문 금액</div><div class="num">${fmt(totalSales)}</div></div>
+      <div class="mini-card"><div class="label">하루 평균 판매</div><div class="num">${avg}개</div></div>
+    </div>
+    <div class="mini-card"><div class="label">마지막 주문일</div><div class="num" style="font-size:18px">${lastDate}</div></div>
+    <div class="detail-section-title">쇼핑몰별 판매 현황</div>
+    <div class="rank-list">${marketRows}</div>
+    <div class="detail-section-title">최근 주문 내역</div>
+    <div class="detail-list">${recentRows}</div>`;
+  $('detailDialog').showModal();
+};
+
+function showPanel(name){
+  const isStats=name==='stats';
+  $('ordersPanel').classList.toggle('active',!isStats);
+  $('statsPanel').classList.toggle('active',isStats);
+  $('ordersTab').classList.toggle('active',!isStats);
+  $('statsTab').classList.toggle('active',isStats);
+  if(isStats) renderStats();
+}
+$('ordersTab').onclick=()=>showPanel('orders');
+$('statsTab').onclick=()=>showPanel('stats');
+$('statsPeriod').onchange=renderStats;
+
+render();
+</script>
+</body>
+</html>
