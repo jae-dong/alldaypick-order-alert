@@ -55,6 +55,13 @@
     .event-card{border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px 8px;text-align:center;cursor:pointer}
     .event-card span{display:block;font-size:12px;color:var(--muted)}
     .event-card strong{display:block;font-size:24px;margin-top:4px}
+    .event-card.active{background:#111827;color:#fff;border-color:#111827}
+    .event-card.active span{color:#d1d5db}
+    .alert-settings{display:grid;gap:10px}
+    .alert-row{display:grid;grid-template-columns:1fr 150px;gap:12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:12px;background:#fafafa}
+    .alert-row b{display:block}.alert-row small{color:var(--muted)}
+    .alert-row select{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}
+
 
     .compact-list{display:grid;gap:8px}
     .compact-item{width:100%;border:1px solid var(--line);background:#fafafa;border-radius:13px;padding:11px;text-align:left;cursor:pointer}
@@ -102,6 +109,7 @@
       .home-two{grid-template-columns:1fr;gap:0;margin-top:0}
       .event-grid{grid-template-columns:repeat(2,1fr)}
       .event-card:last-child{grid-column:1/-1}
+      .alert-row{grid-template-columns:1fr}
       .market{padding:13px;border-radius:13px}
       .market span{font-size:22px}
       .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -210,6 +218,14 @@
         <option value="">전체 쇼핑몰</option>
         <option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option><option>기타</option>
       </select>
+      <select id="eventFilter">
+        <option value="">전체 알림</option>
+        <option value="order">신규주문</option>
+        <option value="cancel">주문취소</option>
+        <option value="exchange">교환요청</option>
+        <option value="return">반품요청</option>
+        <option value="inquiry">문의사항</option>
+      </select>
       <select id="statusFilter">
         <option value="">전체 상태</option>
         <option value="new">미확인</option><option value="done">확인완료</option>
@@ -217,13 +233,19 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>상태</th><th>주문일시</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead>
+        <thead><tr><th>상태</th><th>주문일시</th><th>알림종류</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead>
         <tbody id="orderBody"></tbody>
       </table>
     </div>
   </section>
 
   </div>
+
+
+  <section class="card section">
+    <div class="section-head"><h2>음성 알림 설정</h2><span style="color:var(--muted);font-size:12px">종류별 음량</span></div>
+    <div class="alert-settings" id="alertSettings"></div>
+  </section>
 
   <div id="statsPanel" class="stats-panel">
     <section class="card section">
@@ -296,6 +318,9 @@
 
 <script>
 const KEY='alldaypick_orders_v1';
+const ALERT_KEY='alldaypick_alert_settings_v1';
+const eventLabels={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
+let activeEventFilter='';
 const markets=['쿠팡','스마트스토어','11번가','G마켓','옥션','롯데온','기타'];
 let orders=JSON.parse(localStorage.getItem(KEY)||'[]');
 
@@ -324,7 +349,7 @@ function render(){
   const eventTypes=['order','cancel','exchange','return','inquiry'];
   $('eventGrid').innerHTML=eventTypes.map(type=>{
     const list=todayOrders.filter(o=>(o.eventType||'order')===type);
-    return `<button class="event-card" onclick="showEventDetails('${type}')">
+    return `<button class="event-card ${$('eventFilter').value===type?'active':''}" onclick="filterEventType('${type}')">
       <span>${eventLabels[type]}</span><strong>${list.length}</strong>
     </button>`;
   }).join('');
@@ -357,16 +382,17 @@ function render(){
     </button>`).join(''):`<div class="detail-empty">최근 주문이 없습니다.</div>`;
 
   const q=$('searchInput').value.trim().toLowerCase();
-  const mf=$('marketFilter').value, sf=$('statusFilter').value;
+  const mf=$('marketFilter').value, ef=$('eventFilter').value, sf=$('statusFilter').value;
   const list=[...orders].filter(o=>{
     const hit=!q||[o.orderNo,o.product,o.buyer].some(v=>(v||'').toLowerCase().includes(q));
-    return hit&&(!mf||o.market===mf)&&(!sf||o.status===sf);
+    return hit&&(!mf||o.market===mf)&&(!ef||(o.eventType||'order')===ef)&&(!sf||o.status===sf);
   }).sort((a,b)=>b.datetime.localeCompare(a.datetime));
 
   $('orderBody').innerHTML=list.length?list.map(o=>`
     <tr onclick="showSingleOrder('${o.id}')" style="cursor:pointer">
       <td data-label="상태"><span class="badge ${o.status}">${o.status==='new'?'미확인':'확인완료'}</span></td>
       <td data-label="주문일시">${o.datetime.replace('T',' ')}</td>
+      <td data-label="알림종류">${eventLabels[o.eventType||'order']}</td>
       <td data-label="쇼핑몰">${o.market}</td>
       <td data-label="주문번호">${escapeHtml(o.orderNo)}</td>
       <td>${escapeHtml(o.product)}</td>
@@ -377,7 +403,7 @@ function render(){
         <button class="btn ${o.status==='new'?'green':'light'}" onclick="event.stopPropagation();toggleStatus('${o.id}')">${o.status==='new'?'확인':'미확인'}</button>
         <button class="btn light" onclick="event.stopPropagation();removeOrder('${o.id}')">삭제</button>
       </td>
-    </tr>`).join(''):`<tr><td colspan="9" class="empty">등록된 주문이 없습니다.</td></tr>`;
+    </tr>`).join(''):`<tr><td colspan="10" class="empty">등록된 주문이 없습니다.</td></tr>`;
 }
 function escapeHtml(s=''){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 window.toggleStatus=id=>{const o=orders.find(x=>x.id===id);if(o){o.status=o.status==='new'?'done':'new';save()}}
@@ -391,7 +417,7 @@ $('orderForm').onsubmit=e=>{
   orders.push(o);save();$('orderDialog').close();notifyOrder(o);toast('새 주문이 등록되었습니다.');
 };
 
-['searchInput','marketFilter','statusFilter'].forEach(id=>$(id).addEventListener('input',render));
+['searchInput','marketFilter','eventFilter','statusFilter'].forEach(id=>$(id).addEventListener('input',render));
 
 async function askNotification(){
   if(!('Notification' in window)) return toast('이 브라우저는 알림을 지원하지 않습니다.');
@@ -416,6 +442,12 @@ function renderDetailList(list,title){
     </div>`).join('')}</div>`:`<div class="detail-empty">해당 주문이 없습니다.</div>`;
   $('detailDialog').showModal();
 }
+
+
+window.filterEventType=type=>{
+  $('eventFilter').value=$('eventFilter').value===type?'':type;
+  render();
+};
 
 window.showEventDetails=type=>{
   const labels={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
@@ -448,10 +480,44 @@ $('detailCloseBtn').onclick=()=>$('detailDialog').close();
 
 $('notifyBtn').onclick=askNotification;
 
-function speak(text){
+
+function loadAlertSettings(){
+  return JSON.parse(localStorage.getItem(ALERT_KEY)||'{"order":"high","cancel":"high","exchange":"medium","return":"medium","inquiry":"low"}');
+}
+function saveAlertSettings(settings){
+  localStorage.setItem(ALERT_KEY,JSON.stringify(settings));
+}
+function renderAlertSettings(){
+  const settings=loadAlertSettings();
+  const descriptions={
+    order:'쿠팡 신규주문',
+    cancel:'스마트스토어 주문취소',
+    exchange:'11번가 교환요청',
+    return:'G마켓 반품요청',
+    inquiry:'옥션 문의사항'
+  };
+  $('alertSettings').innerHTML=Object.keys(eventLabels).map(type=>`
+    <div class="alert-row">
+      <div><b>${eventLabels[type]}</b><small>${descriptions[type]}</small></div>
+      <select onchange="changeAlertLevel('${type}',this.value)">
+        <option value="high" ${settings[type]==='high'?'selected':''}>크게</option>
+        <option value="medium" ${settings[type]==='medium'?'selected':''}>보통</option>
+        <option value="low" ${settings[type]==='low'?'selected':''}>작게</option>
+        <option value="off" ${settings[type]==='off'?'selected':''}>음성 끄기</option>
+      </select>
+    </div>`).join('');
+}
+window.changeAlertLevel=(type,value)=>{
+  const settings=loadAlertSettings();
+  settings[type]=value;
+  saveAlertSettings(settings);
+  toast('알림 설정이 저장되었습니다.');
+};
+
+function speak(text,volume=1){
   if('speechSynthesis' in window){
     speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1;
+    const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1;u.volume=volume;
     speechSynthesis.speak(u);
   }
 }
@@ -465,9 +531,11 @@ function beep(){
   }catch(e){}
 }
 function notifyOrder(o){
-  const labels={order:'신규주문',cancel:'주문취소',exchange:'교환요청',return:'반품요청',inquiry:'문의사항'};
-  const label=labels[o.eventType||'order'];
-  beep();speak(`${o.market} ${label}`);
+  const type=o.eventType||'order';
+  const label=eventLabels[type];
+  const level=loadAlertSettings()[type]||'medium';
+  const volumes={high:1,medium:.65,low:.3,off:0};
+  if(level!=='off'){beep();speak(`${o.market} ${label}`,volumes[level]);}
   if('Notification' in window && Notification.permission==='granted'){
     new Notification(`${o.market} ${label}`,{body:`${o.product} · ${o.qty}개`});
   }
@@ -593,6 +661,9 @@ window.showProductStats=encodedName=>{
     .sort((a,b)=>b.datetime.localeCompare(a.datetime));
   if(!list.length) return;
   const totalOrders=list.length;
+  const allProductOrders=orders.filter(o=>(o.product||'상품명 없음').trim()===name);
+  const count7=allProductOrders.filter(o=>new Date(o.datetime)>=new Date(Date.now()-7*24*60*60*1000)).length;
+  const count30=allProductOrders.filter(o=>new Date(o.datetime)>=new Date(Date.now()-30*24*60*60*1000)).length;
   const totalQty=list.reduce((a,b)=>a+Number(b.qty||0),0);
   const totalSales=list.reduce((a,b)=>a+Number(b.amount||0),0);
   const lastDate=list[0].datetime.replace('T',' ');
@@ -639,7 +710,9 @@ window.showProductStats=encodedName=>{
   $('detailContent').innerHTML=`
     <h3 style="margin-top:0">${escapeHtml(name)}</h3>
     <div class="product-summary">
-      <div class="mini-card"><div class="label">주문 건수</div><div class="num">${totalOrders}건</div></div>
+      <div class="mini-card"><div class="label">선택 기간 주문</div><div class="num">${totalOrders}건</div></div>
+      <div class="mini-card"><div class="label">최근 7일</div><div class="num">${count7}건</div></div>
+      <div class="mini-card"><div class="label">최근 30일</div><div class="num">${count30}건</div></div>
       <div class="mini-card"><div class="label">총 판매 수량</div><div class="num">${totalQty}개</div></div>
       <div class="mini-card"><div class="label">주문 금액</div><div class="num">${fmt(totalSales)}</div></div>
       <div class="mini-card"><div class="label">하루 평균 판매</div><div class="num">${avg}개</div></div>
@@ -664,6 +737,7 @@ $('ordersTab').onclick=()=>showPanel('orders');
 $('statsTab').onclick=()=>showPanel('stats');
 $('statsPeriod').onchange=renderStats;
 
+renderAlertSettings();
 render();
 </script>
 </body>
