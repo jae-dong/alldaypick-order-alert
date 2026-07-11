@@ -59,6 +59,11 @@
     .event-card.active span{color:#d1d5db}
     .alert-settings{display:grid;gap:10px}
     .integration-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+    .sync-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .sync-status{font-size:12px;color:var(--muted)}
+    .sync-status.running{color:#2563eb;font-weight:800}
+    .sync-status.success{color:#059669;font-weight:800}
+    .sync-status.error{color:#dc2626;font-weight:800}
     .integration-card{border:1px solid var(--line);border-radius:14px;padding:13px;background:#fafafa}
     .integration-head{display:flex;justify-content:space-between;gap:10px;align-items:center}
     .integration-head b{font-size:14px}
@@ -262,7 +267,10 @@
   <section class="card section">
     <div class="section-head">
       <h2>쇼핑몰 자동연동</h2>
-      <span style="color:var(--muted);font-size:12px">10분마다 자동 확인</span>
+      <div class="sync-actions">
+        <span id="collectStatus" class="sync-status">10분마다 자동 확인</span>
+        <button id="collectNowBtn" class="btn" type="button">지금 수집</button>
+      </div>
     </div>
     <div class="integration-grid" id="integrationGrid"></div>
     <div style="margin-top:10px;font-size:12px;color:var(--muted)">
@@ -389,6 +397,68 @@ const integrationNames=[
   ['lotteon','롯데온']
 ];
 
+
+const COLLECT_COOLDOWN_MS=60*1000;
+let collectCommandUnsubscribe=null;
+
+function setCollectStatus(text,state=''){
+  const el=$('collectStatus');
+  if(!el) return;
+  el.textContent=text;
+  el.className='sync-status'+(state?' '+state:'');
+}
+
+async function requestImmediateCollect(reason='manual'){
+  if(!currentUser||!cloudReady){
+    setCollectStatus('클라우드 연결 후 다시 시도하세요','error');
+    return;
+  }
+
+  const last=Number(localStorage.getItem('alldaypick_last_collect_request')||0);
+  const now=Date.now();
+  if(now-last<COLLECT_COOLDOWN_MS){
+    const left=Math.ceil((COLLECT_COOLDOWN_MS-(now-last))/1000);
+    setCollectStatus(`${left}초 후 다시 요청 가능`,'running');
+    return;
+  }
+
+  const requestId=`${currentUser.uid}-${now}`;
+  localStorage.setItem('alldaypick_last_collect_request',String(now));
+  setCollectStatus('집 PC에 즉시 수집 요청 중','running');
+
+  try{
+    await db.collection('system').doc('commands').collection('requests').doc('coupang').set({
+      requestId,
+      market:'coupang',
+      reason,
+      requestedBy:currentUser.uid,
+      requestedAt:firebase.firestore.FieldValue.serverTimestamp(),
+      status:'requested',
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+  }catch(err){
+    setCollectStatus('수집 요청 실패: '+err.message,'error');
+  }
+}
+
+function watchCollectCommand(){
+  if(collectCommandUnsubscribe) collectCommandUnsubscribe();
+  collectCommandUnsubscribe=db.collection('system').doc('commands')
+    .collection('requests').doc('coupang')
+    .onSnapshot(doc=>{
+      if(!doc.exists) return;
+      const data=doc.data()||{};
+      if(data.status==='requested') setCollectStatus('집 PC가 요청을 확인하는 중','running');
+      else if(data.status==='running') setCollectStatus('쿠팡 주문 수집 중','running');
+      else if(data.status==='success'){
+        const count=data.result?.created??0;
+        setCollectStatus(`수집 완료 · 신규 ${count}건`,'success');
+      }else if(data.status==='error'){
+        setCollectStatus('수집 오류 · PC 수집기 확인','error');
+      }
+    },()=>{});
+}
+
 function renderIntegrations(status={}){
   $('integrationGrid').innerHTML=integrationNames.map(([key,name])=>{
     const connected=Boolean(status[key]?.connected);
@@ -426,6 +496,8 @@ async function initCloud(){
       $('cloudStatus').style.color='#059669';
       subscribeOrders();
       subscribeIntegrationStatus();
+      watchCollectCommand();
+      setTimeout(()=>requestImmediateCollect('page-refresh'),1200);
     });
   }catch(err){
     $('cloudStatus').textContent='클라우드 연결 실패: '+err.message;
@@ -899,6 +971,7 @@ async function registerBackgroundPush(){
 }
 $('vapidInput').value=localStorage.getItem('alldaypick_vapid_key')||'';
 $('pushRegisterBtn').onclick=registerBackgroundPush;
+$('collectNowBtn').onclick=()=>requestImmediateCollect('button');
 if(messaging){
   messaging.onMessage(payload=>{
     const title=payload.notification?.title||payload.data?.title||'올데이픽 주문알림';

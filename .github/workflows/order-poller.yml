@@ -8,15 +8,10 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: order-poller
-  cancel-in-progress: false
-
 jobs:
   poll-orders:
-    runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 8
-
+    runs-on: self-hosted
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: backend
@@ -25,30 +20,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show runner information
-        shell: powershell
-        run: |
-          Write-Host "Runner: $env:RUNNER_NAME"
-          Write-Host "OS: $env:RUNNER_OS"
-          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Collect marketplace orders
+      - name: Collect Coupang orders
         run: npm run poll
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           COUPANG_VENDOR_ID: ${{ secrets.COUPANG_VENDOR_ID }}
-          SMARTSTORE_CLIENT_ID: ${{ secrets.SMARTSTORE_CLIENT_ID }}
-          SMARTSTORE_CLIENT_SECRET: ${{ secrets.SMARTSTORE_CLIENT_SECRET }}
-          ELEVENST_API_KEY: ${{ secrets.ELEVENST_API_KEY }}
-          ESM_API_KEY: ${{ secrets.ESM_API_KEY }}
-          LOTTEON_API_KEY: ${{ secrets.LOTTEON_API_KEY }}
