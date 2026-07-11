@@ -2,6 +2,7 @@
   "name": "올데이픽 주문알림",
   "short_name": "주문알림",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#eef1f5",
   "theme_color": "#111827",
