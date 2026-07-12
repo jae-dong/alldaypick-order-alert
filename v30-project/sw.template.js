@@ -1,6 +1,6 @@
-﻿importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js');
-firebase.initializeApp({"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"});
+firebase.initializeApp(__FIREBASE_CONFIG__);
 const messaging=firebase.messaging();
 messaging.onBackgroundMessage(payload=>{
   const title=payload.notification?.title||payload.data?.title||'올데이픽 주문알림';
@@ -25,4 +25,3 @@ self.addEventListener('fetch',event=>{
   if(event.request.mode==='navigate'){event.respondWith(fetch(event.request).catch(()=>caches.match('./index.html')));return}
   event.respondWith(caches.match(event.request).then(c=>c||fetch(event.request)));
 });
-

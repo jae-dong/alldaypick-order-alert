@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -191,7 +191,7 @@ dialog{border:0;border-radius:18px;padding:0;width:min(520px,calc(100% - 22px));
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js"></script>
 <script>
-const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
+const firebaseConfig=__FIREBASE_CONFIG__;
 firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth();
 const db=firebase.firestore();
@@ -323,4 +323,3 @@ renderIntegrations();render();initCloud();
 </script>
 </body>
 </html>
-
