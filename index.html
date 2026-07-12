@@ -422,6 +422,18 @@
       }
     }
   </style>
+  <style id="V25_REMOVE_VOICE_VOLUME">
+    /* Remove voice volume controls without affecting push notifications. */
+    [id*="voiceVolume" i],
+    [id*="speechVolume" i],
+    [id*="soundVolume" i],
+    [class*="voice-volume" i],
+    [class*="speech-volume" i],
+    [class*="sound-volume" i],
+    .v25-hidden-volume-control{
+      display:none !important;
+    }
+  </style>
 </head>
 <body>
 <div class="app">
@@ -976,6 +988,84 @@ document.addEventListener('visibilitychange',()=>{
     setTimeout(v22BuildBoard,300);
   }
 });
+const V25_REMOVE_VOICE_VOLUME=true;
+
+function v25RemoveVoiceVolumeControls(){
+  const directSelectors=[
+    '[id*="voiceVolume" i]',
+    '[id*="speechVolume" i]',
+    '[id*="soundVolume" i]',
+    '[class*="voice-volume" i]',
+    '[class*="speech-volume" i]',
+    '[class*="sound-volume" i]'
+  ];
+
+  document.querySelectorAll(directSelectors.join(',')).forEach(el=>{
+    const wrapper=
+      el.closest('label')||
+      el.closest('.field')||
+      el.closest('.setting-row')||
+      el.closest('.form-row')||
+      el.parentElement;
+
+    (wrapper||el).classList.add('v25-hidden-volume-control');
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach(input=>{
+    const wrapper=
+      input.closest('label')||
+      input.closest('.field')||
+      input.closest('.setting-row')||
+      input.closest('.form-row')||
+      input.parentElement;
+
+    const text=(wrapper?.textContent||'')
+      .replace(/\s+/g,' ')
+      .trim();
+
+    if(
+      text.includes('음성')&&
+      (
+        text.includes('볼륨')||
+        text.includes('소리 크기')||
+        text.includes('소리크기')||
+        text.includes('크기 조절')
+      )
+    ){
+      wrapper?.classList.add('v25-hidden-volume-control');
+      input.disabled=true;
+      input.value='1';
+    }
+  });
+
+  [
+    'voiceVolume',
+    'speechVolume',
+    'soundVolume',
+    'voice_volume',
+    'speech_volume',
+    'sound_volume'
+  ].forEach(key=>{
+    try{
+      localStorage.removeItem(key);
+    }catch{}
+  });
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(v25RemoveVoiceVolumeControls,500);
+});
+
+const v25VolumeObserver=new MutationObserver(()=>{
+  v25RemoveVoiceVolumeControls();
+});
+
+window.addEventListener('load',()=>{
+  v25VolumeObserver.observe(document.body,{
+    childList:true,
+    subtree:true
+  });
+});
 </script>
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js">const V19_STATUS_SYNC=true;
 
@@ -1303,6 +1393,84 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
     setTimeout(v22BuildBoard,300);
   }
+});
+const V25_REMOVE_VOICE_VOLUME=true;
+
+function v25RemoveVoiceVolumeControls(){
+  const directSelectors=[
+    '[id*="voiceVolume" i]',
+    '[id*="speechVolume" i]',
+    '[id*="soundVolume" i]',
+    '[class*="voice-volume" i]',
+    '[class*="speech-volume" i]',
+    '[class*="sound-volume" i]'
+  ];
+
+  document.querySelectorAll(directSelectors.join(',')).forEach(el=>{
+    const wrapper=
+      el.closest('label')||
+      el.closest('.field')||
+      el.closest('.setting-row')||
+      el.closest('.form-row')||
+      el.parentElement;
+
+    (wrapper||el).classList.add('v25-hidden-volume-control');
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach(input=>{
+    const wrapper=
+      input.closest('label')||
+      input.closest('.field')||
+      input.closest('.setting-row')||
+      input.closest('.form-row')||
+      input.parentElement;
+
+    const text=(wrapper?.textContent||'')
+      .replace(/\s+/g,' ')
+      .trim();
+
+    if(
+      text.includes('음성')&&
+      (
+        text.includes('볼륨')||
+        text.includes('소리 크기')||
+        text.includes('소리크기')||
+        text.includes('크기 조절')
+      )
+    ){
+      wrapper?.classList.add('v25-hidden-volume-control');
+      input.disabled=true;
+      input.value='1';
+    }
+  });
+
+  [
+    'voiceVolume',
+    'speechVolume',
+    'soundVolume',
+    'voice_volume',
+    'speech_volume',
+    'sound_volume'
+  ].forEach(key=>{
+    try{
+      localStorage.removeItem(key);
+    }catch{}
+  });
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(v25RemoveVoiceVolumeControls,500);
+});
+
+const v25VolumeObserver=new MutationObserver(()=>{
+  v25RemoveVoiceVolumeControls();
+});
+
+window.addEventListener('load',()=>{
+  v25VolumeObserver.observe(document.body,{
+    childList:true,
+    subtree:true
+  });
 });
 </script>
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js">const V19_STATUS_SYNC=true;
@@ -1632,6 +1800,84 @@ document.addEventListener('visibilitychange',()=>{
     setTimeout(v22BuildBoard,300);
   }
 });
+const V25_REMOVE_VOICE_VOLUME=true;
+
+function v25RemoveVoiceVolumeControls(){
+  const directSelectors=[
+    '[id*="voiceVolume" i]',
+    '[id*="speechVolume" i]',
+    '[id*="soundVolume" i]',
+    '[class*="voice-volume" i]',
+    '[class*="speech-volume" i]',
+    '[class*="sound-volume" i]'
+  ];
+
+  document.querySelectorAll(directSelectors.join(',')).forEach(el=>{
+    const wrapper=
+      el.closest('label')||
+      el.closest('.field')||
+      el.closest('.setting-row')||
+      el.closest('.form-row')||
+      el.parentElement;
+
+    (wrapper||el).classList.add('v25-hidden-volume-control');
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach(input=>{
+    const wrapper=
+      input.closest('label')||
+      input.closest('.field')||
+      input.closest('.setting-row')||
+      input.closest('.form-row')||
+      input.parentElement;
+
+    const text=(wrapper?.textContent||'')
+      .replace(/\s+/g,' ')
+      .trim();
+
+    if(
+      text.includes('음성')&&
+      (
+        text.includes('볼륨')||
+        text.includes('소리 크기')||
+        text.includes('소리크기')||
+        text.includes('크기 조절')
+      )
+    ){
+      wrapper?.classList.add('v25-hidden-volume-control');
+      input.disabled=true;
+      input.value='1';
+    }
+  });
+
+  [
+    'voiceVolume',
+    'speechVolume',
+    'soundVolume',
+    'voice_volume',
+    'speech_volume',
+    'sound_volume'
+  ].forEach(key=>{
+    try{
+      localStorage.removeItem(key);
+    }catch{}
+  });
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(v25RemoveVoiceVolumeControls,500);
+});
+
+const v25VolumeObserver=new MutationObserver(()=>{
+  v25RemoveVoiceVolumeControls();
+});
+
+window.addEventListener('load',()=>{
+  v25VolumeObserver.observe(document.body,{
+    childList:true,
+    subtree:true
+  });
+});
 </script>
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js">const V19_STATUS_SYNC=true;
 
@@ -1959,6 +2205,84 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
     setTimeout(v22BuildBoard,300);
   }
+});
+const V25_REMOVE_VOICE_VOLUME=true;
+
+function v25RemoveVoiceVolumeControls(){
+  const directSelectors=[
+    '[id*="voiceVolume" i]',
+    '[id*="speechVolume" i]',
+    '[id*="soundVolume" i]',
+    '[class*="voice-volume" i]',
+    '[class*="speech-volume" i]',
+    '[class*="sound-volume" i]'
+  ];
+
+  document.querySelectorAll(directSelectors.join(',')).forEach(el=>{
+    const wrapper=
+      el.closest('label')||
+      el.closest('.field')||
+      el.closest('.setting-row')||
+      el.closest('.form-row')||
+      el.parentElement;
+
+    (wrapper||el).classList.add('v25-hidden-volume-control');
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach(input=>{
+    const wrapper=
+      input.closest('label')||
+      input.closest('.field')||
+      input.closest('.setting-row')||
+      input.closest('.form-row')||
+      input.parentElement;
+
+    const text=(wrapper?.textContent||'')
+      .replace(/\s+/g,' ')
+      .trim();
+
+    if(
+      text.includes('음성')&&
+      (
+        text.includes('볼륨')||
+        text.includes('소리 크기')||
+        text.includes('소리크기')||
+        text.includes('크기 조절')
+      )
+    ){
+      wrapper?.classList.add('v25-hidden-volume-control');
+      input.disabled=true;
+      input.value='1';
+    }
+  });
+
+  [
+    'voiceVolume',
+    'speechVolume',
+    'soundVolume',
+    'voice_volume',
+    'speech_volume',
+    'sound_volume'
+  ].forEach(key=>{
+    try{
+      localStorage.removeItem(key);
+    }catch{}
+  });
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(v25RemoveVoiceVolumeControls,500);
+});
+
+const v25VolumeObserver=new MutationObserver(()=>{
+  v25RemoveVoiceVolumeControls();
+});
+
+window.addEventListener('load',()=>{
+  v25VolumeObserver.observe(document.body,{
+    childList:true,
+    subtree:true
+  });
 });
 </script>
 
@@ -3158,9 +3482,88 @@ document.addEventListener('visibilitychange',()=>{
     setTimeout(v22BuildBoard,300);
   }
 });
+const V25_REMOVE_VOICE_VOLUME=true;
+
+function v25RemoveVoiceVolumeControls(){
+  const directSelectors=[
+    '[id*="voiceVolume" i]',
+    '[id*="speechVolume" i]',
+    '[id*="soundVolume" i]',
+    '[class*="voice-volume" i]',
+    '[class*="speech-volume" i]',
+    '[class*="sound-volume" i]'
+  ];
+
+  document.querySelectorAll(directSelectors.join(',')).forEach(el=>{
+    const wrapper=
+      el.closest('label')||
+      el.closest('.field')||
+      el.closest('.setting-row')||
+      el.closest('.form-row')||
+      el.parentElement;
+
+    (wrapper||el).classList.add('v25-hidden-volume-control');
+  });
+
+  document.querySelectorAll('input[type="range"]').forEach(input=>{
+    const wrapper=
+      input.closest('label')||
+      input.closest('.field')||
+      input.closest('.setting-row')||
+      input.closest('.form-row')||
+      input.parentElement;
+
+    const text=(wrapper?.textContent||'')
+      .replace(/\s+/g,' ')
+      .trim();
+
+    if(
+      text.includes('음성')&&
+      (
+        text.includes('볼륨')||
+        text.includes('소리 크기')||
+        text.includes('소리크기')||
+        text.includes('크기 조절')
+      )
+    ){
+      wrapper?.classList.add('v25-hidden-volume-control');
+      input.disabled=true;
+      input.value='1';
+    }
+  });
+
+  [
+    'voiceVolume',
+    'speechVolume',
+    'soundVolume',
+    'voice_volume',
+    'speech_volume',
+    'sound_volume'
+  ].forEach(key=>{
+    try{
+      localStorage.removeItem(key);
+    }catch{}
+  });
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(v25RemoveVoiceVolumeControls,500);
+});
+
+const v25VolumeObserver=new MutationObserver(()=>{
+  v25RemoveVoiceVolumeControls();
+});
+
+window.addEventListener('load',()=>{
+  v25VolumeObserver.observe(document.body,{
+    childList:true,
+    subtree:true
+  });
+});
 </script>
 </body>
 </html>
+
 
 
 

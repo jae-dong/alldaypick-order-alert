@@ -1,51 +1,53 @@
-﻿올데이픽 주문알림 v23 쿠팡 취소·반품·교환 자동수집
+﻿올데이픽 주문알림 v25 음성 볼륨 조절 삭제
 
-추가 기능
+삭제되는 기능
 
-- 주문취소 자동수집
-- 반품요청 자동수집
-- 교환요청 자동수집
-- Firestore orders 문서에 저장
-- v22 상태판의 주문취소·반품요청·교환요청 숫자 자동 반영
-- 신규 취소·반품·교환 발생 시 휴대폰 푸시
-- HTTP 429 자동대기 유지
+- 음성 볼륨 슬라이더
+- 음성 소리 크기 조절 UI
+- 저장되어 있던 음성 볼륨 설정값
 
-호출 제한 안정화
+유지되는 기능
 
-10분마다 세 가지 중 하나만 순환 조회합니다.
-
-1회차 주문취소
-2회차 반품요청
-3회차 교환요청
-
-따라서 각 항목은 약 30분마다 갱신됩니다.
+- 휴대폰 푸시 알림
+- 브라우저 기본 알림음
+- 알림 권한
+- 알림 테스트
+- 쿠팡 주문 수집
+- 신규주문·발송대기·배송상태 동기화
+- 취소·반품·교환 자동수집
+- 상태 카드 필터
+- 쇼핑몰 연결현황 상단 배치
+- 주문 통계 위치 개선
 
 적용 방법
 
 1. ZIP 압축을 풉니다.
-2. apply-v23.cmd, apply-v23.ps1, v23-files 폴더를 프로젝트 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에 powershell 입력 후 실행:
 
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v23.ps1"
+2. 아래 두 파일을 기존 프로젝트 폴더에 복사합니다.
 
-4. GitHub Desktop:
+   apply-v25.cmd
+   apply-v25.ps1
+
+3. 프로젝트 폴더 주소창에 powershell 입력 후 실행합니다.
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v25.ps1"
+
+4. 성공 문구를 확인합니다.
+
+   SUCCESS: v25 voice volume control removed.
+
+5. GitHub Desktop에서
 
    Summary:
-   v23 취소 반품 교환 자동수집
+   v25 음성 볼륨 조절 삭제
 
    Commit to main
    Push origin
 
-5. 기존 npm run agent 창 Ctrl+C
-6. backend 폴더에서 npm run agent
+6. 배포 후 휴대폰 Chrome에서 사이트를 새로고침합니다.
 
-정상 로그 예시
+   https://jae-dong.github.io/alldaypick-order-alert/
 
-CS동기화 완료: 주문취소 발견 2, 신규 1, 상태변경 0
+7. 예전 화면이 계속 보이면 Chrome 사이트 설정에서 데이터 삭제 후 다시 접속합니다.
 
-참고
-
-- 결제완료 단계 취소와 출고중지 요청을 주문취소로 표시합니다.
-- 반품 접수 상태를 반품요청으로 표시합니다.
-- 교환 목록의 접수·진행·완료 상태를 모두 저장하되 상태판에서는 교환요청 항목에 합산합니다.
-- 문의사항 자동수집은 쿠팡 고객문의 API를 연결하는 다음 단계입니다.
+이번 버전은 화면 정리 패치이므로 npm run agent를 다시 시작할 필요가 없습니다.
