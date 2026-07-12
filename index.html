@@ -162,6 +162,88 @@
       .product-summary{grid-template-columns:1fr}
     }
   </style>
+  <style id="V19_STATUS_SYNC">
+    #legacyBackgroundPush{
+      display:none !important;
+    }
+
+    html,
+    body{
+      width:100% !important;
+      max-width:100% !important;
+      min-width:0 !important;
+      overflow-x:hidden !important;
+    }
+
+    body,
+    .app{
+      min-width:0 !important;
+      max-width:100% !important;
+      overflow-x:hidden !important;
+    }
+
+    .app > *,
+    .card,
+    .section,
+    .section-head,
+    .grid,
+    .market-list,
+    .home-two,
+    .event-grid,
+    .integration-grid,
+    .form,
+    .form label{
+      min-width:0 !important;
+      max-width:100% !important;
+    }
+
+    img,
+    svg,
+    video,
+    canvas,
+    iframe,
+    input,
+    select,
+    textarea,
+    button{
+      max-width:100% !important;
+    }
+
+    .event-grid{
+      grid-template-columns:repeat(6,minmax(0,1fr)) !important;
+    }
+
+    @media(max-width:800px){
+      .app{
+        width:100% !important;
+        max-width:100% !important;
+        padding-left:10px !important;
+        padding-right:10px !important;
+        margin:0 !important;
+      }
+
+      .event-grid{
+        grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+      }
+
+      .grid,
+      .market-list,
+      .home-two,
+      .integration-grid{
+        width:100% !important;
+        min-width:0 !important;
+        max-width:100% !important;
+      }
+
+      td,
+      th,
+      .compact-item strong,
+      .rank-item b{
+        overflow-wrap:anywhere;
+        word-break:break-word;
+      }
+    }
+  </style>
 </head>
 <body>
 <div class="app">
@@ -278,7 +360,7 @@
     </div>
   </section>
 
-  <section class="card section">
+  <section class="card section" id="legacyBackgroundPush">
     <div class="section-head"><h2>백그라운드 푸시</h2><span style="color:var(--muted);font-size:12px">사이트를 닫아도 알림</span></div>
     <div class="form">
       <label>웹 푸시 인증키(VAPID)
@@ -389,10 +471,290 @@
 <div class="toast" id="toast"></div>
 
 
-<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js">const V19_STATUS_SYNC=true;
+
+function findProcessCardByLabel(label){
+  const candidates=[
+    ...document.querySelectorAll('.event-card,.metric,.mini-card,.alert-row')
+  ];
+
+  return candidates.find(card=>{
+    const text=(card.textContent||'').replace(/\s+/g,' ').trim();
+    return text.startsWith(label+' ')||text===label||text.includes(label);
+  })||null;
+}
+
+function ensureShippingWaitCard(){
+  if(document.getElementById('shippingWaitCount')) return;
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(!newCard||!newCard.parentElement) return;
+
+  const card=document.createElement(newCard.tagName.toLowerCase());
+  card.className=newCard.className;
+  card.innerHTML='<span>발송대기</span><strong id="shippingWaitCount">0</strong>';
+  newCard.insertAdjacentElement('afterend',card);
+}
+
+function updateStatusCards(orders){
+  const newCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='ACCEPT'||order.status==='new')
+  ).length;
+
+  const shippingWaitCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='INSTRUCT'||order.status==='shipping_wait')
+  ).length;
+
+  ensureShippingWaitCard();
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(newCard){
+    const number=newCard.querySelector('strong');
+    if(number) number.textContent=String(newCount);
+  }
+
+  const wait=document.getElementById('shippingWaitCount');
+  if(wait) wait.textContent=String(shippingWaitCount);
+}
+
+function startV19StatusCounter(){
+  ensureShippingWaitCard();
+
+  const started=Date.now();
+  const timer=setInterval(()=>{
+    ensureShippingWaitCard();
+
+    if(typeof db!=='undefined'&&db&&typeof currentUser!=='undefined'&&currentUser){
+      clearInterval(timer);
+
+      db.collection('orders').onSnapshot(snapshot=>{
+        updateStatusCards(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));
+      },error=>console.error('상태카드 동기화 오류:',error));
+    }else if(Date.now()-started>15000){
+      clearInterval(timer);
+    }
+  },300);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(startV19StatusCounter,800);
+});
+</script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js">const V19_STATUS_SYNC=true;
+
+function findProcessCardByLabel(label){
+  const candidates=[
+    ...document.querySelectorAll('.event-card,.metric,.mini-card,.alert-row')
+  ];
+
+  return candidates.find(card=>{
+    const text=(card.textContent||'').replace(/\s+/g,' ').trim();
+    return text.startsWith(label+' ')||text===label||text.includes(label);
+  })||null;
+}
+
+function ensureShippingWaitCard(){
+  if(document.getElementById('shippingWaitCount')) return;
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(!newCard||!newCard.parentElement) return;
+
+  const card=document.createElement(newCard.tagName.toLowerCase());
+  card.className=newCard.className;
+  card.innerHTML='<span>발송대기</span><strong id="shippingWaitCount">0</strong>';
+  newCard.insertAdjacentElement('afterend',card);
+}
+
+function updateStatusCards(orders){
+  const newCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='ACCEPT'||order.status==='new')
+  ).length;
+
+  const shippingWaitCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='INSTRUCT'||order.status==='shipping_wait')
+  ).length;
+
+  ensureShippingWaitCard();
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(newCard){
+    const number=newCard.querySelector('strong');
+    if(number) number.textContent=String(newCount);
+  }
+
+  const wait=document.getElementById('shippingWaitCount');
+  if(wait) wait.textContent=String(shippingWaitCount);
+}
+
+function startV19StatusCounter(){
+  ensureShippingWaitCard();
+
+  const started=Date.now();
+  const timer=setInterval(()=>{
+    ensureShippingWaitCard();
+
+    if(typeof db!=='undefined'&&db&&typeof currentUser!=='undefined'&&currentUser){
+      clearInterval(timer);
+
+      db.collection('orders').onSnapshot(snapshot=>{
+        updateStatusCards(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));
+      },error=>console.error('상태카드 동기화 오류:',error));
+    }else if(Date.now()-started>15000){
+      clearInterval(timer);
+    }
+  },300);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(startV19StatusCounter,800);
+});
+</script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js">const V19_STATUS_SYNC=true;
+
+function findProcessCardByLabel(label){
+  const candidates=[
+    ...document.querySelectorAll('.event-card,.metric,.mini-card,.alert-row')
+  ];
+
+  return candidates.find(card=>{
+    const text=(card.textContent||'').replace(/\s+/g,' ').trim();
+    return text.startsWith(label+' ')||text===label||text.includes(label);
+  })||null;
+}
+
+function ensureShippingWaitCard(){
+  if(document.getElementById('shippingWaitCount')) return;
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(!newCard||!newCard.parentElement) return;
+
+  const card=document.createElement(newCard.tagName.toLowerCase());
+  card.className=newCard.className;
+  card.innerHTML='<span>발송대기</span><strong id="shippingWaitCount">0</strong>';
+  newCard.insertAdjacentElement('afterend',card);
+}
+
+function updateStatusCards(orders){
+  const newCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='ACCEPT'||order.status==='new')
+  ).length;
+
+  const shippingWaitCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='INSTRUCT'||order.status==='shipping_wait')
+  ).length;
+
+  ensureShippingWaitCard();
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(newCard){
+    const number=newCard.querySelector('strong');
+    if(number) number.textContent=String(newCount);
+  }
+
+  const wait=document.getElementById('shippingWaitCount');
+  if(wait) wait.textContent=String(shippingWaitCount);
+}
+
+function startV19StatusCounter(){
+  ensureShippingWaitCard();
+
+  const started=Date.now();
+  const timer=setInterval(()=>{
+    ensureShippingWaitCard();
+
+    if(typeof db!=='undefined'&&db&&typeof currentUser!=='undefined'&&currentUser){
+      clearInterval(timer);
+
+      db.collection('orders').onSnapshot(snapshot=>{
+        updateStatusCards(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));
+      },error=>console.error('상태카드 동기화 오류:',error));
+    }else if(Date.now()-started>15000){
+      clearInterval(timer);
+    }
+  },300);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(startV19StatusCounter,800);
+});
+</script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js">const V19_STATUS_SYNC=true;
+
+function findProcessCardByLabel(label){
+  const candidates=[
+    ...document.querySelectorAll('.event-card,.metric,.mini-card,.alert-row')
+  ];
+
+  return candidates.find(card=>{
+    const text=(card.textContent||'').replace(/\s+/g,' ').trim();
+    return text.startsWith(label+' ')||text===label||text.includes(label);
+  })||null;
+}
+
+function ensureShippingWaitCard(){
+  if(document.getElementById('shippingWaitCount')) return;
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(!newCard||!newCard.parentElement) return;
+
+  const card=document.createElement(newCard.tagName.toLowerCase());
+  card.className=newCard.className;
+  card.innerHTML='<span>발송대기</span><strong id="shippingWaitCount">0</strong>';
+  newCard.insertAdjacentElement('afterend',card);
+}
+
+function updateStatusCards(orders){
+  const newCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='ACCEPT'||order.status==='new')
+  ).length;
+
+  const shippingWaitCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='INSTRUCT'||order.status==='shipping_wait')
+  ).length;
+
+  ensureShippingWaitCard();
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(newCard){
+    const number=newCard.querySelector('strong');
+    if(number) number.textContent=String(newCount);
+  }
+
+  const wait=document.getElementById('shippingWaitCount');
+  if(wait) wait.textContent=String(shippingWaitCount);
+}
+
+function startV19StatusCounter(){
+  ensureShippingWaitCard();
+
+  const started=Date.now();
+  const timer=setInterval(()=>{
+    ensureShippingWaitCard();
+
+    if(typeof db!=='undefined'&&db&&typeof currentUser!=='undefined'&&currentUser){
+      clearInterval(timer);
+
+      db.collection('orders').onSnapshot(snapshot=>{
+        updateStatusCards(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));
+      },error=>console.error('상태카드 동기화 오류:',error));
+    }else if(Date.now()-started>15000){
+      clearInterval(timer);
+    }
+  },300);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(startV19StatusCounter,800);
+});
+</script>
 
 <script>
 const KEY='alldaypick_orders_v1';
@@ -1263,8 +1625,79 @@ document.addEventListener('visibilitychange',()=>{
 initCloud();
 renderAlertSettings();
 render();
+const V19_STATUS_SYNC=true;
+
+function findProcessCardByLabel(label){
+  const candidates=[
+    ...document.querySelectorAll('.event-card,.metric,.mini-card,.alert-row')
+  ];
+
+  return candidates.find(card=>{
+    const text=(card.textContent||'').replace(/\s+/g,' ').trim();
+    return text.startsWith(label+' ')||text===label||text.includes(label);
+  })||null;
+}
+
+function ensureShippingWaitCard(){
+  if(document.getElementById('shippingWaitCount')) return;
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(!newCard||!newCard.parentElement) return;
+
+  const card=document.createElement(newCard.tagName.toLowerCase());
+  card.className=newCard.className;
+  card.innerHTML='<span>발송대기</span><strong id="shippingWaitCount">0</strong>';
+  newCard.insertAdjacentElement('afterend',card);
+}
+
+function updateStatusCards(orders){
+  const newCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='ACCEPT'||order.status==='new')
+  ).length;
+
+  const shippingWaitCount=orders.filter(order=>
+    order.market==='쿠팡'&&
+    (order.sourceStatus==='INSTRUCT'||order.status==='shipping_wait')
+  ).length;
+
+  ensureShippingWaitCard();
+
+  const newCard=findProcessCardByLabel('신규주문');
+  if(newCard){
+    const number=newCard.querySelector('strong');
+    if(number) number.textContent=String(newCount);
+  }
+
+  const wait=document.getElementById('shippingWaitCount');
+  if(wait) wait.textContent=String(shippingWaitCount);
+}
+
+function startV19StatusCounter(){
+  ensureShippingWaitCard();
+
+  const started=Date.now();
+  const timer=setInterval(()=>{
+    ensureShippingWaitCard();
+
+    if(typeof db!=='undefined'&&db&&typeof currentUser!=='undefined'&&currentUser){
+      clearInterval(timer);
+
+      db.collection('orders').onSnapshot(snapshot=>{
+        updateStatusCards(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));
+      },error=>console.error('상태카드 동기화 오류:',error));
+    }else if(Date.now()-started>15000){
+      clearInterval(timer);
+    }
+  },300);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(startV19StatusCounter,800);
+});
 </script>
 </body>
 </html>
+
 
 

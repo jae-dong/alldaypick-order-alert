@@ -1,53 +1,60 @@
-﻿올데이픽 주문알림 v15 안전 적용본
+﻿올데이픽 주문알림 v19 상태 자동동기화 통합본
 
-이 버전은 현재 정상 작동 중인 index.html과 Firebase API 키를 바꾸지 않습니다.
-푸시 기능에 필요한 backend 파일과 sw.js만 교체합니다.
+이 버전에는 아직 적용하지 않은 v18 모바일 화면 수정도 함께 포함되어 있습니다.
+
+추가 기능
+
+1. 신규주문 옆에 발송대기 카드가 추가됩니다.
+2. 쿠팡 WING에서 신규주문을 확인해 상품준비중으로 변경하면,
+   다음 수집 시 웹 주문 상태가 발송대기로 자동 변경됩니다.
+3. 기존 주문 문서를 새로 중복 생성하지 않고 상태만 업데이트합니다.
+4. 10분 자동수집과 웹 즉시수집 모두 신규주문과 발송대기를 확인합니다.
+5. 중복 백그라운드 푸시 영역을 숨깁니다.
+6. 모바일 오른쪽 여백과 좌우 스크롤 문제를 함께 수정합니다.
 
 적용 방법
 
 1. ZIP 압축을 풉니다.
 
-2. 압축을 푼 폴더 안의 아래 3개를 기존 프로젝트 폴더 안에 복사합니다.
+2. 아래 3개를 기존 프로젝트 폴더 안에 복사합니다.
 
-   apply-v15.cmd
-   apply-v15.ps1
-   v15-files 폴더
+   apply-v19.cmd
+   apply-v19.ps1
+   v19-files 폴더
 
-   기존 프로젝트 폴더:
+   위치:
    문서\GitHub\alldaypick-order-alert
 
-3. alldaypick-order-alert 폴더 안에 들어간 apply-v15.cmd를 더블클릭합니다.
+3. CMD가 깨졌던 PC에서는 프로젝트 폴더 주소창에 powershell을 입력한 뒤
+   아래 명령으로 실행하는 것을 권장합니다.
 
-4. 아래 문구가 나오면 성공입니다.
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v19.ps1"
 
-   SUCCESS: v15 push files applied.
-   Firebase API configuration was preserved.
+4. 성공 문구를 확인합니다.
 
-5. GitHub Desktop에서 변경된 파일을 Commit 후 Push origin 합니다.
+   SUCCESS: v19 Coupang status sync installed.
 
-6. 실행 중인 로컬 수집기 창에서 Ctrl+C를 누릅니다.
+5. GitHub Desktop에서
 
-7. backend\start-local-agent.cmd를 다시 실행합니다.
+   Summary:
+   v19 신규주문 발송대기 자동동기화
 
-8. 로컬 수집기 화면 마지막에 다음 문구가 나오면 정상입니다.
+   Commit to main
+   Push origin
 
-   휴대폰 푸시 대기
+6. 실행 중인 npm run agent 창에서 Ctrl+C를 누릅니다.
 
-휴대폰 등록
+7. backend 폴더에서 다시 실행합니다.
 
-1. 실제 사이트 접속
-   https://jae-dong.github.io/alldaypick-order-alert/
+   npm run agent
 
-2. 백그라운드 푸시 영역에서 VAPID 공개키 입력
+정상 로그 예시
 
-3. 이 휴대폰 푸시 등록 누르기
+신규주문 3, 발송대기 5, 신규저장 0, 상태변경 1
 
-4. 알림 권한 허용
+중요
 
-5. 본인 휴대폰과 배우자 휴대폰에서 각각 한 번씩 등록
-
-주의
-
-- VAPID 공개키는 Firebase 웹 푸시 인증서에서 발급합니다.
-- Secret Key나 Firebase 서비스 계정 키는 휴대폰에 입력하지 않습니다.
-- 집 PC의 로컬 수집기 창이 켜져 있어야 주문 수집과 푸시 발송이 됩니다.
+- 이번 버전에서 실제 상태 자동연동되는 쇼핑몰은 현재 API가 연결된 쿠팡입니다.
+- 스마트스토어, 11번가, G마켓, 옥션, 롯데온은 각각 API 키와 주문 API를 연결한 뒤
+  동일한 방식으로 상태 자동동기화를 추가합니다.
+- 취소, 반품, 교환, 문의는 쿠팡에서도 별도 API이므로 다음 단계에서 순차 추가합니다.
