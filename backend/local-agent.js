@@ -8,14 +8,18 @@ dotenv.config({ path: path.resolve('.env.local') });
 
 function loadServiceAccount() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_FILE) {
-    return JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, 'utf8'));
+    return JSON.parse(
+      fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, 'utf8')
+    );
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   }
 
-  throw new Error('FIREBASE_SERVICE_ACCOUNT_FILE 또는 FIREBASE_SERVICE_ACCOUNT_JSON이 필요합니다.');
+  throw new Error(
+    'FIREBASE_SERVICE_ACCOUNT_FILE 또는 FIREBASE_SERVICE_ACCOUNT_JSON이 필요합니다.'
+  );
 }
 
 function coupangConfig() {
@@ -54,7 +58,10 @@ let running = false;
 let lastRequestId = '';
 
 async function getActiveDevices() {
-  const snapshot = await db.collection('devices').where('enabled', '==', true).get();
+  const snapshot = await db
+    .collection('devices')
+    .where('enabled', '==', true)
+    .get();
 
   return snapshot.docs
     .map(doc => ({ id: doc.id, ...doc.data() }))
@@ -83,7 +90,14 @@ async function removeInvalidTokens(devices, responses) {
 }
 
 async function sendPushForOrders(orders) {
-  if (!orders.length) {
+  const recentNewOrders = orders.filter(order => {
+    if (order.sourceStatus !== 'ACCEPT') return false;
+    const createdAt = new Date(order.datetime).getTime();
+    return Number.isFinite(createdAt) &&
+      Date.now() - createdAt <= 2 * 60 * 60 * 1000;
+  });
+
+  if (!recentNewOrders.length) {
     return { devices: 0, sent: 0, failed: 0 };
   }
 
@@ -97,7 +111,7 @@ async function sendPushForOrders(orders) {
   let sent = 0;
   let failed = 0;
 
-  for (const order of orders) {
+  for (const order of recentNewOrders) {
     const product = String(order.product || '상품')
       .replace(/\s+/g, ' ')
       .trim()
@@ -142,15 +156,13 @@ async function sendPushForOrders(orders) {
 }
 
 async function runCollect(source) {
-  const minutes = source === 'interval' ? 30 : 23 * 60 + 59;
+  const days = source === 'interval' ? 7 : 31;
 
   if (running) return;
   running = true;
 
   console.log(
-    `[${new Date().toISOString()}] ${source} 쿠팡 수집 시작 · 조회범위 ${
-      minutes === 1439 ? '최근 23시간 59분' : '최근 30분'
-    }`
+    `[${new Date().toISOString()}] ${source} 쿠팡 전체상태 동기화 시작 · 최근 ${days}일`
   );
 
   if (source === 'immediate') {
@@ -165,7 +177,7 @@ async function runCollect(source) {
   }
 
   try {
-    const result = await pollCoupang(db, coupangConfig(), minutes);
+    const result = await pollCoupang(db, coupangConfig(), { days });
     const pushResult = await sendPushForOrders(result.createdOrders || []);
 
     const safeResult = {
@@ -173,8 +185,13 @@ async function runCollect(source) {
       created: result.created,
       existing: result.existing,
       statusChanged: result.statusChanged,
-      accept: result.accept,
-      instruct: result.instruct,
+      ACCEPT: result.ACCEPT,
+      INSTRUCT: result.INSTRUCT,
+      DEPARTURE: result.DEPARTURE,
+      DELIVERING: result.DELIVERING,
+      FINAL_DELIVERY: result.FINAL_DELIVERY,
+      NONE_TRACKING: result.NONE_TRACKING,
+      days: result.days,
       checkedFrom: result.checkedFrom,
       checkedTo: result.checkedTo,
       push: pushResult
@@ -187,8 +204,9 @@ async function runCollect(source) {
           connected: true,
           lastRun: new Date().toISOString(),
           message:
-            `정상 조회 · 신규주문 ${result.accept}건 · 발송대기 ${result.instruct}건 · ` +
-            `신규저장 ${result.created}건 · 상태변경 ${result.statusChanged}건`,
+            `신규 ${result.ACCEPT} · 발송대기 ${result.INSTRUCT} · ` +
+            `배송지시 ${result.DEPARTURE} · 배송중 ${result.DELIVERING} · ` +
+            `배송완료 ${result.FINAL_DELIVERY} · 상태변경 ${result.statusChanged}`,
           lastResult: safeResult
         }
       },
@@ -208,8 +226,10 @@ async function runCollect(source) {
     }
 
     console.log(
-      `수집 완료: 신규주문 ${result.accept}, 발송대기 ${result.instruct}, ` +
-      `신규저장 ${result.created}, 상태변경 ${result.statusChanged}, 중복 ${result.existing}`
+      `동기화 완료: 신규 ${result.ACCEPT}, 발송대기 ${result.INSTRUCT}, ` +
+      `배송지시 ${result.DEPARTURE}, 배송중 ${result.DELIVERING}, ` +
+      `배송완료 ${result.FINAL_DELIVERY}, 직접배송 ${result.NONE_TRACKING}, ` +
+      `신규저장 ${result.created}, 상태변경 ${result.statusChanged}`
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -260,5 +280,5 @@ setInterval(
 
 console.log(
   `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · ` +
-  `신규주문/발송대기 상태 동기화 · 휴대폰 푸시 대기`
+  `쿠팡 전체 배송상태 자동동기화 · 휴대폰 푸시 대기`
 );
