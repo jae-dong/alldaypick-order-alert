@@ -1,48 +1,43 @@
-﻿올데이픽 주문알림 v33
+﻿올데이픽 주문알림 v34 11번가 연동 준비
 
-추가 기능
+이번 버전
 
-1. 스마트스토어 신규주문 휴대폰 푸시
-2. 쇼핑몰별 주문 현황 카드 클릭 필터
-3. 쿠팡 또는 스마트스토어 주문만 즉시 보기
-4. 구매확정 상태 카드 추가
-5. 주문 상세정보 확대
-   - 옵션
-   - 연락처
-   - 주소
-   - 배송메모
-   - 택배사
-   - 운송장번호
-6. 연락처 복사 버튼 추가
-7. 주문목록 40건씩 페이지 나누기
-8. 검색·쇼핑몰·상태 필터 변경 시 첫 페이지로 이동
-9. 스마트스토어 구매확정 상태 자동 반영
+- backend/.env.local에 11번가 Open API 키 입력 자리 추가
+- 11번가 API 키 등록 여부를 자동 확인
+- 웹의 쇼핑몰 연결 현황에 아래 상태 표시
 
-적용 방법
+  미등록:
+  Open API 키 등록 필요
+
+  등록:
+  API 키 등록 완료 · 주문 API 연결 대기
+
+- 기존 쿠팡·스마트스토어 동기화와 푸시는 그대로 유지
+
+적용
 
 1. ZIP 압축을 풉니다.
-2. apply-v33.cmd, apply-v33.ps1, v33-files 폴더를
-   기존 alldaypick-order-alert 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에서 powershell 실행:
+2. apply-v34.cmd, apply-v34.ps1, v34-files 폴더를 프로젝트 폴더에 복사합니다.
+3. 프로젝트 폴더 주소창에 powershell 입력 후 실행:
 
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v33.ps1"
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v34.ps1"
 
-4. backend 폴더에서 실행:
+4. backend/.env.local 마지막에 추가:
 
-   npm install
+   ELEVENST_API_KEY=실제_11번가_Open_API_Key
+   ELEVENST_SELLER_ID=판매자아이디
 
 5. GitHub Desktop:
-
-   Summary:
-   v33 스마트스토어 푸시 및 주문필터
-
-   Commit to main
-   Push origin
+   v34 11번가 연동 준비
+   Commit → Push origin
 
 6. 기존 npm run agent 창 Ctrl+C
 7. backend 폴더에서:
 
    npm run agent
 
-스마트스토어 신규주문이 새로 저장되면
-쿠팡과 같은 방식으로 휴대폰 푸시가 전송됩니다.
+중요
+
+11번가 주문 API의 실제 호출 코드는 발급받은 키의 사용 권한과
+Open API Center에서 제공되는 주문 API 문서를 확인한 뒤 연결합니다.
+키와 판매자 아이디는 채팅에 보내지 마세요.
