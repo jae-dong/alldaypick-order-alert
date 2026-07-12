@@ -1,54 +1,51 @@
-﻿올데이픽 주문알림 v22 실시간 상태판
+﻿올데이픽 주문알림 v23 쿠팡 취소·반품·교환 자동수집
 
-표시되는 상태
+추가 기능
 
-- 신규주문
-- 발송대기
-- 배송지시
-- 배송중
-- 배송완료
-- 직접배송
-- 주문취소
-- 교환요청
-- 반품요청
-- 문의사항
+- 주문취소 자동수집
+- 반품요청 자동수집
+- 교환요청 자동수집
+- Firestore orders 문서에 저장
+- v22 상태판의 주문취소·반품요청·교환요청 숫자 자동 반영
+- 신규 취소·반품·교환 발생 시 휴대폰 푸시
+- HTTP 429 자동대기 유지
 
-기능
+호출 제한 안정화
 
-- Firestore 주문 문서가 바뀌면 화면 숫자가 즉시 변경됩니다.
-- 새로고침하지 않아도 자동 반영됩니다.
-- 휴대폰에서는 2열로 표시됩니다.
-- PC에서는 5열로 표시됩니다.
-- 모바일 오른쪽 여백과 좌우 스크롤 방지 설정이 포함됩니다.
-- 기존 쿠팡 수집기, Firebase 설정, 푸시 기능은 건드리지 않습니다.
+10분마다 세 가지 중 하나만 순환 조회합니다.
+
+1회차 주문취소
+2회차 반품요청
+3회차 교환요청
+
+따라서 각 항목은 약 30분마다 갱신됩니다.
 
 적용 방법
 
-1. 압축을 풉니다.
-
-2. 아래 두 파일을 기존 프로젝트 폴더에 복사합니다.
-
-   apply-v22.cmd
-   apply-v22.ps1
-
+1. ZIP 압축을 풉니다.
+2. apply-v23.cmd, apply-v23.ps1, v23-files 폴더를 프로젝트 폴더에 복사합니다.
 3. 프로젝트 폴더 주소창에 powershell 입력 후 실행:
 
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v22.ps1"
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v23.ps1"
 
-4. 성공 문구 확인:
-
-   SUCCESS: v22 realtime status board installed.
-
-5. GitHub Desktop:
+4. GitHub Desktop:
 
    Summary:
-   v22 실시간 주문상태판
+   v23 취소 반품 교환 자동수집
 
    Commit to main
    Push origin
 
-6. GitHub Pages 배포 후 휴대폰 Chrome에서 사이트를 새로고침합니다.
+5. 기존 npm run agent 창 Ctrl+C
+6. backend 폴더에서 npm run agent
 
-   https://jae-dong.github.io/alldaypick-order-alert/
+정상 로그 예시
 
-7. 예전 화면이 계속 보이면 Chrome 사이트 설정에서 데이터 삭제 후 다시 접속합니다.
+CS동기화 완료: 주문취소 발견 2, 신규 1, 상태변경 0
+
+참고
+
+- 결제완료 단계 취소와 출고중지 요청을 주문취소로 표시합니다.
+- 반품 접수 상태를 반품요청으로 표시합니다.
+- 교환 목록의 접수·진행·완료 상태를 모두 저장하되 상태판에서는 교환요청 항목에 합산합니다.
+- 문의사항 자동수집은 쿠팡 고객문의 API를 연결하는 다음 단계입니다.
