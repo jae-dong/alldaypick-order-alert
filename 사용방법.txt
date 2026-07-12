@@ -1,35 +1,48 @@
-﻿올데이픽 주문알림 v31
+﻿올데이픽 주문알림 v33
 
-화면 개선
-- 쇼핑몰별 주문 현황을 쇼핑몰 연결 현황 바로 아래로 이동
-- 상태 카드 선택 색상 구분
-- 주문 행 클릭 시 상세정보 팝업
-- 주문번호·구매자·상품명·운송장번호 복사
-- 쇼핑몰 최근 확인시간을 방금 전·몇 분 전 형식으로 표시
+추가 기능
 
-다른 마켓 연동 시작
-- 스마트스토어 OAuth 인증 모듈 추가
-- 스마트스토어 변경 주문 조회 및 상세 주문 조회 구조 추가
-- 키 미등록 시 'API 키 등록 필요'
-- 키 등록 후 주문·배송·취소·반품·교환 상태를 Firestore에 저장
-- 11번가·G마켓·옥션·롯데온은 다음 순서로 연결
+1. 스마트스토어 신규주문 휴대폰 푸시
+2. 쇼핑몰별 주문 현황 카드 클릭 필터
+3. 쿠팡 또는 스마트스토어 주문만 즉시 보기
+4. 구매확정 상태 카드 추가
+5. 주문 상세정보 확대
+   - 옵션
+   - 연락처
+   - 주소
+   - 배송메모
+   - 택배사
+   - 운송장번호
+6. 연락처 복사 버튼 추가
+7. 주문목록 40건씩 페이지 나누기
+8. 검색·쇼핑몰·상태 필터 변경 시 첫 페이지로 이동
+9. 스마트스토어 구매확정 상태 자동 반영
 
-적용
-1. 압축을 풉니다.
-2. apply-v31.cmd, apply-v31.ps1, v31-files 폴더를 프로젝트 폴더에 복사합니다.
+적용 방법
+
+1. ZIP 압축을 풉니다.
+2. apply-v33.cmd, apply-v33.ps1, v33-files 폴더를
+   기존 alldaypick-order-alert 폴더에 복사합니다.
 3. 프로젝트 폴더 주소창에서 powershell 실행:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v31.ps1"
-4. backend 폴더에서 npm install
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v33.ps1"
+
+4. backend 폴더에서 실행:
+
+   npm install
+
 5. GitHub Desktop:
-   v31 주문상세 및 스마트스토어 연동시작
-   Commit → Push origin
-6. 기존 에이전트 Ctrl+C
-7. backend 폴더에서 npm run agent
 
-스마트스토어 연결
-backend\.env.local 마지막에 아래 두 줄을 추가합니다.
+   Summary:
+   v33 스마트스토어 푸시 및 주문필터
 
-NAVER_CLIENT_ID=커머스API 애플리케이션 ID
-NAVER_CLIENT_SECRET=커머스API 애플리케이션 시크릿
+   Commit to main
+   Push origin
 
-커머스API센터에서 애플리케이션을 등록하고 권한을 받은 키여야 합니다.
+6. 기존 npm run agent 창 Ctrl+C
+7. backend 폴더에서:
+
+   npm run agent
+
+스마트스토어 신규주문이 새로 저장되면
+쿠팡과 같은 방식으로 휴대폰 푸시가 전송됩니다.
