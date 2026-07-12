@@ -12,27 +12,34 @@ function loadServiceAccount() {
       fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, 'utf8')
     );
   }
+
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   }
+
   throw new Error(
     'FIREBASE_SERVICE_ACCOUNT_FILE 또는 FIREBASE_SERVICE_ACCOUNT_JSON이 필요합니다.'
   );
 }
 
-function config() {
-  const value = {
+function coupangConfig() {
+  const config = {
     accessKey: process.env.COUPANG_ACCESS_KEY,
     secretKey: process.env.COUPANG_SECRET_KEY,
     vendorId: process.env.COUPANG_VENDOR_ID
   };
-  if (!value.accessKey || !value.secretKey || !value.vendorId) {
+
+  if (!config.accessKey || !config.secretKey || !config.vendorId) {
     throw new Error('.env.local의 쿠팡 키 3개를 확인하세요.');
   }
-  return value;
+
+  return config;
 }
 
-admin.initializeApp({ credential: admin.credential.cert(loadServiceAccount()) });
+admin.initializeApp({
+  credential: admin.credential.cert(loadServiceAccount())
+});
+
 const db = admin.firestore();
 const messaging = admin.messaging();
 
@@ -50,8 +57,12 @@ const intervalMinutes = Math.max(
 let running = false;
 let lastRequestId = '';
 
-async function activeTokens() {
-  const snapshot = await db.collection('devices').where('enabled', '==', true).get();
+async function getActiveDevices() {
+  const snapshot = await db
+    .collection('devices')
+    .where('enabled', '==', true)
+    .get();
+
   return snapshot.docs
     .map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(device => typeof device.token === 'string' && device.token.length > 20);
@@ -64,23 +75,30 @@ async function removeInvalidTokens(devices, responses) {
   ]);
 
   const batch = db.batch();
-  let changed = 0;
+  let count = 0;
 
   responses.forEach((response, index) => {
     if (response.success) return;
+
     const code = response.error?.code;
     if (!invalidCodes.has(code)) return;
+
     batch.delete(db.collection('devices').doc(devices[index].id));
-    changed += 1;
+    count += 1;
   });
 
-  if (changed > 0) await batch.commit();
+  if (count > 0) {
+    await batch.commit();
+  }
 }
 
-async function sendPushForNewOrders(orders) {
-  if (!orders.length) return { devices: 0, sent: 0, failed: 0 };
+async function sendPushForOrders(orders) {
+  if (!orders.length) {
+    return { devices: 0, sent: 0, failed: 0 };
+  }
 
-  const devices = await activeTokens();
+  const devices = await getActiveDevices();
+
   if (!devices.length) {
     console.log('푸시 등록된 휴대폰이 없습니다.');
     return { devices: 0, sent: 0, failed: 0 };
@@ -90,28 +108,31 @@ async function sendPushForNewOrders(orders) {
   let failed = 0;
 
   for (const order of orders) {
-    const product =
-      String(order.product || '상품')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 90);
+    const product = String(order.product || '상품')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 90);
 
-    const message = {
+    const result = await messaging.sendEachForMulticast({
       tokens: devices.map(device => device.token),
+
       notification: {
         title: '쿠팡 신규주문',
         body: `${product} · ${Number(order.qty || 1)}개`
       },
+
       data: {
         market: '쿠팡',
         eventType: 'order',
         orderId: String(order.id),
         url: 'https://jae-dong.github.io/alldaypick-order-alert/'
       },
+
       webpush: {
         fcmOptions: {
           link: 'https://jae-dong.github.io/alldaypick-order-alert/'
         },
+
         notification: {
           icon: 'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
           badge: 'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
@@ -120,26 +141,31 @@ async function sendPushForNewOrders(orders) {
           vibrate: [200, 100, 200]
         }
       }
-    };
+    });
 
-    const result = await messaging.sendEachForMulticast(message);
     sent += result.successCount;
     failed += result.failureCount;
+
     await removeInvalidTokens(devices, result.responses);
   }
 
   console.log(`푸시 전송 완료: 성공 ${sent}, 실패 ${failed}`);
-  return { devices: devices.length, sent, failed };
+
+  return {
+    devices: devices.length,
+    sent,
+    failed
+  };
 }
 
 async function runCollect(source) {
   const minutes = source === 'interval' ? 30 : 24 * 60;
+
   if (running) return;
   running = true;
 
-  const startedAt = new Date().toISOString();
   console.log(
-    `[${startedAt}] ${source} 쿠팡 수집 시작 · 조회범위 ${
+    `[${new Date().toISOString()}] ${source} 쿠팡 수집 시작 · 조회범위 ${
       minutes === 1440 ? '최근 24시간' : '최근 30분'
     }`
   );
@@ -156,10 +182,10 @@ async function runCollect(source) {
   }
 
   try {
-    const result = await pollCoupang(db, config(), minutes);
-    const pushResult = await sendPushForNewOrders(result.createdOrders || []);
+    const result = await pollCoupang(db, coupangConfig(), minutes);
 
-    // Firestore에는 주문 전체 배열을 중복 저장하지 않도록 제외합니다.
+    const pushResult = await sendPushForOrders(result.createdOrders || []);
+
     const safeResult = {
       found: result.found,
       created: result.created,
@@ -175,7 +201,9 @@ async function runCollect(source) {
           name: '쿠팡',
           connected: true,
           lastRun: new Date().toISOString(),
-          message: `정상 조회 · 발견 ${result.found}건 · 신규 ${result.created}건 · 중복 ${result.existing}건`,
+          message:
+            `정상 조회 · 발견 ${result.found}건 · ` +
+            `신규 ${result.created}건 · 중복 ${result.existing}건`,
           lastResult: safeResult
         }
       },
@@ -195,7 +223,8 @@ async function runCollect(source) {
     }
 
     console.log(
-      `수집 완료: 발견 ${result.found}, 신규 ${result.created}, 중복 ${result.existing}`
+      `수집 완료: 발견 ${result.found}, ` +
+      `신규 ${result.created}, 중복 ${result.existing}`
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -220,7 +249,9 @@ async function runCollect(source) {
 commandRef.onSnapshot(
   snapshot => {
     if (!snapshot.exists) return;
+
     const data = snapshot.data() || {};
+
     if (
       data.status !== 'requested' ||
       !data.requestId ||
@@ -228,15 +259,23 @@ commandRef.onSnapshot(
     ) {
       return;
     }
+
     lastRequestId = data.requestId;
     runCollect('immediate');
   },
-  error => console.error('즉시수집 감시 오류:', error.message)
+  error => {
+    console.error('즉시수집 감시 오류:', error.message);
+  }
 );
 
 await runCollect('startup');
-setInterval(() => runCollect('interval'), intervalMinutes * 60 * 1000);
+
+setInterval(
+  () => runCollect('interval'),
+  intervalMinutes * 60 * 1000
+);
 
 console.log(
-  `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · 시작/웹 즉시수집은 최근 24시간 조회 · 푸시 대기`
+  `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · ` +
+  `시작/웹 즉시수집 최근 24시간 · 휴대폰 푸시 대기`
 );

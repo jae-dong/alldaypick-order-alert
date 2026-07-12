@@ -40,6 +40,7 @@ function makeAuthorization({ method, path, query, accessKey, secretKey }) {
 async function coupangRequest(config, path, params) {
   const method = 'GET';
   const query = new URLSearchParams(params).toString();
+
   const authorization = makeAuthorization({
     method,
     path,
@@ -60,6 +61,7 @@ async function coupangRequest(config, path, params) {
 
   const text = await response.text();
   let payload;
+
   try {
     payload = JSON.parse(text);
   } catch {
@@ -69,29 +71,37 @@ async function coupangRequest(config, path, params) {
   if (!response.ok) {
     throw new Error(`쿠팡 API HTTP ${response.status}: ${payload?.message || text}`);
   }
+
   if (payload?.code != null && Number(payload.code) !== 200) {
     throw new Error(`쿠팡 API 오류 ${payload.code}: ${payload.message || '알 수 없는 오류'}`);
   }
+
   return payload;
 }
 
 function normalize(orderSheets) {
   const output = [];
+
   for (const sheet of orderSheets) {
     const items = Array.isArray(sheet.orderItems) ? sheet.orderItems : [];
+
     for (const item of items) {
       const shippingCount = Number(item.shippingCount || 0);
       const cancelCount = Number(item.cancelCount || 0);
       const holdCount = Number(item.holdCountForCancel || 0);
       const qty = Math.max(0, shippingCount - cancelCount - holdCount);
+
       if (qty <= 0) continue;
 
       const orderNo = String(sheet.orderId);
       const vendorItemId = String(item.vendorItemId || item.sellerProductId || 'item');
       const id = `coupang-${orderNo}-${vendorItemId}`;
+
       const product =
         item.vendorItemName ||
-        [item.sellerProductName, item.sellerProductItemName].filter(Boolean).join(' ') ||
+        [item.sellerProductName, item.sellerProductItemName]
+          .filter(Boolean)
+          .join(' ') ||
         '쿠팡 상품';
 
       output.push({
@@ -113,6 +123,7 @@ function normalize(orderSheets) {
       });
     }
   }
+
   return output;
 }
 
@@ -123,13 +134,16 @@ async function saveWithoutDuplicates(db, orders) {
 
   for (const order of orders) {
     const ref = db.collection('orders').doc(order.id);
+
     const added = await db.runTransaction(async tx => {
       const snap = await tx.get(ref);
       if (snap.exists) return false;
+
       tx.create(ref, {
         ...order,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
+
       return true;
     });
 
@@ -141,12 +155,18 @@ async function saveWithoutDuplicates(db, orders) {
     }
   }
 
-  return { found: orders.length, created, existing, createdOrders };
+  return {
+    found: orders.length,
+    created,
+    existing,
+    createdOrders
+  };
 }
 
 export async function pollCoupang(db, config, minutes = 30) {
   const now = new Date();
   const from = new Date(now.getTime() - minutes * 60 * 1000);
+
   const path =
     `/v2/providers/openapi/apis/api/v5/vendors/${encodeURIComponent(config.vendorId)}/ordersheets`;
 

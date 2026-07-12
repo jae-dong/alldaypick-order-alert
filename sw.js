@@ -15,11 +15,13 @@ messaging.onBackgroundMessage(payload => {
       payload.notification?.body ||
       payload.data?.body ||
       '새 알림이 도착했습니다.',
+
     icon: './icon.svg',
     badge: './icon.svg',
     tag: payload.data?.orderId || 'alldaypick-order',
     renotify: true,
     vibrate: [200, 100, 200],
+
     data: {
       url:
         payload.data?.url ||
@@ -32,6 +34,7 @@ messaging.onBackgroundMessage(payload => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+
   const url =
     event.notification.data?.url ||
     'https://jae-dong.github.io/alldaypick-order-alert/';
@@ -46,6 +49,7 @@ self.addEventListener('notificationclick', event => {
             return client.focus();
           }
         }
+
         return clients.openWindow(url);
       })
   );
@@ -56,18 +60,24 @@ const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', event => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+
+  event.waitUntil(
+    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+  );
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
+
       caches
         .keys()
         .then(keys =>
           Promise.all(
-            keys.filter(key => key !== CACHE).map(key => caches.delete(key))
+            keys
+              .filter(key => key !== CACHE)
+              .map(key => caches.delete(key))
           )
         )
     ])
@@ -83,6 +93,8 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    caches
+      .match(event.request)
+      .then(cached => cached || fetch(event.request))
   );
 });
