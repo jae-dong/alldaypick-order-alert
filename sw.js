@@ -55,7 +55,7 @@ self.addEventListener('notificationclick', event => {
   );
 });
 
-const CACHE = 'order-alert-v15';
+const CACHE = 'order-alert-v22';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', event => {
@@ -98,3 +98,4 @@ self.addEventListener('fetch', event => {
       .then(cached => cached || fetch(event.request))
   );
 });
+

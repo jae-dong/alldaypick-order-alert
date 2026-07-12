@@ -1,16 +1,54 @@
-﻿올데이픽 주문알림 v21 API 안정화
+﻿올데이픽 주문알림 v22 실시간 상태판
 
-- 신규주문·발송대기: 매번 최근 2일 조회
-- 배송지시·배송중·배송완료·직접배송: 10분마다 한 상태씩 순환 조회
-- 각 배송상태는 약 40분마다 갱신
-- HTTP 429 발생 시 10초→20초→40초→60초 자동대기 후 재시도
-- 웹 화면과 푸시 기능은 기존 v20 유지
+표시되는 상태
 
-적용
+- 신규주문
+- 발송대기
+- 배송지시
+- 배송중
+- 배송완료
+- 직접배송
+- 주문취소
+- 교환요청
+- 반품요청
+- 문의사항
+
+기능
+
+- Firestore 주문 문서가 바뀌면 화면 숫자가 즉시 변경됩니다.
+- 새로고침하지 않아도 자동 반영됩니다.
+- 휴대폰에서는 2열로 표시됩니다.
+- PC에서는 5열로 표시됩니다.
+- 모바일 오른쪽 여백과 좌우 스크롤 방지 설정이 포함됩니다.
+- 기존 쿠팡 수집기, Firebase 설정, 푸시 기능은 건드리지 않습니다.
+
+적용 방법
+
 1. 압축을 풉니다.
-2. apply-v21.cmd, apply-v21.ps1, v21-files를 프로젝트 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에 powershell 입력 후:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v21.ps1"
-4. GitHub Desktop Commit → Push origin
-5. 기존 npm run agent 창 Ctrl+C
-6. backend 폴더에서 npm run agent
+
+2. 아래 두 파일을 기존 프로젝트 폴더에 복사합니다.
+
+   apply-v22.cmd
+   apply-v22.ps1
+
+3. 프로젝트 폴더 주소창에 powershell 입력 후 실행:
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v22.ps1"
+
+4. 성공 문구 확인:
+
+   SUCCESS: v22 realtime status board installed.
+
+5. GitHub Desktop:
+
+   Summary:
+   v22 실시간 주문상태판
+
+   Commit to main
+   Push origin
+
+6. GitHub Pages 배포 후 휴대폰 Chrome에서 사이트를 새로고침합니다.
+
+   https://jae-dong.github.io/alldaypick-order-alert/
+
+7. 예전 화면이 계속 보이면 Chrome 사이트 설정에서 데이터 삭제 후 다시 접속합니다.
