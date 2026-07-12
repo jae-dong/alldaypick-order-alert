@@ -1,13 +1,14 @@
 ﻿
 $ErrorActionPreference = "Stop"
-$project = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+$project = Split-Path -Parent $MyInvocation.MyCommand.Path
 $indexPath = Join-Path $project "index.html"
 $backendPath = Join-Path $project "backend"
-$sourceBackend = Join-Path $project "v15-files\backend"
+$patchBackend = Join-Path $project "v15-files\backend"
 
 if (!(Test-Path $indexPath)) {
-  Write-Host "ERROR: index.html not found. Copy this patch into the alldaypick-order-alert folder first." -ForegroundColor Red
+  Write-Host "ERROR: index.html not found." -ForegroundColor Red
+  Write-Host "Copy this package into the alldaypick-order-alert folder first."
   Read-Host "Press Enter"
   exit 1
 }
@@ -18,19 +19,37 @@ if (!(Test-Path $backendPath)) {
   exit 1
 }
 
+if (!(Test-Path $patchBackend)) {
+  Write-Host "ERROR: v15-files folder not found." -ForegroundColor Red
+  Read-Host "Press Enter"
+  exit 1
+}
+
 $html = Get-Content -Raw -Encoding UTF8 $indexPath
-$match = [regex]::Match($html, 'const\s+firebaseConfig\s*=\s*(\{.*?\});', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+$match = [regex]::Match(
+  $html,
+  'const\s+firebaseConfig\s*=\s*(\{.*?\});',
+  [System.Text.RegularExpressions.RegexOptions]::Singleline
+)
 
 if (!$match.Success) {
-  Write-Host "ERROR: firebaseConfig was not found in index.html." -ForegroundColor Red
+  Write-Host "ERROR: firebaseConfig not found in index.html." -ForegroundColor Red
   Read-Host "Press Enter"
   exit 1
 }
 
 $config = $match.Groups[1].Value
 
-Copy-Item (Join-Path $sourceBackend "coupang.js") (Join-Path $backendPath "coupang.js") -Force
-Copy-Item (Join-Path $sourceBackend "local-agent.js") (Join-Path $backendPath "local-agent.js") -Force
+Copy-Item `
+  (Join-Path $patchBackend "coupang.js") `
+  (Join-Path $backendPath "coupang.js") `
+  -Force
+
+Copy-Item `
+  (Join-Path $patchBackend "local-agent.js") `
+  (Join-Path $backendPath "local-agent.js") `
+  -Force
 
 $sw = @"
 importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
@@ -50,11 +69,13 @@ messaging.onBackgroundMessage(payload => {
       payload.notification?.body ||
       payload.data?.body ||
       '새 알림이 도착했습니다.',
+
     icon: './icon.svg',
     badge: './icon.svg',
     tag: payload.data?.orderId || 'alldaypick-order',
     renotify: true,
     vibrate: [200, 100, 200],
+
     data: {
       url:
         payload.data?.url ||
@@ -67,6 +88,7 @@ messaging.onBackgroundMessage(payload => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+
   const url =
     event.notification.data?.url ||
     'https://jae-dong.github.io/alldaypick-order-alert/';
@@ -81,6 +103,7 @@ self.addEventListener('notificationclick', event => {
             return client.focus();
           }
         }
+
         return clients.openWindow(url);
       })
   );
@@ -91,18 +114,24 @@ const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', event => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+
+  event.waitUntil(
+    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+  );
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
+
       caches
         .keys()
         .then(keys =>
           Promise.all(
-            keys.filter(key => key !== CACHE).map(key => caches.delete(key))
+            keys
+              .filter(key => key !== CACHE)
+              .map(key => caches.delete(key))
           )
         )
     ])
@@ -118,17 +147,23 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    caches
+      .match(event.request)
+      .then(cached => cached || fetch(event.request))
   );
 });
 "@
 
-Set-Content -Path (Join-Path $project "sw.js") -Value $sw -Encoding UTF8
+Set-Content `
+  -Path (Join-Path $project "sw.js") `
+  -Value $sw `
+  -Encoding UTF8
 
 Write-Host ""
-Write-Host "v15 push patch applied successfully." -ForegroundColor Green
-Write-Host "Current Firebase API configuration was preserved." -ForegroundColor Green
+Write-Host "SUCCESS: v15 push files applied." -ForegroundColor Green
+Write-Host "Firebase API configuration was preserved." -ForegroundColor Green
 Write-Host ""
 Write-Host "Next: Commit and Push with GitHub Desktop." -ForegroundColor Cyan
 Write-Host ""
+
 Read-Host "Press Enter"
