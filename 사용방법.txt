@@ -1,49 +1,20 @@
-﻿올데이픽 주문알림 v35 11번가 신규주문 실제 연동
+﻿올데이픽 주문알림 v37 11번가 상태 자동동기화
 
 추가 기능
+- 저장된 11번가 주문번호 상태 재조회
+- 발송대기·배송중·배송완료 자동반영
+- 주문취소·교환요청·반품요청 자동반영
+- 택배사·운송장번호 자동갱신
+- 20개씩 나누어 조회
 
-- 11번가 기간별 결제완료 주문목록 자동조회
-- 11번가 XML 응답 자동 변환
-- 신규주문 Firestore 저장
-- 웹의 11번가 주문건수 자동 반영
-- 쇼핑몰 카드에서 11번가만 필터
-- 11번가 신규주문 휴대폰 푸시
-- 주문번호, 상품명, 옵션, 수량, 구매자, 연락처, 주소, 금액 저장
-- 중복 주문은 다시 생성하지 않음
-- 429 발생 시 자동대기 후 재시도
+적용
+1. 압축 해제
+2. apply-v37.cmd, apply-v37.ps1, v37-files를 프로젝트 폴더에 복사
+3. PowerShell:
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v37.ps1"
+4. backend 폴더에서 npm install
+5. 기존 수집기 Ctrl+C
+6. npm run agent
 
-조회 범위
-
-- 프로그램 시작 또는 지금 수집: 최근 24시간
-- 자동수집: 최근 30분
-
-적용 방법
-
-1. ZIP 압축을 풉니다.
-2. apply-v35.cmd, apply-v35.ps1, v35-files 폴더를
-   기존 alldaypick-order-alert 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에서 PowerShell 실행:
-
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v35.ps1"
-
-4. backend 폴더에서:
-
-   npm install
-
-5. GitHub Desktop:
-
-   v35 11번가 신규주문 실제연동
-
-   Commit to main
-   Push origin
-
-6. 기존 npm run agent 창에서 Ctrl+C
-7. backend 폴더에서:
-
-   npm run agent
-
-정상 로그 예시
-
-11번가 동기화 완료: 발견 3, 신규 3, 상태변경 0
-
-오류가 나오면 검은 창의 11번가 오류 줄을 캡처해 보내주세요.
+정상 로그:
+11번가 동기화 완료: 발견 1, 신규 0, 상태확인 1, 상태변경 1
