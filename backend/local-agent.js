@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
@@ -159,14 +159,14 @@ async function sendPushForOrders(orders) {
 }
 
 async function runCollect(source) {
-  const minutes = source === 'interval' ? 30 : 24 * 60;
+  const minutes = source === 'interval' ? 30 : 23 * 60 + 59;
 
   if (running) return;
   running = true;
 
   console.log(
     `[${new Date().toISOString()}] ${source} 쿠팡 수집 시작 · 조회범위 ${
-      minutes === 1440 ? '최근 24시간' : '최근 30분'
+      minutes === 1439 ? '최근 23시간 59분' : '최근 30분'
     }`
   );
 
@@ -277,5 +277,6 @@ setInterval(
 
 console.log(
   `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · ` +
-  `시작/웹 즉시수집 최근 24시간 · 휴대폰 푸시 대기`
+  `시작/웹 즉시수집 최근 23시간 59분 · 휴대폰 푸시 대기`
 );
+
