@@ -1,7 +1,42 @@
-﻿importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
+﻿
+$ErrorActionPreference = "Stop"
+$project = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+$indexPath = Join-Path $project "index.html"
+$backendPath = Join-Path $project "backend"
+$sourceBackend = Join-Path $project "v15-files\backend"
+
+if (!(Test-Path $indexPath)) {
+  Write-Host "ERROR: index.html not found. Copy this patch into the alldaypick-order-alert folder first." -ForegroundColor Red
+  Read-Host "Press Enter"
+  exit 1
+}
+
+if (!(Test-Path $backendPath)) {
+  Write-Host "ERROR: backend folder not found." -ForegroundColor Red
+  Read-Host "Press Enter"
+  exit 1
+}
+
+$html = Get-Content -Raw -Encoding UTF8 $indexPath
+$match = [regex]::Match($html, 'const\s+firebaseConfig\s*=\s*(\{.*?\});', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+if (!$match.Success) {
+  Write-Host "ERROR: firebaseConfig was not found in index.html." -ForegroundColor Red
+  Read-Host "Press Enter"
+  exit 1
+}
+
+$config = $match.Groups[1].Value
+
+Copy-Item (Join-Path $sourceBackend "coupang.js") (Join-Path $backendPath "coupang.js") -Force
+Copy-Item (Join-Path $sourceBackend "local-agent.js") (Join-Path $backendPath "local-agent.js") -Force
+
+$sw = @"
+importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js');
 
-firebase.initializeApp({"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"});
+firebase.initializeApp($config);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(payload => {
@@ -86,3 +121,14 @@ self.addEventListener('fetch', event => {
     caches.match(event.request).then(cached => cached || fetch(event.request))
   );
 });
+"@
+
+Set-Content -Path (Join-Path $project "sw.js") -Value $sw -Encoding UTF8
+
+Write-Host ""
+Write-Host "v15 push patch applied successfully." -ForegroundColor Green
+Write-Host "Current Firebase API configuration was preserved." -ForegroundColor Green
+Write-Host ""
+Write-Host "Next: Commit and Push with GitHub Desktop." -ForegroundColor Cyan
+Write-Host ""
+Read-Host "Press Enter"

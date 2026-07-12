@@ -1,0 +1,26 @@
+올데이픽 주문알림 v15 푸시 패치
+
+이 패치는 현재 정상 작동 중인 index.html의 Firebase 설정을 그대로 보존합니다.
+
+적용 방법
+1. ZIP 압축을 풉니다.
+2. 아래 3개를 기존 alldaypick-order-alert 폴더 바로 안에 복사합니다.
+   - apply-v15.cmd
+   - apply-v15.ps1
+   - v15-files 폴더
+3. alldaypick-order-alert 폴더 안에서 apply-v15.cmd를 더블클릭합니다.
+4. 'v15 push patch applied successfully'가 나오면 완료입니다.
+5. GitHub Desktop에서 변경된 파일을 Commit → Push origin 합니다.
+6. 실행 중인 로컬 수집기 창을 Ctrl+C로 종료합니다.
+7. backend/start-local-agent.cmd를 다시 실행합니다.
+
+그 다음 휴대폰마다
+1. 실제 주문알림 사이트 접속
+2. Firebase에서 발급한 웹 푸시 인증키(VAPID)를 입력
+3. '이 휴대폰 푸시 등록' 누르기
+4. 알림 권한 허용
+
+주의
+- 본인 휴대폰과 배우자 휴대폰에서 각각 한 번씩 등록해야 합니다.
+- iPhone은 홈 화면에 사이트를 설치한 뒤 설치된 앱에서 알림을 허용해야 합니다.
+- 검은 로컬 수집기 창이 켜져 있어야 신규 주문 수집과 푸시 발송이 작동합니다.
