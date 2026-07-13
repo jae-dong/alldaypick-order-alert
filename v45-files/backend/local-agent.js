@@ -76,6 +76,91 @@ let smartstoreRunning=false;
 let claimIndex=0;
 const CLAIM_TYPES=['cancel','return','exchange'];
 
+
+function telegramConfigured(){
+  return Boolean(
+    String(process.env.TELEGRAM_BOT_TOKEN||'').trim() &&
+    String(process.env.TELEGRAM_CHAT_ID||'').trim()
+  );
+}
+
+async function sendTelegram(title,body){
+  if(!telegramConfigured()){
+    return {enabled:false,sent:0};
+  }
+
+  try{
+    const token=String(process.env.TELEGRAM_BOT_TOKEN).trim();
+    const chatId=String(process.env.TELEGRAM_CHAT_ID).trim();
+
+    const response=await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          chat_id:chatId,
+          text:`${title}\n${body}`,
+          disable_web_page_preview:true
+        })
+      }
+    );
+
+    const result=await response.json().catch(()=>({}));
+
+    if(!response.ok||result.ok===false){
+      throw new Error(
+        result.description||
+        `HTTP ${response.status}`
+      );
+    }
+
+    return {enabled:true,sent:1};
+  }catch(error){
+    console.error(
+      '텔레그램 전송 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+
+    return {enabled:true,sent:0};
+  }
+}
+
+async function cleanupInvalidPushTokens(list,result){
+  const invalidCodes=new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token'
+  ]);
+
+  const jobs=[];
+
+  result.responses.forEach((response,index)=>{
+    const code=response.error?.code;
+
+    if(!response.success&&invalidCodes.has(code)){
+      const device=list[index];
+
+      if(device?.id){
+        jobs.push(
+          db.collection('devices').doc(device.id).set({
+            enabled:false,
+            disabledReason:code,
+            disabledAt:new Date().toISOString()
+          },{merge:true})
+        );
+      }
+    }
+  });
+
+  if(jobs.length){
+    await Promise.allSettled(jobs);
+    console.log(`만료된 푸시 토큰 ${jobs.length}개 비활성화`);
+  }
+}
+
+
 async function devices(){
   const snap=await db.collection('devices').where('enabled','==',true).get();
   return snap.docs.map(d=>({id:d.id,...d.data()}))
@@ -91,9 +176,18 @@ async function sendPush(orders){
 
   if(!recent.length) return {devices:0,sent:0,failed:0};
 
+  for(const order of recent){
+    await sendTelegram(
+      '쿠팡 신규주문',
+      `${String(order.product||'상품').slice(0,90)} · `+
+      `${Number(order.qty||1)}개 · `+
+      `${Number(order.amount||0).toLocaleString('ko-KR')}원`
+    );
+  }
+
   const list=await devices();
   if(!list.length){
-    console.log('푸시 등록된 휴대폰이 없습니다.');
+    console.log('웹푸시 등록된 휴대폰이 없습니다. 텔레그램은 별도로 전송했습니다.');
     return {devices:0,sent:0,failed:0};
   }
 
@@ -112,6 +206,10 @@ async function sendPush(orders){
         url:'https://jae-dong.github.io/alldaypick-order-alert/'
       },
       webpush:{
+        headers:{
+          Urgency:'high',
+          TTL:'86400'
+        },
         fcmOptions:{link:'https://jae-dong.github.io/alldaypick-order-alert/'},
         notification:{
           icon:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
@@ -122,6 +220,7 @@ async function sendPush(orders){
         }
       }
     });
+    await cleanupInvalidPushTokens(list,result);
     sent+=result.successCount;
     failed+=result.failureCount;
   }
@@ -216,6 +315,10 @@ async function sendClaimPush(claims){
         url:'https://jae-dong.github.io/alldaypick-order-alert/'
       },
       webpush:{
+        headers:{
+          Urgency:'high',
+          TTL:'86400'
+        },
         fcmOptions:{link:'https://jae-dong.github.io/alldaypick-order-alert/'},
         notification:{
           icon:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
@@ -227,6 +330,7 @@ async function sendClaimPush(claims){
       }
     });
 
+    await cleanupInvalidPushTokens(list,result);
     sent+=result.successCount;
     failed+=result.failureCount;
   }
@@ -312,10 +416,23 @@ async function sendMarketplacePush(orders, marketName){
     return {devices:0,sent:0,failed:0};
   }
 
+  for(const order of recent){
+    const product=String(order.product||'상품')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,90);
+
+    await sendTelegram(
+      `${marketName} 신규주문`,
+      `${product} · ${Number(order.qty||1)}개 · `+
+      `${Number(order.amount||0).toLocaleString('ko-KR')}원`
+    );
+  }
+
   const list=await devices();
 
   if(!list.length){
-    console.log(`${marketName} 푸시 등록된 휴대폰이 없습니다.`);
+    console.log(`${marketName} 웹푸시 등록 휴대폰 없음 · 텔레그램은 별도 전송`);
     return {devices:0,sent:0,failed:0};
   }
 
@@ -344,6 +461,10 @@ async function sendMarketplacePush(orders, marketName){
       },
 
       webpush:{
+        headers:{
+          Urgency:'high',
+          TTL:'86400'
+        },
         fcmOptions:{
           link:'https://jae-dong.github.io/alldaypick-order-alert/'
         },
@@ -358,6 +479,7 @@ async function sendMarketplacePush(orders, marketName){
       }
     });
 
+    await cleanupInvalidPushTokens(list,result);
     sent+=result.successCount;
     failed+=result.failureCount;
   }
@@ -380,13 +502,6 @@ async function sendElevenstStatusPush(changes){
     return {devices:0,sent:0,failed:0};
   }
 
-  const list=await devices();
-
-  if(!list.length){
-    console.log('11번가 상태변경 푸시 등록된 휴대폰이 없습니다.');
-    return {devices:0,sent:0,failed:0};
-  }
-
   const titleMap={
     shipping_wait:'11번가 발송대기',
     delivering:'11번가 배송중',
@@ -396,6 +511,39 @@ async function sendElevenstStatusPush(changes){
     exchange_request:'11번가 교환요청',
     return_request:'11번가 반품요청'
   };
+
+  for(const order of changes){
+    const title=
+      titleMap[order.status] ||
+      `11번가 ${order.statusLabel||'상태변경'}`;
+
+    const product=String(order.product||'상품')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,80);
+
+    const reason=[
+      order.reason,
+      order.reasonDetail
+    ].filter(Boolean).join(' · ');
+
+    await sendTelegram(
+      title,
+      [
+        `${product} · ${Number(order.qty||1)}개`,
+        reason
+      ].filter(Boolean).join(' · ')
+    );
+  }
+
+  const list=await devices();
+
+  if(!list.length){
+    console.log('11번가 웹푸시 등록 휴대폰 없음 · 텔레그램은 별도 전송');
+    return {devices:0,sent:0,failed:0};
+  }
+
+
 
   let sent=0;
   let failed=0;
@@ -437,6 +585,10 @@ async function sendElevenstStatusPush(changes){
       },
 
       webpush:{
+        headers:{
+          Urgency:'high',
+          TTL:'86400'
+        },
         fcmOptions:{
           link:'https://jae-dong.github.io/alldaypick-order-alert/'
         },
@@ -451,6 +603,7 @@ async function sendElevenstStatusPush(changes){
       }
     });
 
+    await cleanupInvalidPushTokens(list,result);
     sent+=result.successCount;
     failed+=result.failureCount;
   }
@@ -650,13 +803,6 @@ async function sendLotteonStatusPush(changes){
     return {devices:0,sent:0,failed:0};
   }
 
-  const list=await devices();
-
-  if(!list.length){
-    console.log('롯데온 상태변경 푸시 등록된 휴대폰이 없습니다.');
-    return {devices:0,sent:0,failed:0};
-  }
-
   const titleMap={
     shipping_wait:'롯데온 발송대기',
     delivering:'롯데온 배송중',
@@ -666,6 +812,39 @@ async function sendLotteonStatusPush(changes){
     exchange_request:'롯데온 교환요청',
     return_request:'롯데온 반품요청'
   };
+
+  for(const order of changes){
+    const title=
+      titleMap[order.status] ||
+      `롯데온 ${order.statusLabel||'상태변경'}`;
+
+    const product=String(order.product||'상품')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,80);
+
+    const reason=[
+      order.reason,
+      order.reasonDetail
+    ].filter(Boolean).join(' · ');
+
+    await sendTelegram(
+      title,
+      [
+        `${product} · ${Number(order.qty||1)}개`,
+        reason
+      ].filter(Boolean).join(' · ')
+    );
+  }
+
+  const list=await devices();
+
+  if(!list.length){
+    console.log('롯데온 웹푸시 등록 휴대폰 없음 · 텔레그램은 별도 전송');
+    return {devices:0,sent:0,failed:0};
+  }
+
+
 
   let sent=0;
   let failed=0;
@@ -707,6 +886,10 @@ async function sendLotteonStatusPush(changes){
       },
 
       webpush:{
+        headers:{
+          Urgency:'high',
+          TTL:'86400'
+        },
         fcmOptions:{
           link:'https://jae-dong.github.io/alldaypick-order-alert/'
         },
@@ -721,6 +904,7 @@ async function sendLotteonStatusPush(changes){
       }
     });
 
+    await cleanupInvalidPushTokens(list,result);
     sent+=result.successCount;
     failed+=result.failureCount;
   }
