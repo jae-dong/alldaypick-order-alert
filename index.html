@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111827">
   <title>올데이픽 주문알림</title>
-  <link rel="manifest" href="./manifest.json?v=51">
+  <link rel="manifest" href="./manifest.json?v=52">
   <link rel="icon" href="./icon.svg">
   <style>
     :root{
@@ -29,6 +29,43 @@
     .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{padding:16px;border:1px solid var(--line);border-radius:10px;text-align:center}.stat span{font-size:12px;color:var(--muted);font-weight:800}.stat strong{display:block;font-size:22px;margin-top:6px}.rank{margin-top:10px}.rank-item{display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:10px 4px}.rank-item small{display:block;color:var(--muted);margin-top:3px}
     dialog{border:0;border-radius:14px;padding:0;max-width:min(560px,94vw);width:100%;box-shadow:0 24px 80px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(15,23,42,.55)}.modal{padding:18px}.modal h3{margin:0 0 12px}.form{display:grid;gap:8px}.modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.detail-grid{display:grid;grid-template-columns:100px 1fr;gap:9px 10px}.detail-grid dt{color:var(--muted);font-weight:800}.detail-grid dd{margin:0;overflow-wrap:anywhere}.copy-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:12px}.toast{position:fixed;left:50%;bottom:25px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:#111827;color:#fff;padding:10px 14px;border-radius:999px;font-size:12px;font-weight:800;transition:.2s;z-index:99}.toast.show{opacity:1;transform:translate(-50%,0)}.footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
     @media(max-width:800px){.app{padding:8px 8px 70px}.topbar{padding:13px;align-items:flex-start}.actions{max-width:150px}.btn{padding:8px 9px;font-size:12px}.integration-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric strong{font-size:25px}.alert-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.toolbar{grid-template-columns:1fr 1fr}.toolbar input{grid-column:1/-1}.shop-table{min-width:0}.shop-table thead{display:none}.shop-table,.shop-table tbody,.shop-table tr,.shop-table td{display:block;width:100%}.shop-table tr{padding:9px 10px;border-bottom:1px solid var(--line)}.shop-table td{border:0;padding:4px 0;text-align:left!important;display:grid;grid-template-columns:95px 1fr;gap:6px}.shop-table td::before{content:attr(data-label);color:var(--muted);font-weight:800}.shop-table td:first-child{display:block;font-size:14px;margin-bottom:4px}.shop-table td:first-child::before{display:none}.order-table{min-width:0}.order-table thead{display:none}.order-table,.order-table tbody,.order-table tr,.order-table td{display:block;width:100%}.order-table tr{border-bottom:1px solid var(--line);padding:9px 10px}.order-table td{border:0;padding:4px 0;text-align:left!important;display:grid;grid-template-columns:78px 1fr;gap:7px}.order-table td::before{content:attr(data-label);color:var(--muted);font-weight:800}.product-cell{max-width:none}.copy-grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:82px 1fr}}
+
+    .ops-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .ops-card{padding:14px;text-align:center}.ops-card span{display:block;color:var(--muted);font-size:12px;font-weight:900}
+    .ops-card strong{display:block;font-size:27px;margin-top:6px}.ops-card:nth-child(1) strong{color:var(--orange)}
+    .ops-card:nth-child(2) strong{color:var(--purple)}.ops-card:nth-child(3) strong{color:var(--green)}
+    .analytics-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:10px}
+    .analytics-card{border:1px solid var(--line);border-radius:12px;padding:13px;min-width:0}
+    .analytics-card h3{font-size:14px;margin:0 0 12px}
+    .hour-chart{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:12px;border-bottom:1px solid var(--line)}
+    .hour-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}
+    .hour-bar{width:100%;max-width:22px;min-height:2px;background:var(--blue);border-radius:5px 5px 0 0}
+    .hour-value{font-size:9px;font-weight:900;color:var(--blue)}
+    .hour-label{font-size:8px;color:var(--muted);white-space:nowrap}
+    .share-list,.top-list{display:grid;gap:8px}
+    .share-row{display:grid;grid-template-columns:86px 1fr 72px;align-items:center;gap:8px;font-size:11px}
+    .share-track{height:9px;background:#eef0f3;border-radius:999px;overflow:hidden}
+    .share-fill{height:100%;background:var(--purple);border-radius:999px}
+    .share-value{text-align:right;font-weight:900}
+    .top-row{display:grid;grid-template-columns:27px 1fr auto;gap:8px;align-items:center;padding:8px;background:#fafafa;border-radius:10px}
+    .top-no{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--ink);color:#fff;font-size:11px;font-weight:900}
+    .top-row strong{font-size:12px}.top-row small{display:block;color:var(--muted);margin-top:2px;font-size:10px}
+    .workflow-btns{display:flex;gap:4px;justify-content:center;flex-wrap:wrap}
+    .mini-btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 7px;font-size:11px;font-weight:900}
+    .mini-btn.starred{background:#fef3c7;border-color:#f59e0b}.mini-btn.done{background:#dcfce7;border-color:#10b981;color:#047857}
+    .order-row.important{box-shadow:inset 4px 0 #f59e0b}.order-row.processed{opacity:.65}
+    .workflow-panel{border-top:1px solid var(--line);margin-top:13px;padding-top:13px}
+    .workflow-flags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+    .note-area{width:100%;min-height:85px;border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical}
+    .note-actions{display:flex;justify-content:flex-end;margin-top:8px}
+    @media(max-width:800px){
+      .ops-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .analytics-grid{grid-template-columns:1fr}
+      .hour-chart{height:125px}
+      .share-row{grid-template-columns:75px 1fr 65px}
+      .workflow-btns{justify-content:flex-end}
+    }
+
   </style>
 </head>
 <body>
@@ -53,6 +90,13 @@
     <div class="card metric"><span>이번달 총매출</span><strong id="monthSales">0원</strong><small id="monthSalesNote">이번달 누적</small></div>
   </section>
 
+
+  <section class="ops-grid">
+    <div class="card ops-card"><span>오늘 출고 필요</span><strong id="dispatchDueCount">0</strong></div>
+    <div class="card ops-card"><span>중요 주문</span><strong id="importantCount">0</strong></div>
+    <div class="card ops-card"><span>처리 완료</span><strong id="processedCount">0</strong></div>
+  </section>
+
   <section class="card section">
     <div class="section-head"><h2>처리 알림</h2><span class="subtle" id="statusUpdated">실시간 동기화</span></div>
     <div class="alert-grid" id="statusGrid"></div>
@@ -65,6 +109,25 @@
     </div>
   </section>
 
+
+  <section class="card section">
+    <div class="section-head"><h2>오늘 분석</h2><span class="subtle">실시간 자동 집계</span></div>
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <h3>시간대별 주문</h3>
+        <div class="hour-chart" id="hourChart"></div>
+      </div>
+      <div class="analytics-card">
+        <h3>쇼핑몰별 오늘 매출</h3>
+        <div class="share-list" id="marketShare"></div>
+      </div>
+    </div>
+    <div class="analytics-card" style="margin-top:10px">
+      <h3>오늘 판매 TOP 10</h3>
+      <div class="top-list" id="todayTopProducts"></div>
+    </div>
+  </section>
+
   <nav class="tabs"><button class="tab active" id="ordersTab">주문 현황</button><button class="tab" id="statsTab">주문 통계</button></nav>
 
   <main>
@@ -72,7 +135,7 @@
       <section class="card section">
         <div id="filterBanner" class="filter-banner"><span id="filterText"></span><button class="btn" id="clearFilterBtn">전체 주문 보기</button></div>
         <div class="section-head"><h2>주문 목록</h2><span class="subtle" id="orderResultCount">0건</span></div>
-        <div class="toolbar"><input id="searchInput" placeholder="상품명, 주문번호, 구매자, 연락처 검색"><select id="marketFilter"><option value="">전체 쇼핑몰</option><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option></select><select id="readFilter"><option value="">전체 확인상태</option><option value="unread">미확인</option><option value="read">확인완료</option></select></div>
+        <div class="toolbar"><input id="searchInput" placeholder="상품명, 주문번호, 구매자, 연락처 검색"><select id="marketFilter"><option value="">전체 쇼핑몰</option><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option></select><select id="readFilter"><option value="">전체 확인상태</option><option value="unread">미확인</option><option value="read">확인완료</option></select><select id="workflowFilter"><option value="">전체 처리상태</option><option value="pending">미처리 주문</option><option value="important">중요 주문</option><option value="processed">처리 완료</option></select></div>
         <div class="table-wrap"><table class="order-table"><thead><tr><th>상태</th><th>일시</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead><tbody id="orderBody"></tbody></table></div>
         <div class="pagination"><button class="btn" id="prevPageBtn">이전</button><span id="pageInfo">1 / 1</span><button class="btn" id="nextPageBtn">다음</button></div>
       </section>
@@ -91,7 +154,15 @@
 
 <dialog id="orderDialog"><div class="modal"><h3>주문 직접 추가</h3><form class="form" id="orderForm"><select id="fEvent"><option value="order">신규주문</option><option value="cancel">주문취소</option><option value="exchange">교환요청</option><option value="return">반품요청</option><option value="inquiry">문의사항</option></select><select id="fMarket"><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option></select><input id="fOrderNo" placeholder="주문번호" required><input id="fProduct" placeholder="상품명" required><input id="fQty" type="number" min="1" value="1" required><input id="fBuyer" placeholder="구매자"><input id="fAmount" type="number" min="0" value="0"><div class="modal-actions"><button type="button" class="btn" id="cancelAddBtn">취소</button><button class="btn primary">저장</button></div></form></div></dialog>
 
-<dialog id="detailDialog"><div class="modal"><h3>주문 상세정보</h3><dl class="detail-grid" id="detailGrid"></dl><div class="copy-grid"><button class="btn" id="copyOrderNoBtn">주문번호 복사</button><button class="btn" id="copyBuyerBtn">구매자 복사</button><button class="btn" id="copyPhoneBtn">연락처 복사</button><button class="btn" id="copyProductBtn">상품명 복사</button><button class="btn" id="copyInvoiceBtn">운송장번호 복사</button></div><div class="modal-actions"><button class="btn primary" id="closeDetailBtn">닫기</button></div></div></dialog>
+<dialog id="detailDialog"><div class="modal"><h3>주문 상세정보</h3><dl class="detail-grid" id="detailGrid"></dl><div class="copy-grid"><button class="btn" id="copyOrderNoBtn">주문번호 복사</button><button class="btn" id="copyBuyerBtn">구매자 복사</button><button class="btn" id="copyPhoneBtn">연락처 복사</button><button class="btn" id="copyProductBtn">상품명 복사</button><button class="btn" id="copyInvoiceBtn">운송장번호 복사</button></div><div class="workflow-panel">
+      <div class="workflow-flags">
+        <button class="btn" id="detailStarBtn">☆ 중요 주문</button>
+        <button class="btn" id="detailProcessedBtn">처리 완료</button>
+      </div>
+      <textarea class="note-area" id="detailNote" placeholder="이 주문에 대한 메모를 입력하세요."></textarea>
+      <div class="note-actions"><button class="btn primary" id="saveNoteBtn">메모 저장</button></div>
+    </div>
+    <div class="modal-actions"><button class="btn primary" id="closeDetailBtn">닫기</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
@@ -130,6 +201,8 @@ function statusKey(o){
 }
 function labelFor(o){return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문'}
 function isUnread(o){return o.readStatus!=='read'}
+function isProcessed(o){return Boolean(o.workflowProcessed)}
+function isImportant(o){return Boolean(o.workflowImportant)}
 function isSalesOrder(o){const key=statusKey(o);return !['cancel','return','exchange','inquiry'].includes(key)||String(o.eventType||'order')==='order'}
 function relativeTime(value){if(!value)return'아직 실행되지 않음';const t=new Date(value).getTime();if(!Number.isFinite(t))return String(value);const s=Math.max(0,Math.floor((Date.now()-t)/1000));if(s<20)return'방금 전';if(s<60)return`${s}초 전`;const m=Math.floor(s/60);if(m<60)return`${m}분 전`;const h=Math.floor(m/60);if(h<24)return`${h}시간 전`;return`${Math.floor(h/24)}일 전`}
 
@@ -157,36 +230,235 @@ function renderMarkets(){
   $('marketUpdated').textContent='오늘 기준 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
 }
 function filteredOrders(){
-  const q=$('searchInput').value.trim().toLowerCase(),market=$('marketFilter').value,read=$('readFilter').value;
-  return [...orders].filter(o=>{const hit=!q||[o.product,o.orderNo,o.buyer,o.phone,o.invoiceNumber].some(v=>String(v||'').toLowerCase().includes(q));return hit&&(!market||o.market===market)&&(!activeMarket||o.market===activeMarket)&&(!activeStatus||statusKey(o)===activeStatus)&&(!read||(read==='unread'?isUnread(o):!isUnread(o)))}).sort((a,b)=>dateValue(b).localeCompare(dateValue(a)));
+  const q=$('searchInput').value.trim().toLowerCase();
+  const market=$('marketFilter').value;
+  const read=$('readFilter').value;
+  const workflow=$('workflowFilter').value;
+
+  return [...orders].filter(o=>{
+    const hit=!q||[
+      o.product,o.orderNo,o.buyer,o.phone,o.invoiceNumber,o.workflowNote
+    ].some(v=>String(v||'').toLowerCase().includes(q));
+
+    const workflowHit=
+      !workflow ||
+      (workflow==='pending'&&!isProcessed(o)) ||
+      (workflow==='important'&&isImportant(o)) ||
+      (workflow==='processed'&&isProcessed(o));
+
+    return hit &&
+      (!market||o.market===market) &&
+      (!activeMarket||o.market===activeMarket) &&
+      (!activeStatus||statusKey(o)===activeStatus) &&
+      (!read||(read==='unread'?isUnread(o):!isUnread(o))) &&
+      workflowHit;
+  }).sort((a,b)=>{
+    if(isImportant(a)!==isImportant(b)) return isImportant(a)?-1:1;
+    if(isProcessed(a)!==isProcessed(b)) return isProcessed(a)?1:-1;
+    return dateValue(b).localeCompare(dateValue(a));
+  });
 }
 function renderOrders(){
-  const all=filteredOrders(),pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));currentPage=Math.min(Math.max(currentPage,1),pages);const list=all.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
-  $('orderResultCount').textContent=all.length+'건';const labels=[];if(activeMarket)labels.push(activeMarket);if(activeStatus)labels.push(Object.fromEntries(STATUS_ITEMS)[activeStatus]);$('filterBanner').classList.toggle('active',labels.length>0);$('filterText').textContent=labels.length?labels.join(' · ')+'만 표시 중':'';
-  $('orderBody').innerHTML=list.length?list.map(o=>`<tr class="order-row" data-id="${escapeHtml(o.id)}"><td data-label="상태"><span class="status-pill">${escapeHtml(labelFor(o))}</span></td><td data-label="일시">${escapeHtml(dateValue(o).replace('T',' ').slice(0,16))}</td><td data-label="쇼핑몰">${escapeHtml(o.market||'')}</td><td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td><td data-label="상품명" class="product-cell">${escapeHtml(o.product||'상품명 없음')}</td><td data-label="수량">${Number(o.qty||0)}</td><td data-label="구매자">${escapeHtml(o.buyer||'')}</td><td data-label="금액">${fmt(o.amount)}</td><td data-label="관리"><button class="btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></td></tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
-  $('orderBody').querySelectorAll('.read-btn').forEach(btn=>btn.onclick=e=>{e.stopPropagation();toggleRead(btn.dataset.id)});$('orderBody').querySelectorAll('.order-row').forEach(row=>row.onclick=e=>{if(!e.target.closest('button'))openDetail(row.dataset.id)});
-  $('pageInfo').textContent=`${currentPage} / ${pages}`;$('prevPageBtn').disabled=currentPage<=1;$('nextPageBtn').disabled=currentPage>=pages;
+  const all=filteredOrders();
+  const pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
+  currentPage=Math.min(Math.max(currentPage,1),pages);
+  const list=all.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
+
+  $('orderResultCount').textContent=all.length+'건';
+
+  const labels=[];
+  if(activeMarket) labels.push(activeMarket);
+  if(activeStatus) labels.push(Object.fromEntries(STATUS_ITEMS)[activeStatus]);
+  if($('workflowFilter').value==='pending') labels.push('미처리');
+  if($('workflowFilter').value==='important') labels.push('중요');
+  if($('workflowFilter').value==='processed') labels.push('처리 완료');
+
+  $('filterBanner').classList.toggle('active',labels.length>0);
+  $('filterText').textContent=labels.length?labels.join(' · ')+'만 표시 중':'';
+
+  $('orderBody').innerHTML=list.length?list.map(o=>`
+    <tr class="order-row ${isImportant(o)?'important':''} ${isProcessed(o)?'processed':''}" data-id="${escapeHtml(o.id)}">
+      <td data-label="상태"><span class="status-pill">${escapeHtml(labelFor(o))}</span></td>
+      <td data-label="일시">${escapeHtml(dateValue(o).replace('T',' ').slice(0,16))}</td>
+      <td data-label="쇼핑몰">${escapeHtml(o.market||'')}</td>
+      <td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td>
+      <td data-label="상품명" class="product-cell">${isImportant(o)?'⭐ ':''}${escapeHtml(o.product||'상품명 없음')}${o.workflowNote?`<small style="display:block;color:var(--muted);margin-top:4px">${escapeHtml(o.workflowNote)}</small>`:''}</td>
+      <td data-label="수량">${Number(o.qty||0)}</td>
+      <td data-label="구매자">${escapeHtml(o.buyer||'')}</td>
+      <td data-label="금액">${fmt(o.amount)}</td>
+      <td data-label="관리">
+        <div class="workflow-btns">
+          <button class="mini-btn star-btn ${isImportant(o)?'starred':''}" data-id="${escapeHtml(o.id)}">${isImportant(o)?'★':'☆'}</button>
+          <button class="mini-btn process-btn ${isProcessed(o)?'done':''}" data-id="${escapeHtml(o.id)}">${isProcessed(o)?'완료':'처리'}</button>
+          <button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button>
+        </div>
+      </td>
+    </tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
+
+  $('orderBody').querySelectorAll('.read-btn').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    toggleRead(btn.dataset.id);
+  });
+
+  $('orderBody').querySelectorAll('.star-btn').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    toggleImportant(btn.dataset.id);
+  });
+
+  $('orderBody').querySelectorAll('.process-btn').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    toggleProcessed(btn.dataset.id);
+  });
+
+  $('orderBody').querySelectorAll('.order-row').forEach(row=>row.onclick=e=>{
+    if(!e.target.closest('button')) openDetail(row.dataset.id);
+  });
+
+  $('pageInfo').textContent=`${currentPage} / ${pages}`;
+  $('prevPageBtn').disabled=currentPage<=1;
+  $('nextPageBtn').disabled=currentPage>=pages;
 }
 function renderStats(){
   const period=$('statsPeriod').value,cut=period==='all'?0:Date.now()-Number(period)*86400000;const list=orders.filter(isSalesOrder).filter(o=>{const t=new Date(dateValue(o)).getTime();return !cut||t>=cut});
   $('statOrders').textContent=list.length+'건';$('statQty').textContent=list.reduce((s,o)=>s+Number(o.qty||0),0)+'개';$('statSales').textContent=fmt(list.reduce((s,o)=>s+Number(o.amount||0),0));
   const map={};list.forEach(o=>{const n=o.product||'상품명 없음';if(!map[n])map[n]={count:0,qty:0,sales:0};map[n].count++;map[n].qty+=Number(o.qty||0);map[n].sales+=Number(o.amount||0)});$('productRank').innerHTML=Object.entries(map).sort((a,b)=>b[1].count-a[1].count).slice(0,10).map(([name,v],i)=>`<div class="rank-item"><strong>${i+1}</strong><div><strong>${escapeHtml(name)}</strong><small>주문 ${v.count}건 · ${v.qty}개</small></div><strong>${fmt(v.sales)}</strong></div>`).join('');
 }
-function render(){renderMetrics();renderStatus();renderMarkets();renderOrders();renderStats();renderIntegrations()}
+
+function renderOperations(){
+  const today=todayKey();
+  const todayOrders=orders.filter(o=>orderDay(o)===today);
+  $('dispatchDueCount').textContent=todayOrders.filter(o=>['new','shipping_wait'].includes(statusKey(o))&&!isProcessed(o)).length;
+  $('importantCount').textContent=orders.filter(isImportant).length;
+  $('processedCount').textContent=todayOrders.filter(isProcessed).length;
+}
+
+function renderTodayAnalytics(){
+  const today=todayKey();
+  const list=orders.filter(o=>orderDay(o)===today&&isSalesOrder(o));
+
+  const hourly=Array.from({length:24},()=>0);
+  list.forEach(o=>{
+    const d=new Date(dateValue(o));
+    if(!Number.isNaN(d.getTime())){
+      const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).format(d));
+      if(hour>=0&&hour<24) hourly[hour]++;
+    }
+  });
+
+  const maxHour=Math.max(1,...hourly);
+  $('hourChart').innerHTML=hourly.map((count,hour)=>`
+    <div class="hour-col" title="${hour}시 ${count}건">
+      <span class="hour-value">${count||''}</span>
+      <div class="hour-bar" style="height:${Math.max(2,Math.round(count/maxHour*100))}%"></div>
+      <span class="hour-label">${hour%3===0?hour+'시':''}</span>
+    </div>`).join('');
+
+  const marketMap={};
+  list.forEach(o=>{
+    const key=o.market||'기타';
+    marketMap[key]=(marketMap[key]||0)+Number(o.amount||0);
+  });
+
+  const totalSales=Object.values(marketMap).reduce((s,v)=>s+v,0)||1;
+  $('marketShare').innerHTML=Object.entries(marketMap)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([market,sales])=>`
+      <div class="share-row">
+        <strong>${escapeHtml(market)}</strong>
+        <div class="share-track"><div class="share-fill" style="width:${Math.max(2,sales/totalSales*100)}%"></div></div>
+        <span class="share-value">${Math.round(sales/totalSales*100)}%</span>
+      </div>`).join('')||'<span class="subtle">오늘 매출이 없습니다.</span>';
+
+  const productMap={};
+  list.forEach(o=>{
+    const name=o.product||'상품명 없음';
+    if(!productMap[name]) productMap[name]={orders:0,qty:0,sales:0};
+    productMap[name].orders++;
+    productMap[name].qty+=Number(o.qty||0);
+    productMap[name].sales+=Number(o.amount||0);
+  });
+
+  $('todayTopProducts').innerHTML=Object.entries(productMap)
+    .sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales)
+    .slice(0,10)
+    .map(([name,v],index)=>`
+      <div class="top-row">
+        <span class="top-no">${index+1}</span>
+        <div><strong>${escapeHtml(name)}</strong><small>${v.orders}건 · ${v.qty}개</small></div>
+        <strong>${fmt(v.sales)}</strong>
+      </div>`).join('')||'<span class="subtle">오늘 판매 상품이 없습니다.</span>';
+}
+
+async function toggleImportant(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o)return;
+  await db.collection('orders').doc(id).set({
+    workflowImportant:!isImportant(o),
+    workflowUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+}
+
+async function toggleProcessed(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o)return;
+  await db.collection('orders').doc(id).set({
+    workflowProcessed:!isProcessed(o),
+    workflowProcessedAt:!isProcessed(o)?firebase.firestore.FieldValue.serverTimestamp():null,
+    workflowUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+}
+
+async function saveCurrentNote(){
+  if(!currentDetail)return;
+  await db.collection('orders').doc(currentDetail.id).set({
+    workflowNote:$('detailNote').value.trim(),
+    workflowUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+  toast('메모 저장 완료');
+}
+
+function render(){renderMetrics();renderStatus();renderMarkets();renderOrders();renderStats();renderIntegrations();renderOperations();renderTodayAnalytics()}
 
 async function toggleRead(id){const o=orders.find(x=>x.id===id);if(!o)return;await db.collection('orders').doc(id).set({readStatus:isUnread(o)?'read':'unread',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function showOrdersTab(){$('ordersTab').classList.add('active');$('statsTab').classList.remove('active');$('ordersPanel').classList.add('active');$('statsPanel').classList.remove('active')}
 function showStatsTab(){$('statsTab').classList.add('active');$('ordersTab').classList.remove('active');$('statsPanel').classList.add('active');$('ordersPanel').classList.remove('active')}
 function copyText(text,label){if(!text)return toast(label+' 정보가 없습니다.');navigator.clipboard.writeText(String(text)).then(()=>toast(label+' 복사 완료')).catch(()=>toast(label+' 복사 실패'))}
-function openDetail(id){const o=orders.find(x=>x.id===id);if(!o)return;currentDetail=o;const fields=[['상태',labelFor(o)],['쇼핑몰',o.market||''],['주문번호',o.orderNo||''],['상품명',o.product||''],['옵션',o.option||''],['수량',Number(o.qty||0)],['구매자',o.buyer||''],['연락처',o.phone||''],['주소',o.address||''],['배송메모',o.deliveryMemo||''],['금액',fmt(o.amount)],['주문시간',dateValue(o).replace('T',' ').slice(0,19)],['택배사',o.deliveryCompanyName||''],['운송장번호',o.invoiceNumber||''],['사유',o.reason||''],['상세사유',o.reasonDetail||'']];$('detailGrid').innerHTML=fields.map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('');$('detailDialog').showModal()}
+function openDetail(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o)return;
+
+  currentDetail=o;
+
+  const fields=[
+    ['상태',labelFor(o)],['쇼핑몰',o.market||''],['주문번호',o.orderNo||''],
+    ['상품명',o.product||''],['옵션',o.option||''],['수량',Number(o.qty||0)],
+    ['구매자',o.buyer||''],['연락처',o.phone||''],['주소',o.address||''],
+    ['배송메모',o.deliveryMemo||''],['금액',fmt(o.amount)],
+    ['주문시간',dateValue(o).replace('T',' ').slice(0,19)],
+    ['택배사',o.deliveryCompanyName||''],['운송장번호',o.invoiceNumber||''],
+    ['사유',o.reason||''],['상세사유',o.reasonDetail||'']
+  ];
+
+  $('detailGrid').innerHTML=fields.map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('');
+  $('detailNote').value=o.workflowNote||'';
+  $('detailStarBtn').textContent=isImportant(o)?'★ 중요 주문 해제':'☆ 중요 주문';
+  $('detailStarBtn').classList.toggle('primary',isImportant(o));
+  $('detailProcessedBtn').textContent=isProcessed(o)?'처리 완료 해제':'처리 완료';
+  $('detailProcessedBtn').classList.toggle('primary',isProcessed(o));
+  $('detailDialog').showModal();
+}
+
 async function requestCollect(){if(!currentUser)return toast('클라우드 연결 후 다시 시도하세요.');$('collectStatus').textContent='즉시 수집 요청 중';await db.collection('system').doc('commands').collection('requests').doc('coupang').set({requestId:`${currentUser.uid}-${Date.now()}`,market:'coupang',reason:'manual',requestedBy:currentUser.uid,requestedAt:firebase.firestore.FieldValue.serverTimestamp(),status:'requested',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
 async function initCloud(){try{await auth.signInAnonymously();auth.onAuthStateChanged(user=>{if(!user)return;currentUser=user;$('cloudStatus').textContent='클라우드 연결됨';$('cloudDot').classList.add('ok');if(unsubscribeOrders)unsubscribeOrders();unsubscribeOrders=db.collection('orders').onSnapshot(s=>{orders=s.docs.map(d=>({id:d.id,...d.data()}));render()});db.collection('system').doc('integrations').onSnapshot(d=>{integrations=d.exists?d.data():{};renderIntegrations();renderMarkets()});watchCollect()})}catch(e){$('cloudStatus').textContent='클라우드 연결 실패: '+e.message}}
 
-$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=renderStats;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;
+$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=renderStats;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;
 $('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
 $('closeDetailBtn').onclick=()=>$('detailDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=51').catch(console.warn);
+$('detailStarBtn').onclick=async()=>{if(!currentDetail)return;await toggleImportant(currentDetail.id);$('detailDialog').close()};
+$('detailProcessedBtn').onclick=async()=>{if(!currentDetail)return;await toggleProcessed(currentDetail.id);$('detailDialog').close()};
+$('saveNoteBtn').onclick=saveCurrentNote;
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=52').catch(console.warn);
 render();initCloud();
 </script>
 </body>

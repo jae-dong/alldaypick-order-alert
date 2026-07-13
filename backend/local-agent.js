@@ -948,6 +948,142 @@ async function run(source){
   }
 }
 
+
+function koreaParts(date=new Date()){
+  const parts=new Intl.DateTimeFormat(
+    'en-CA',
+    {
+      timeZone:'Asia/Seoul',
+      year:'numeric',
+      month:'2-digit',
+      day:'2-digit',
+      hour:'2-digit',
+      minute:'2-digit',
+      hour12:false
+    }
+  ).formatToParts(date);
+
+  return Object.fromEntries(
+    parts
+      .filter(part=>part.type!=='literal')
+      .map(part=>[part.type,part.value])
+  );
+}
+
+function koreaDateKey(date=new Date()){
+  const p=koreaParts(date);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+async function sendDailyTelegramSummary(kind){
+  if(!telegramConfigured()) return;
+
+  const today=koreaDateKey();
+  const ref=db.collection('system').doc('telegramDailySummary');
+  const snap=await ref.get();
+  const state=snap.exists?snap.data()||{}:{};
+  const sentKey=`${today}-${kind}`;
+
+  if(state.lastSentKey===sentKey) return;
+
+  const ordersSnap=await db.collection('orders').get();
+  const rows=ordersSnap.docs
+    .map(doc=>({id:doc.id,...doc.data()}))
+    .filter(order=>{
+      const raw=
+        order.datetime ||
+        order.createdAt?.toDate?.()?.toISOString?.() ||
+        '';
+
+      if(!raw) return false;
+
+      const date=new Date(raw);
+      return !Number.isNaN(date.getTime())&&koreaDateKey(date)===today;
+    });
+
+  const saleRows=rows.filter(order=>
+    !['cancel','return','exchange','inquiry'].includes(
+      String(order.eventType||'order').toLowerCase()
+    )
+  );
+
+  const sales=saleRows.reduce(
+    (sum,order)=>sum+Number(order.amount||0),
+    0
+  );
+
+  const waiting=rows.filter(order=>
+    ['new','shipping_wait'].includes(
+      String(order.status||'').toLowerCase()
+    )
+  ).length;
+
+  const claims=rows.filter(order=>
+    ['cancel','return','exchange'].includes(
+      String(order.eventType||'').toLowerCase()
+    )
+  ).length;
+
+  const marketMap={};
+  saleRows.forEach(order=>{
+    const market=order.market||'기타';
+    marketMap[market]=(marketMap[market]||0)+1;
+  });
+
+  const marketLines=Object.entries(marketMap)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([market,count])=>`• ${market}: ${count}건`)
+    .join('\n');
+
+  const title=
+    kind==='morning'
+      ? '☀️ 오늘 주문 현황'
+      : '🌙 오늘 마감 요약';
+
+  const body=[
+    `📅 ${today}`,
+    `🛒 주문: ${saleRows.length}건`,
+    `💰 매출: ${sales.toLocaleString('ko-KR')}원`,
+    `📦 미처리: ${waiting}건`,
+    `⚠️ 취소·반품·교환: ${claims}건`,
+    marketLines?`\n쇼핑몰별\n${marketLines}`:''
+  ].filter(Boolean).join('\n');
+
+  const result=await sendTelegram(title,body);
+
+  if(result.sent){
+    await ref.set({
+      lastSentKey:sentKey,
+      lastSentAt:admin.firestore.FieldValue.serverTimestamp(),
+      lastKind:kind,
+      lastDate:today
+    },{merge:true});
+
+    console.log(`텔레그램 ${kind} 일일요약 전송 완료`);
+  }
+}
+
+async function checkDailySummaries(){
+  try{
+    const p=koreaParts();
+    const hour=Number(p.hour);
+    const minute=Number(p.minute);
+
+    if(hour===9&&minute<5){
+      await sendDailyTelegramSummary('morning');
+    }
+
+    if(hour===23&&minute<5){
+      await sendDailyTelegramSummary('evening');
+    }
+  }catch(error){
+    console.error(
+      '텔레그램 일일요약 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+  }
+}
+
 commandRef.onSnapshot(snap=>{
   if(!snap.exists) return;
   const data=snap.data()||{};
@@ -957,6 +1093,8 @@ commandRef.onSnapshot(snap=>{
 },error=>console.error('즉시수집 감시 오류:',error.message));
 
 await run('startup');
+await checkDailySummaries();
+setInterval(checkDailySummaries,60*1000);
 setInterval(
   ()=>runFastSync(),
   Math.max(1,Number.isFinite(fastPollMinutes)?fastPollMinutes:3)*60*1000
