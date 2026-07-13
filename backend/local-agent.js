@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import {
   lotteonConfigFromEnv,
   isLotteonConfigured,
@@ -158,6 +159,152 @@ async function sendTelegram(title,body,options={}){
 
 
 
+
+function telegramFingerprint(order){
+  const parts=[
+    order.id||'',
+    order.market||order.source||'',
+    order.orderNo||'',
+    order.orderProductSequence||order.deliveryNo||'',
+    order.eventType||'order',
+    order.status||'',
+    order.sourceStatus||''
+  ];
+
+  return crypto
+    .createHash('sha256')
+    .update(parts.map(v=>String(v||'')).join('|'))
+    .digest('hex');
+}
+
+function orderEventTitle(order){
+  const market=order.market||order.source||'쇼핑몰';
+  const icon=telegramStatusIcon(order.status,order.eventType);
+  const label=
+    order.statusLabel||
+    (
+      order.eventType==='inquiry'
+        ?'문의사항'
+        :'상태변경'
+    );
+
+  return `${icon} ${market} ${label}`;
+}
+
+function orderTimestampMs(order){
+  const values=[
+    order.updatedAt?.toDate?.()?.getTime?.(),
+    order.createdAt?.toDate?.()?.getTime?.(),
+    order.syncedAt?new Date(order.syncedAt).getTime():0,
+    order.datetime?new Date(order.datetime).getTime():0
+  ].filter(value=>Number.isFinite(value)&&value>0);
+
+  return values.length?Math.max(...values):0;
+}
+
+async function telegramActivationTime(){
+  const ref=db.collection('system').doc('telegram');
+  const snapshot=await ref.get();
+
+  if(snapshot.exists){
+    const data=snapshot.data()||{};
+    const timestamp=data.activatedAt?.toDate?.()?.getTime?.();
+
+    if(Number.isFinite(timestamp)){
+      return timestamp;
+    }
+  }
+
+  const now=admin.firestore.Timestamp.now();
+
+  await ref.set({
+    activatedAt:now,
+    mode:'ledger',
+    updatedAt:admin.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+
+  return now.toMillis();
+}
+
+async function notifyOrderOnce(order){
+  if(!telegramConfigured()){
+    return {enabled:false,sent:0,failed:0,skipped:true};
+  }
+
+  const fingerprint=telegramFingerprint(order);
+  const ref=db.collection('telegram_notifications').doc(fingerprint);
+  const snapshot=await ref.get();
+
+  if(snapshot.exists&&snapshot.data()?.status==='sent'){
+    return {enabled:true,sent:0,failed:0,skipped:true};
+  }
+
+  await ref.set({
+    fingerprint,
+    orderId:String(order.id||''),
+    market:String(order.market||order.source||''),
+    orderNo:String(order.orderNo||''),
+    eventType:String(order.eventType||'order'),
+    status:String(order.status||''),
+    statusLabel:String(order.statusLabel||''),
+    status:'sending',
+    attempts:admin.firestore.FieldValue.increment(1),
+    updatedAt:admin.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+
+  const result=await sendTelegram(
+    orderEventTitle(order),
+    telegramOrderBody(order)
+  );
+
+  await ref.set({
+    status:result.sent?'sent':'failed',
+    lastError:result.error||'',
+    sentAt:result.sent
+      ?admin.firestore.FieldValue.serverTimestamp()
+      :null,
+    updatedAt:admin.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+
+  return result;
+}
+
+async function replayPendingTelegram(){
+  if(!telegramConfigured()) return;
+
+  const activatedAt=await telegramActivationTime();
+  const snapshot=await db.collection('orders').get();
+
+  const candidates=snapshot.docs
+    .map(doc=>({id:doc.id,...doc.data()}))
+    .filter(order=>{
+      const time=orderTimestampMs(order);
+      return time>=activatedAt;
+    })
+    .sort((a,b)=>orderTimestampMs(a)-orderTimestampMs(b));
+
+  let sent=0;
+  let failed=0;
+  let skipped=0;
+
+  for(const order of candidates){
+    const result=await notifyOrderOnce(order);
+
+    sent+=result.sent||0;
+    failed+=result.failed||0;
+    skipped+=result.skipped?1:0;
+
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+
+  if(candidates.length){
+    console.log(
+      `텔레그램 누락검사: 대상 ${candidates.length}, `+
+      `전송 ${sent}, 실패 ${failed}, 이미전송 ${skipped}`
+    );
+  }
+}
+
 function telegramMarketIcon(market){
   const icons={
     쿠팡:'🔴',
@@ -218,10 +365,11 @@ async function sendPush(orders){
   let failed=0;
 
   for(const order of recent){
-    const result=await sendTelegram(
-      `${telegramMarketIcon('쿠팡')} 쿠팡 신규주문`,
-      telegramOrderBody(order)
-    );
+    const result=await notifyOrderOnce({
+      ...order,
+      market:'쿠팡',
+      statusLabel:'신규주문'
+    });
 
     sent+=result.sent||0;
     failed+=result.failed||0;
@@ -307,10 +455,10 @@ async function sendClaimPush(claims){
       claim.eventType
     );
 
-    const result=await sendTelegram(
-      `${icon} 쿠팡 ${claim.statusLabel||'처리 알림'}`,
-      telegramOrderBody(claim)
-    );
+    const result=await notifyOrderOnce({
+      ...claim,
+      market:'쿠팡'
+    });
 
     sent+=result.sent||0;
     failed+=result.failed||0;
@@ -409,10 +557,11 @@ async function sendMarketplacePush(orders,marketName){
   let failed=0;
 
   for(const order of recent){
-    const result=await sendTelegram(
-      `${telegramMarketIcon(marketName)} ${marketName} 신규주문`,
-      telegramOrderBody(order)
-    );
+    const result=await notifyOrderOnce({
+      ...order,
+      market:marketName,
+      statusLabel:'신규주문'
+    });
 
     sent+=result.sent||0;
     failed+=result.failed||0;
@@ -447,10 +596,10 @@ async function sendElevenstStatusPush(changes){
       order.eventType
     );
 
-    const result=await sendTelegram(
-      `${icon} 11번가 ${order.statusLabel||'상태변경'}`,
-      telegramOrderBody(order)
-    );
+    const result=await notifyOrderOnce({
+      ...order,
+      market:'11번가'
+    });
 
     sent+=result.sent||0;
     failed+=result.failed||0;
@@ -660,10 +809,10 @@ async function sendLotteonStatusPush(changes){
       order.eventType
     );
 
-    const result=await sendTelegram(
-      `${icon} 롯데온 ${order.statusLabel||'상태변경'}`,
-      telegramOrderBody(order)
-    );
+    const result=await notifyOrderOnce({
+      ...order,
+      market:'롯데온'
+    });
 
     sent+=result.sent||0;
     failed+=result.failed||0;
@@ -805,6 +954,8 @@ async function runFastSync(){
       `발송대기 ${fast.counts?.INSTRUCT||0} · `+
       `${fastPollMinutes}분 주기`
     );
+
+    await replayPendingTelegram();
 
     if(fastLoopCount%fullSyncEvery===0){
       console.log('다음 정규수집에서 전체 상태 순환 확인 예정');
@@ -1108,4 +1259,14 @@ setInterval(
 console.log(
   `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · `+
   `쿠팡 전체동기화 · 스마트스토어 자동동기화 · 429 자동대기`
+);
+
+setInterval(
+  ()=>replayPendingTelegram().catch(error=>
+    console.error(
+      '텔레그램 누락 재검사 실패:',
+      error instanceof Error?error.message:String(error)
+    )
+  ),
+  60*60*1000
 );
