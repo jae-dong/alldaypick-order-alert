@@ -1,44 +1,30 @@
-﻿올데이픽 주문알림 v47 월간 누적 + 안정형 알림
+﻿올데이픽 주문알림 v48 텔레그램 전용
 
-화면 변경
-- 처리 알림을 쇼핑몰별 주문 현황 위로 이동
-- 쇼핑몰별 주문 건수는 오늘 주문만 표시
-- 미확인 주문을 이번달 총주문으로 변경
-- 전체 주문을 이번달 총매출로 변경
-- 매월 1일부터 오늘까지 모든 쇼핑몰 누적 주문과 매출 자동 계산
-- 날짜가 바뀌고 주문이 추가되면 월 누적값에 자동 반영
-
-알림 개선
-- 기존 Firebase 웹푸시에 high 우선순위와 24시간 TTL 적용
-- 만료되거나 잘못된 휴대폰 토큰 자동 비활성화
-- 텔레그램 봇 알림을 선택적으로 동시에 발송
-- 웹푸시가 누락돼도 텔레그램으로 주문알림 확인 가능
+반영 내용
+- 기존 웹푸시 발송 기능 제거
+- 휴대폰 알림 권한·알림 테스트·푸시 등록 화면 제거
+- 텔레그램만 주문 및 상태 알림 발송
+- 텔레그램 실패 시 최대 3회 자동 재시도
+- 쇼핑몰별 아이콘, 상품명, 옵션, 수량, 금액, 주문번호 표시
+- 처리 알림을 쇼핑몰별 주문 현황 위에 배치
+- 쇼핑몰별 건수는 오늘 주문만 표시
+- 이번달 총주문과 이번달 총매출을 매월 1일부터 자동 누적
+- Firebase는 주문 데이터와 통계 저장용으로 계속 사용
 
 적용
-1. 압축 해제
-2. apply-v47.cmd, apply-v47.ps1, v47-files 폴더를 프로젝트 폴더에 복사
-3. PowerShell:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v47.ps1"
+1. 압축을 풉니다.
+2. apply-v48.cmd, apply-v48.ps1, v48-files 폴더를 프로젝트 폴더에 복사합니다.
+3. 프로젝트 폴더 주소창에서 PowerShell:
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v48.ps1"
 4. GitHub Desktop Summary:
-   v47 월간누적 및 안정형알림
+   v48 텔레그램 전용 알림
 5. Commit to main → Push origin
 6. 기존 수집기 Ctrl+C
-7. backend 폴더에서 npm run agent
+7. backend 폴더에서:
+   npm run agent
 
-텔레그램 설정(선택)
-1. 텔레그램에서 @BotFather 검색
-2. /newbot 입력 후 봇 생성
-3. 받은 Bot Token을 보관
-4. 생성한 봇 대화방에서 시작(Start) 누르기
-5. 브라우저에서 아래 주소의 TOKEN 부분을 실제 토큰으로 바꿔 열기:
-   https://api.telegram.org/botTOKEN/getUpdates
-6. 결과의 chat.id 숫자를 확인
-7. backend/.env.local 마지막에 입력:
+npm install은 다시 하지 않아도 됩니다.
 
-TELEGRAM_BOT_TOKEN=실제_봇_토큰
-TELEGRAM_CHAT_ID=실제_chat_id
-
-8. 수집기 Ctrl+C 후 npm run agent 재실행
-
-중요
-Bot Token은 채팅이나 GitHub에 올리지 말고 .env.local에만 저장합니다.
+주의
+- TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID는 backend/.env.local에 그대로 둡니다.
+- Firebase 서비스 계정은 주문 데이터 저장 때문에 삭제하면 안 됩니다.
