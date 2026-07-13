@@ -1,30 +1,28 @@
-﻿올데이픽 주문알림 v48 텔레그램 전용
+﻿올데이픽 주문알림 v49 한눈에 보는 대시보드
 
-반영 내용
-- 기존 웹푸시 발송 기능 제거
-- 휴대폰 알림 권한·알림 테스트·푸시 등록 화면 제거
-- 텔레그램만 주문 및 상태 알림 발송
-- 텔레그램 실패 시 최대 3회 자동 재시도
-- 쇼핑몰별 아이콘, 상품명, 옵션, 수량, 금액, 주문번호 표시
-- 처리 알림을 쇼핑몰별 주문 현황 위에 배치
-- 쇼핑몰별 건수는 오늘 주문만 표시
-- 이번달 총주문과 이번달 총매출을 매월 1일부터 자동 누적
-- Firebase는 주문 데이터와 통계 저장용으로 계속 사용
+변경 내용
+- 상단 4개 핵심 지표로 정리
+  1. 오늘 주문
+  2. 오늘 매출
+  3. 이번달 총주문
+  4. 이번달 총매출
+- 처리 알림을 핵심 지표 바로 아래 배치
+- 쇼핑몰별 오늘 주문과 오늘 매출을 표 한 장으로 표시
+- 신규·발송대기·취소·반품·교환도 함께 표시
+- 쇼핑몰 행 클릭 시 해당 마켓 주문만 필터
+- 마지막 업데이트 시간 표시
+- 중복된 기존 쇼핑몰 요약 영역 숨김
+- 기존 주문 상세·통계·텔레그램 알림 유지
 
-적용
+적용 방법
 1. 압축을 풉니다.
-2. apply-v48.cmd, apply-v48.ps1, v48-files 폴더를 프로젝트 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에서 PowerShell:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v48.ps1"
-4. GitHub Desktop Summary:
-   v48 텔레그램 전용 알림
-5. Commit to main → Push origin
-6. 기존 수집기 Ctrl+C
-7. backend 폴더에서:
-   npm run agent
+2. apply-v49.cmd와 apply-v49.ps1을 기존 프로젝트 폴더에 복사합니다.
+3. 프로젝트 폴더 주소창에서 PowerShell을 엽니다.
+4. 실행:
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v49.ps1"
+5. GitHub Desktop Summary:
+   v49 한눈에 보는 대시보드
+6. Commit to main → Push origin
+7. 휴대폰에서 새로고침합니다.
 
-npm install은 다시 하지 않아도 됩니다.
-
-주의
-- TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID는 backend/.env.local에 그대로 둡니다.
-- Firebase 서비스 계정은 주문 데이터 저장 때문에 삭제하면 안 됩니다.
+이번 버전은 화면만 수정하므로 npm run agent 재시작은 필요 없습니다.
