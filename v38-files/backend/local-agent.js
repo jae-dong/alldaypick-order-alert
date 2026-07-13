@@ -355,99 +355,6 @@ async function sendMarketplacePush(orders, marketName){
 
 
 
-
-async function sendElevenstStatusPush(changes){
-  if(!changes.length){
-    return {devices:0,sent:0,failed:0};
-  }
-
-  const list=await devices();
-
-  if(!list.length){
-    console.log('11번가 상태변경 푸시 등록된 휴대폰이 없습니다.');
-    return {devices:0,sent:0,failed:0};
-  }
-
-  const titleMap={
-    shipping_wait:'11번가 발송대기',
-    delivering:'11번가 배송중',
-    delivered:'11번가 배송완료',
-    purchase_confirmed:'11번가 구매확정',
-    cancel_request:'11번가 주문취소',
-    exchange_request:'11번가 교환요청',
-    return_request:'11번가 반품요청'
-  };
-
-  let sent=0;
-  let failed=0;
-
-  for(const order of changes){
-    const title=
-      titleMap[order.status] ||
-      `11번가 ${order.statusLabel||'상태변경'}`;
-
-    const product=String(order.product||'상품')
-      .replace(/\s+/g,' ')
-      .trim()
-      .slice(0,80);
-
-    const reason=[
-      order.reason,
-      order.reasonDetail
-    ].filter(Boolean).join(' · ');
-
-    const body=[
-      `${product} · ${Number(order.qty||1)}개`,
-      reason
-    ].filter(Boolean).join(' · ').slice(0,150);
-
-    const result=await messaging.sendEachForMulticast({
-      tokens:list.map(device=>device.token),
-
-      notification:{
-        title,
-        body
-      },
-
-      data:{
-        market:'11번가',
-        eventType:String(order.eventType||'order'),
-        orderId:String(order.id),
-        status:String(order.status||''),
-        url:'https://jae-dong.github.io/alldaypick-order-alert/'
-      },
-
-      webpush:{
-        fcmOptions:{
-          link:'https://jae-dong.github.io/alldaypick-order-alert/'
-        },
-
-        notification:{
-          icon:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
-          badge:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
-          tag:`11st-status-${String(order.id)}`,
-          renotify:true,
-          vibrate:[200,100,200]
-        }
-      }
-    });
-
-    sent+=result.successCount;
-    failed+=result.failureCount;
-  }
-
-  console.log(
-    `11번가 상태변경 푸시 완료: 성공 ${sent}, 실패 ${failed}`
-  );
-
-  return {
-    devices:list.length,
-    sent,
-    failed
-  };
-}
-
-
 let elevenstRunning=false;
 
 async function syncElevenstSafe(source){
@@ -494,10 +401,6 @@ async function syncElevenstSafe(source){
       '11번가'
     );
 
-    const statusPush=await sendElevenstStatusPush(
-      statusResult.changedOrders||[]
-    );
-
     await db.collection('system').doc('integrations').set({
       elevenst:{
         name:'11번가',
@@ -514,8 +417,7 @@ async function syncElevenstSafe(source){
           statusChecked:statusResult.checked,
           externalStatusChanged:statusResult.changed,
           statusFailed:statusResult.failed,
-          push,
-          statusPush
+          push
         }
       }
     },{merge:true});
@@ -523,8 +425,7 @@ async function syncElevenstSafe(source){
     console.log(
       `11번가 동기화 완료: 발견 ${result.found}, `+
       `신규 ${result.created}, 상태확인 ${statusResult.checked}, `+
-      `상태변경 ${statusResult.changed}, `+
-      `상태푸시 ${statusPush.sent}`
+      `상태변경 ${statusResult.changed}`
     );
 
     return result;
