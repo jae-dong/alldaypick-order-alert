@@ -18,13 +18,14 @@ self.addEventListener('notificationclick',event=>{
     return clients.openWindow(url);
   }));
 });
-const CACHE='order-alert-v49';
+const CACHE='order-alert-v50-1783950313';
 self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','./index.html','./manifest.json','./icon.svg'])))});
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))])));
 self.addEventListener('fetch',event=>{
   if(event.request.mode==='navigate'){event.respondWith(fetch(event.request).catch(()=>caches.match('./index.html')));return}
   event.respondWith(caches.match(event.request).then(c=>c||fetch(event.request)));
 });
+
 
 
 
