@@ -1,4 +1,4 @@
-const CACHE='alldaypick-order-alert-v60';
+const CACHE='alldaypick-order-alert-v61';
 const STATIC=['./','./index.html','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
