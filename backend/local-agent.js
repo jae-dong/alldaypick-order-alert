@@ -160,6 +160,56 @@ async function sendTelegram(title,body,options={}){
 
 
 
+
+function isTelegramAlertOrder(order){
+  const eventType=String(order.eventType||'order').toLowerCase();
+  const status=String(order.status||'').toLowerCase();
+  const sourceStatus=String(order.sourceStatus||'').toUpperCase();
+
+  if(
+    eventType==='inquiry' ||
+    status.includes('inquiry')
+  ){
+    return true;
+  }
+
+  if(
+    eventType==='cancel' ||
+    status.includes('cancel') ||
+    sourceStatus.includes('CANCEL') ||
+    sourceStatus.includes('취소')
+  ){
+    return true;
+  }
+
+  if(
+    eventType==='return' ||
+    status.includes('return') ||
+    sourceStatus.includes('RETURN') ||
+    sourceStatus.includes('반품')
+  ){
+    return true;
+  }
+
+  if(
+    eventType==='exchange' ||
+    status.includes('exchange') ||
+    sourceStatus.includes('EXCHANGE') ||
+    sourceStatus.includes('교환')
+  ){
+    return true;
+  }
+
+  return (
+    eventType==='order' &&
+    (
+      status==='new' ||
+      sourceStatus==='ACCEPT' ||
+      sourceStatus.includes('PAYED')
+    )
+  );
+}
+
 function telegramFingerprint(order){
   const parts=[
     order.id||'',
@@ -227,6 +277,16 @@ async function telegramActivationTime(){
 }
 
 async function notifyOrderOnce(order){
+  if(!isTelegramAlertOrder(order)){
+    return {
+      enabled:telegramConfigured(),
+      sent:0,
+      failed:0,
+      skipped:true,
+      reason:'unsupported-alert-type'
+    };
+  }
+
   if(!telegramConfigured()){
     return {enabled:false,sent:0,failed:0,skipped:true};
   }
@@ -279,7 +339,11 @@ async function replayPendingTelegram(){
     .map(doc=>({id:doc.id,...doc.data()}))
     .filter(order=>{
       const time=orderTimestampMs(order);
-      return time>=activatedAt;
+
+      return (
+        time>=activatedAt &&
+        isTelegramAlertOrder(order)
+      );
     })
     .sort((a,b)=>orderTimestampMs(a)-orderTimestampMs(b));
 
@@ -587,6 +651,8 @@ async function sendMarketplacePush(orders,marketName){
 
 
 async function sendElevenstStatusPush(changes){
+  changes=changes.filter(isTelegramAlertOrder);
+
   let sent=0;
   let failed=0;
 
@@ -800,6 +866,8 @@ async function syncSmartstoreSafe(source){
 
 
 async function sendLotteonStatusPush(changes){
+  changes=changes.filter(isTelegramAlertOrder);
+
   let sent=0;
   let failed=0;
 
