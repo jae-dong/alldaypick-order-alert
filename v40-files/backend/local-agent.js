@@ -1,12 +1,3 @@
-import {
-  lotteonConfigFromEnv,
-  isLotteonConfigured,
-  testLotteonConnection,
-  syncLotteonOrders,
-  saveLotteonIntegration,
-  saveLotteonError
-} from './lotteon.js';
-
 import fs from 'node:fs';
 import path from 'node:path';
 import admin from 'firebase-admin';
@@ -18,9 +9,6 @@ import {
 
 import { pollCoupangStatuses } from './coupang.js';
 import { syncSmartstore } from './smartstore.js';
-
-const fastPollMinutes=Number(process.env.FAST_POLL_MINUTES||3);
-const fullSyncEvery=Number(process.env.FULL_SYNC_EVERY||4);
 import {
   elevenstConfigFromEnv,
   isElevenstConfigured,
@@ -643,178 +631,6 @@ async function syncSmartstoreSafe(source){
 
 
 
-
-
-async function sendLotteonStatusPush(changes){
-  if(!changes.length){
-    return {devices:0,sent:0,failed:0};
-  }
-
-  const list=await devices();
-
-  if(!list.length){
-    console.log('롯데온 상태변경 푸시 등록된 휴대폰이 없습니다.');
-    return {devices:0,sent:0,failed:0};
-  }
-
-  const titleMap={
-    shipping_wait:'롯데온 발송대기',
-    delivering:'롯데온 배송중',
-    delivered:'롯데온 배송완료',
-    purchase_confirmed:'롯데온 구매확정',
-    cancel_request:'롯데온 주문취소',
-    exchange_request:'롯데온 교환요청',
-    return_request:'롯데온 반품요청'
-  };
-
-  let sent=0;
-  let failed=0;
-
-  for(const order of changes){
-    const title=
-      titleMap[order.status] ||
-      `롯데온 ${order.statusLabel||'상태변경'}`;
-
-    const product=String(order.product||'상품')
-      .replace(/\s+/g,' ')
-      .trim()
-      .slice(0,80);
-
-    const reason=[
-      order.reason,
-      order.reasonDetail
-    ].filter(Boolean).join(' · ');
-
-    const body=[
-      `${product} · ${Number(order.qty||1)}개`,
-      reason
-    ].filter(Boolean).join(' · ').slice(0,150);
-
-    const result=await messaging.sendEachForMulticast({
-      tokens:list.map(device=>device.token),
-
-      notification:{
-        title,
-        body
-      },
-
-      data:{
-        market:'롯데온',
-        eventType:String(order.eventType||'order'),
-        orderId:String(order.id),
-        status:String(order.status||''),
-        url:'https://jae-dong.github.io/alldaypick-order-alert/'
-      },
-
-      webpush:{
-        fcmOptions:{
-          link:'https://jae-dong.github.io/alldaypick-order-alert/'
-        },
-
-        notification:{
-          icon:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
-          badge:'https://jae-dong.github.io/alldaypick-order-alert/icon.svg',
-          tag:`lotteon-status-${String(order.id)}`,
-          renotify:true,
-          vibrate:[200,100,200]
-        }
-      }
-    });
-
-    sent+=result.successCount;
-    failed+=result.failureCount;
-  }
-
-  console.log(
-    `롯데온 상태변경 푸시 완료: 성공 ${sent}, 실패 ${failed}`
-  );
-
-  return {
-    devices:list.length,
-    sent,
-    failed
-  };
-}
-
-
-let lotteonRunning=false;
-
-async function syncLotteonSafe(source){
-  if(lotteonRunning) return null;
-  lotteonRunning=true;
-
-  const config=lotteonConfigFromEnv(process.env);
-
-  try{
-    if(!isLotteonConfigured(config)){
-      await saveLotteonError(
-        db,
-        config,
-        new Error('API 키와 거래처번호 등록 필요')
-      );
-
-      console.log(
-        '롯데온 API 키와 거래처번호가 아직 등록되지 않았습니다.'
-      );
-
-      return null;
-    }
-
-    const minutes=
-      source==='startup'||source==='immediate'
-        ? 24*60
-        : 30;
-
-    const auth=await testLotteonConnection(config);
-
-    const result=await syncLotteonOrders(
-      db,
-      config,
-      minutes
-    );
-
-    result.identity=auth.identity;
-    result.sellerId=config.sellerId;
-
-    const push=await sendMarketplacePush(
-      result.createdOrders||[],
-      '롯데온'
-    );
-
-    const statusPush=await sendLotteonStatusPush(
-      result.changedOrders||[]
-    );
-
-    result.push=push;
-    result.statusPush=statusPush;
-
-    await saveLotteonIntegration(db,result);
-
-    console.log(
-      `롯데온 동기화 완료: 발견 ${result.found}, `+
-      `신규 ${result.created}, `+
-      `상태변경 ${result.statusChanged}, `+
-      `신규푸시 ${push.sent}, `+
-      `상태푸시 ${statusPush.sent}`
-    );
-
-    return result;
-  }catch(error){
-    await saveLotteonError(db,config,error);
-
-    console.error(
-      '롯데온 동기화 실패:',
-      error instanceof Error
-        ? error.message
-        : String(error)
-    );
-
-    return null;
-  }finally{
-    lotteonRunning=false;
-  }
-}
-
 async function refreshEsmStatus(){
   try{
     await updateEsmConnectionStatus(
@@ -848,9 +664,6 @@ async function runFastSync(){
 
     await new Promise(r=>setTimeout(r,800));
     await refreshEsmStatus();
-
-    await new Promise(r=>setTimeout(r,800));
-    await syncLotteonSafe('interval');
 
     console.log(
       `빠른수집 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
@@ -916,9 +729,6 @@ async function run(source){
 
     await new Promise(r=>setTimeout(r,800));
     await refreshEsmStatus();
-
-    await new Promise(r=>setTimeout(r,800));
-    await syncLotteonSafe(source);
 
     if(claims.length){
       const claimSummary={};
@@ -1011,12 +821,12 @@ commandRef.onSnapshot(snap=>{
 await run('startup');
 setInterval(
   ()=>runFastSync(),
-  Math.max(1,Number.isFinite(fastPollMinutes)?fastPollMinutes:3)*60*1000
+  Math.max(1,fastPollMinutes)*60*1000
 );
 
 setInterval(
   ()=>run('interval'),
-  Math.max(5,Number.isFinite(intervalMinutes)?intervalMinutes:10)*60*1000
+  Math.max(5,intervalMinutes)*60*1000
 );
 
 console.log(

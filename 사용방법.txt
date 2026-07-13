@@ -1,34 +1,24 @@
-﻿올데이픽 주문알림 v39 11번가 상태변경 푸시
+﻿올데이픽 주문알림 v46 간편 대시보드 UI
 
-추가 기능
-
-- 11번가 발송대기 전환 시 휴대폰 푸시
-- 배송중 전환 시 푸시
-- 배송완료 전환 시 푸시
-- 구매확정 전환 시 푸시
-- 주문취소·교환요청·반품요청 전환 시 푸시
-- 취소·교환·반품 사유 및 상세사유 저장
-- 주문 상세창에서 reason, reasonDetail 데이터 사용 가능
-- 동일 상태일 때 중복 푸시하지 않음
-- 기존 쿠팡·스마트스토어 기능 유지
+변경 내용
+- 숫자와 상태가 먼저 보이는 간단한 대시보드형 화면
+- 쇼핑몰 연결 현황을 작고 단순한 카드로 정리
+- 쇼핑몰별 주문 현황을 표 한 장으로 표시
+- 쇼핑몰 행을 누르면 해당 마켓 주문만 필터
+- 신규·발송대기·취소·반품·교환을 한눈에 확인
+- 오늘 주문·미확인·오늘 매출·전체 주문 숫자를 크게 표시
+- 모바일에서도 한 화면에 더 많은 정보 표시
+- 기존 주문 필터·상세정보·통계·푸시 기능 유지
 
 적용 방법
-
 1. 압축을 풉니다.
-2. apply-v39.cmd, apply-v39.ps1, v39-files 폴더를
-   기존 alldaypick-order-alert 폴더에 복사합니다.
-3. 프로젝트 폴더 주소창에서 PowerShell 실행:
+2. apply-v46.cmd와 apply-v46.ps1을 기존 프로젝트 폴더에 복사합니다.
+3. 프로젝트 폴더 주소창에서 PowerShell을 실행합니다.
+4. 아래 명령 실행:
+   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v46.ps1"
+5. GitHub Desktop Summary:
+   v46 간편 대시보드 UI
+6. Commit to main → Push origin
+7. 휴대폰에서 새로고침합니다.
 
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v39.ps1"
-
-4. 기존 npm run agent 창에서 Ctrl+C
-5. backend 폴더에서:
-
-   npm run agent
-
-이번 버전은 새 패키지 추가가 없으므로 npm install은 다시 하지 않아도 됩니다.
-
-정상 로그 예시
-
-11번가 상태변경 푸시 완료: 성공 1, 실패 0
-11번가 동기화 완료: 발견 1, 신규 0, 상태확인 4, 상태변경 1, 상태푸시 1
+이번 버전은 화면 파일만 수정하므로 npm run agent 재시작은 필요 없습니다.
