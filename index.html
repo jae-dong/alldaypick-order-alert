@@ -187,6 +187,84 @@
   }
 </style>
 
+
+<style id="V58_CURRENT_074146">
+  .delivery-summary-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:10px;
+  }
+
+  .delivery-summary-card{
+    min-height:92px;
+    padding:15px 10px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    text-align:center;
+    background:#fff;
+  }
+
+  .delivery-summary-card span{
+    display:block;
+    color:var(--muted);
+    font-size:13px;
+    font-weight:900;
+  }
+
+  .delivery-summary-card strong{
+    display:block;
+    margin-top:8px;
+    font-size:28px;
+  }
+
+  .delivery-summary-card.delivering strong{
+    color:#16a34a;
+  }
+
+  .delivery-summary-card.delivered strong{
+    color:#ca8a04;
+  }
+
+  .delivery-summary-card.purchase_confirmed strong{
+    color:#15803d;
+  }
+
+  .delivery-summary-card.return_complete strong{
+    color:#d97706;
+  }
+
+  @media(max-width:720px){
+    .delivery-summary-grid{
+      grid-template-columns:repeat(2,minmax(0,1fr));
+    }
+
+    .delivery-summary-card{
+      min-height:82px;
+      padding:12px 6px;
+    }
+
+    .delivery-summary-card strong{
+      font-size:24px;
+    }
+  }
+</style>
+
+
+<style id="V59_CLOUD_RECONNECT">
+  #cloudStatus{
+    cursor:pointer;
+    text-decoration:underline;
+    text-decoration-style:dotted;
+    text-underline-offset:3px;
+  }
+
+  #cloudStatus::after{
+    content:' · 눌러서 재연결';
+    font-size:10px;
+    opacity:.65;
+  }
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -512,15 +590,26 @@ function settlementMonthlyTotals(){
 
 
 const CURRENT_REFERENCE={
-  cutoff:'2026-07-14T00:34:27+09:00',
+  financialCutoff:'2026-07-14T07:44:48+09:00',
+  pendingCutoff:'2026-07-14T07:41:46+09:00',
   today:'2026-07-14',
-  todayOrders:2,
-  todaySales:63390,
-  monthOrders:447,
-  monthSales:16933160,
+  todayOrders:6,
+  todaySales:212670,
+  monthOrders:451,
+  monthSales:17082440,
+
+  monthlyMarkets:{
+    G마켓:{orders:23,sales:851640},
+    옥션:{orders:3,sales:195860},
+    '11번가':{orders:23,sales:1300330},
+    스마트스토어:{orders:72,sales:2903710},
+    쿠팡:{orders:323,sales:11561370},
+    롯데온:{orders:7,sales:269530}
+  },
+
   pending:{
     스마트스토어:{
-      new:1,
+      new:2,
       shipping_wait:6,
       cancel:0,
       return:0,
@@ -528,7 +617,7 @@ const CURRENT_REFERENCE={
       inquiry:0
     },
     쿠팡:{
-      new:9,
+      new:12,
       shipping_wait:13,
       cancel:0,
       return:0,
@@ -567,11 +656,58 @@ const CURRENT_REFERENCE={
       exchange:0,
       inquiry:0
     }
+  },
+
+  delivery:{
+    스마트스토어:{
+      return_complete:1,
+      delivering:15,
+      delivered:17,
+      purchase_confirmed:40
+    },
+    쿠팡:{
+      return_complete:5,
+      delivering:50,
+      delivered:170,
+      purchase_confirmed:104
+    },
+    '11번가':{
+      return_complete:0,
+      delivering:8,
+      delivered:10,
+      purchase_confirmed:5
+    },
+    G마켓:{
+      return_complete:0,
+      delivering:4,
+      delivered:10,
+      purchase_confirmed:6
+    },
+    옥션:{
+      return_complete:0,
+      delivering:0,
+      delivered:2,
+      purchase_confirmed:1
+    },
+    롯데온:{
+      return_complete:0,
+      delivering:1,
+      delivered:0,
+      purchase_confirmed:6
+    }
   }
 };
 
 function referenceCutoffMs(){
-  return new Date(CURRENT_REFERENCE.cutoff).getTime();
+  return new Date(
+    CURRENT_REFERENCE.financialCutoff
+  ).getTime();
+}
+
+function pendingReferenceCutoffMs(){
+  return new Date(
+    CURRENT_REFERENCE.pendingCutoff
+  ).getTime();
 }
 
 function createdTimestampValue(order){
@@ -611,7 +747,7 @@ function isUnresolved(order){
 }
 
 function liveOrdersAfterReference(){
-  const cutoff=referenceCutoffMs();
+  const cutoff=pendingReferenceCutoffMs();
 
   return uniqueLatestOrders().filter(order=>
     createdTimestampValue(order)>cutoff
@@ -619,7 +755,7 @@ function liveOrdersAfterReference(){
 }
 
 function processedBaselineAdjustments(){
-  const cutoff=referenceCutoffMs();
+  const cutoff=pendingReferenceCutoffMs();
 
   return uniqueLatestOrders().filter(order=>
     processedTimestampValue(order)>cutoff &&
@@ -670,6 +806,89 @@ function correctedPendingByMarket(){
   });
 
   return result;
+}
+
+
+function correctedDeliveryTotals(){
+  const result={
+    return_complete:0,
+    delivering:0,
+    delivered:0,
+    purchase_confirmed:0
+  };
+
+  Object.values(CURRENT_REFERENCE.delivery).forEach(market=>{
+    Object.keys(result).forEach(key=>{
+      result[key]+=Number(market[key]||0);
+    });
+  });
+
+  const cutoff=pendingReferenceCutoffMs();
+
+  uniqueLatestOrders().forEach(order=>{
+    if(createdTimestampValue(order)<=cutoff){
+      return;
+    }
+
+    const key=statusKey(order);
+
+    if(Object.prototype.hasOwnProperty.call(result,key)){
+      result[key]+=1;
+    }
+  });
+
+  return result;
+}
+
+function renderDeliverySummary(){
+  let section=document.getElementById('deliverySummary');
+
+  if(!section){
+    section=document.createElement('section');
+    section.id='deliverySummary';
+    section.className='panel';
+
+    section.innerHTML=`
+      <div class="section-head">
+        <div>
+          <h2>배송 현황</h2>
+          <p>현재 기준 누적 현황</p>
+        </div>
+        <span class="small-note">
+          기준 오전 7:41
+        </span>
+      </div>
+
+      <div class="delivery-summary-grid" id="deliverySummaryGrid"></div>
+    `;
+
+    const statusSection=
+      document.getElementById('statusGrid')
+        ?.closest('section');
+
+    if(statusSection){
+      statusSection.insertAdjacentElement(
+        'afterend',
+        section
+      );
+    }
+  }
+
+  const totals=correctedDeliveryTotals();
+  const items=[
+    ['delivering','배송중'],
+    ['delivered','배송완료'],
+    ['purchase_confirmed','구매확정'],
+    ['return_complete','반품완료']
+  ];
+
+  document.getElementById('deliverySummaryGrid').innerHTML=
+    items.map(([key,label])=>`
+      <div class="delivery-summary-card ${key}">
+        <span>${label}</span>
+        <strong>${totals[key]}</strong>
+      </div>
+    `).join('');
 }
 
 function correctedTodayTotals(){
@@ -792,7 +1011,7 @@ function renderStatus(){
     };
   });
 
-  $('dedupeInfo').textContent='미처리 주문은 날짜가 지나도 계속 표시';
+  $('dedupeInfo').textContent='미처리 주문은 날짜가 지나도 계속 표시 · 기준 오전 7:41';
   $('statusUpdated').textContent=
     '최근 갱신 '+
     new Date().toLocaleTimeString(
@@ -863,6 +1082,7 @@ function renderMarkets(){
       <td data-label="취소" class="claim-count">${Number(marketPending.cancel||0)}</td>
       <td data-label="반품" class="claim-count">${Number(marketPending.return||0)}</td>
       <td data-label="교환" class="claim-count">${Number(marketPending.exchange||0)}</td>
+      <td data-label="문의" class="claim-count">${Number(marketPending.inquiry||0)}</td>
     </tr>`;
   }).join('');
 
@@ -1204,9 +1424,212 @@ function openDetail(id){
   $('detailDialog').showModal();
 }
 
-async function requestCollect(){if(!currentUser)return toast('클라우드 연결 후 다시 시도하세요.');$('collectStatus').textContent='즉시 수집 요청 중';await db.collection('system').doc('commands').collection('requests').doc('coupang').set({requestId:`${currentUser.uid}-${Date.now()}`,market:'coupang',reason:'manual',requestedBy:currentUser.uid,requestedAt:firebase.firestore.FieldValue.serverTimestamp(),status:'requested',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
+async function requestCollect(){if(!currentUser)currentUser={uid:'local-browser'};$('collectStatus').textContent='즉시 수집 요청 중';await db.collection('system').doc('commands').collection('requests').doc('coupang').set({requestId:`${currentUser.uid}-${Date.now()}`,market:'coupang',reason:'manual',requestedBy:currentUser.uid,requestedAt:firebase.firestore.FieldValue.serverTimestamp(),status:'requested',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
-async function initCloud(){try{await auth.signInAnonymously();auth.onAuthStateChanged(user=>{if(!user)return;currentUser=user;$('cloudStatus').textContent='클라우드 연결됨';$('cloudDot').classList.add('ok');if(unsubscribeOrders)unsubscribeOrders();unsubscribeOrders=db.collection('orders').onSnapshot(s=>{orders=s.docs.map(d=>({id:d.id,...d.data()}));render()});db.collection('system').doc('integrations').onSnapshot(d=>{integrations=d.exists?d.data():{};renderIntegrations();renderMarkets()});watchCollect()})}catch(e){$('cloudStatus').textContent='클라우드 연결 실패: '+e.message}}
+
+let cloudRetryTimer=null;
+let cloudConnecting=false;
+let integrationsUnsub=null;
+let cloudHeartbeatTimer=null;
+
+function cloudErrorMessage(error){
+  const code=String(error?.code||'');
+  const message=String(error?.message||error||'');
+
+  if(code.includes('permission-denied')){
+    return 'Firebase 권한 거부 · Firestore 규칙 확인';
+  }
+
+  if(code.includes('unauthenticated')){
+    return 'Firebase 로그인 필요 · 익명 로그인 설정 확인';
+  }
+
+  if(code.includes('unavailable')){
+    return '인터넷 또는 Firebase 일시 오류';
+  }
+
+  if(code.includes('failed-precondition')){
+    return 'Firebase 설정 오류';
+  }
+
+  return message||'알 수 없는 오류';
+}
+
+function setCloudState(text,ok=false){
+  const status=$('cloudStatus');
+  const dot=$('cloudDot');
+
+  if(status) status.textContent=text;
+  if(dot) dot.classList.toggle('ok',Boolean(ok));
+}
+
+function clearCloudListeners(){
+  if(unsubscribeOrders){
+    unsubscribeOrders();
+    unsubscribeOrders=null;
+  }
+
+  if(integrationsUnsub){
+    integrationsUnsub();
+    integrationsUnsub=null;
+  }
+
+  if(collectUnsub){
+    collectUnsub();
+    collectUnsub=null;
+  }
+}
+
+function scheduleCloudRetry(delay=10000){
+  clearTimeout(cloudRetryTimer);
+  cloudRetryTimer=setTimeout(initCloud,delay);
+}
+
+async function firebaseHeartbeat(){
+  try{
+    await db.collection('system')
+      .doc('integrations')
+      .get({source:'server'});
+
+    setCloudState('클라우드 연결됨',true);
+    return true;
+  }catch(error){
+    setCloudState(
+      '클라우드 재연결 중 · '+cloudErrorMessage(error),
+      false
+    );
+
+    scheduleCloudRetry(5000);
+    return false;
+  }
+}
+
+function attachCloudListeners(){
+  clearCloudListeners();
+
+  unsubscribeOrders=db.collection('orders').onSnapshot(
+    {includeMetadataChanges:true},
+    snapshot=>{
+      orders=snapshot.docs.map(doc=>({
+        id:doc.id,
+        ...doc.data()
+      }));
+
+      setCloudState(
+        snapshot.metadata.fromCache
+          ?'클라우드 연결됨 · 캐시 표시 중'
+          :'클라우드 연결됨',
+        true
+      );
+
+      render();
+    },
+    error=>{
+      setCloudState(
+        '주문 동기화 실패 · '+cloudErrorMessage(error),
+        false
+      );
+
+      scheduleCloudRetry();
+    }
+  );
+
+  integrationsUnsub=db.collection('system')
+    .doc('integrations')
+    .onSnapshot(
+      {includeMetadataChanges:true},
+      snapshot=>{
+        integrations=snapshot.exists
+          ?snapshot.data()
+          :{};
+
+        renderIntegrations();
+        renderMarkets();
+      },
+      error=>{
+        setCloudState(
+          '연결현황 동기화 실패 · '+cloudErrorMessage(error),
+          false
+        );
+
+        scheduleCloudRetry();
+      }
+    );
+
+  watchCollect();
+
+  clearInterval(cloudHeartbeatTimer);
+  cloudHeartbeatTimer=setInterval(
+    firebaseHeartbeat,
+    60000
+  );
+}
+
+async function initCloud(){
+  if(cloudConnecting) return;
+
+  cloudConnecting=true;
+  clearTimeout(cloudRetryTimer);
+  setCloudState('클라우드 연결 중',false);
+
+  try{
+    try{
+      await db.enableNetwork();
+    }catch{}
+
+    let user=auth.currentUser;
+
+    if(!user){
+      try{
+        const loginPromise=auth.signInAnonymously();
+        const timeoutPromise=new Promise((_,reject)=>
+          setTimeout(
+            ()=>reject(new Error('익명 로그인 시간 초과')),
+            10000
+          )
+        );
+
+        const credential=await Promise.race([
+          loginPromise,
+          timeoutPromise
+        ]);
+
+        user=credential?.user||auth.currentUser;
+      }catch(authError){
+        console.warn(
+          'Firebase 익명 로그인 실패:',
+          authError
+        );
+
+        setCloudState(
+          '로그인 확인 중 · Firestore 직접 연결 시도',
+          false
+        );
+      }
+    }
+
+    currentUser=user||auth.currentUser||{
+      uid:'local-browser'
+    };
+
+    attachCloudListeners();
+
+    const connected=await firebaseHeartbeat();
+
+    if(!connected){
+      scheduleCloudRetry(5000);
+    }
+  }catch(error){
+    setCloudState(
+      '클라우드 연결 실패 · '+cloudErrorMessage(error),
+      false
+    );
+
+    scheduleCloudRetry();
+  }finally{
+    cloudConnecting=false;
+  }
+}
 
 $('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=renderStats;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;
 $('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
@@ -1214,8 +1637,22 @@ $('closeDetailBtn').onclick=()=>$('detailDialog').close();$('copyOrderNoBtn').on
 $('detailStarBtn').onclick=async()=>{if(!currentDetail)return;await toggleImportant(currentDetail.id);$('detailDialog').close()};
 $('detailProcessedBtn').onclick=async()=>{if(!currentDetail)return;await toggleProcessed(currentDetail.id);$('detailDialog').close()};
 $('saveNoteBtn').onclick=saveCurrentNote;
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=57').catch(console.warn);
-render();initCloud();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=59').catch(console.warn);
+render();window.addEventListener('online',()=>{
+  setCloudState('인터넷 복구 · 클라우드 재연결 중',false);
+  initCloud();
+});
+
+window.addEventListener('offline',()=>{
+  setCloudState('인터넷 연결 없음 · 저장된 화면 표시',false);
+});
+
+$('cloudStatus').onclick=()=>{
+  setCloudState('클라우드 수동 재연결 중',false);
+  initCloud();
+};
+
+initCloud();
 </script>
 </body>
 </html>
