@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>올데이픽 주문알림</title>
-<link rel="manifest" href="./manifest.json?v=clean-v58">
+<link rel="manifest" href="./manifest.json?v=clean-v57">
 <link rel="icon" href="./icon.svg">
 <style>
 :root{
@@ -1369,7 +1369,7 @@ async function saveCurrentNote(){
   toast('메모 저장 완료');
 }
 
-function render(){saveCloudCache();renderMetrics();renderStatus();renderMarkets();renderOrders();renderStats();renderIntegrations();renderOperations();renderTodayAnalytics()}
+function render(){renderMetrics();renderStatus();renderMarkets();renderOrders();renderStats();renderIntegrations();renderOperations();renderTodayAnalytics()}
 
 async function toggleRead(id){const o=orders.find(x=>x.id===id);if(!o)return;await db.collection('orders').doc(id).set({readStatus:isUnread(o)?'read':'unread',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function showOrdersTab(){$('ordersTab').classList.add('active');$('statsTab').classList.remove('active');$('ordersPanel').classList.add('active');$('statsPanel').classList.remove('active')}
@@ -1402,104 +1402,11 @@ function openDetail(id){
 
 async function requestCollect(){
   if(!db||!currentUser){
-    toast('클라우드 자동 연결을 다시 시도합니다.');
-    initCloud(true);
+    toast('클라우드 연결 후 다시 시도하세요.');
+    initCloud();
     return;
-  }
-
-  const status=$('collectStatus');
-  status.textContent='이번달 정밀 동기화 요청 중';
-
-  try{
-    await db.collection('system')
-      .doc('commands')
-      .collection('requests')
-      .doc('coupang')
-      .set({
-        requestId:
-          `${currentUser.uid}-${Date.now()}`,
-        market:'coupang',
-        action:'reconcile',
-        reason:'manual-month-reconcile',
-        requestedBy:currentUser.uid,
-        requestedAt:
-          firebase.firestore.FieldValue.serverTimestamp(),
-        status:'requested',
-        updatedAt:
-          firebase.firestore.FieldValue.serverTimestamp()
-      },{merge:true});
-
-    status.textContent='이번달 전체 마켓 동기화 요청 완료';
-  }catch(error){
-    status.textContent=
-      '요청 실패 · '+readableCloudError(error);
-    initCloud(true);
-  }
-}
+  }$('collectStatus').textContent='즉시 수집 요청 중';await db.collection('system').doc('commands').collection('requests').doc('coupang').set({requestId:`${currentUser.uid}-${Date.now()}`,market:'coupang',reason:'manual',requestedBy:currentUser.uid,requestedAt:firebase.firestore.FieldValue.serverTimestamp(),status:'requested',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
-
-
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v58';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v58';
-
-function restoreCloudCache(){
-  try{
-    const cachedOrders=JSON.parse(
-      localStorage.getItem(ORDER_CACHE_KEY)||'[]'
-    );
-
-    if(Array.isArray(cachedOrders)&&cachedOrders.length){
-      orders=cachedOrders;
-    }
-  }catch{}
-
-  try{
-    const cachedIntegrations=JSON.parse(
-      localStorage.getItem(INTEGRATION_CACHE_KEY)||'{}'
-    );
-
-    if(
-      cachedIntegrations &&
-      typeof cachedIntegrations==='object'
-    ){
-      integrations=cachedIntegrations;
-    }
-  }catch{}
-}
-
-function saveCloudCache(){
-  try{
-    localStorage.setItem(
-      ORDER_CACHE_KEY,
-      JSON.stringify(
-        orders.map(order=>{
-          const copy={...order};
-
-          for(const key of [
-            'createdAt',
-            'updatedAt',
-            'workflowUpdatedAt',
-            'workflowProcessedAt'
-          ]){
-            if(copy[key]?.toDate){
-              copy[key]=copy[key].toDate().toISOString();
-            }
-          }
-
-          return copy;
-        })
-      )
-    );
-  }catch{}
-
-  try{
-    localStorage.setItem(
-      INTEGRATION_CACHE_KEY,
-      JSON.stringify(integrations||{})
-    );
-  }catch{}
-}
-
 
 let cloudRetryTimer=null;
 let integrationUnsubscribe=null;
@@ -1553,106 +1460,35 @@ function watchAgentHeartbeat(){
     agentUnsubscribe();
   }
 
-  const showFallback=()=>{
-    const lastRuns=Object.values(integrations||{})
-      .map(info=>info?.lastRun)
-      .filter(Boolean)
-      .map(value=>new Date(value).getTime())
-      .filter(Number.isFinite);
-
-    const latest=lastRuns.length
-      ?Math.max(...lastRuns)
-      :0;
-
-    const age=latest
-      ?Date.now()-latest
-      :Infinity;
-
-    const online=
-      Number.isFinite(age) &&
-      age<15*60*1000;
+  agentUnsubscribe=db.collection('system').doc('agent').onSnapshot(snapshot=>{
+    const data=snapshot.exists?snapshot.data():{};
+    const raw=data.lastSeenIso||data.lastSeen?.toDate?.()?.toISOString?.()||'';
+    const age=raw?Date.now()-new Date(raw).getTime():Infinity;
+    const online=Number.isFinite(age)&&age<3*60*1000;
 
     const indicator=$('agentStatus');
-
     if(indicator){
       indicator.textContent=online
-        ?`PC 수집기 정상 · 마켓 수집 ${relativeTime(
-            new Date(latest).toISOString()
-          )}`
-        :'PC 수집기 상태 확인 중';
-
+        ?`PC 수집기 정상 · ${relativeTime(raw)}`
+        :'PC 수집기 응답 없음';
       indicator.classList.toggle('ok',online);
-      indicator.classList.toggle('error',false);
+      indicator.classList.toggle('error',!online);
     }
-  };
 
-  showFallback();
-
-  agentUnsubscribe=db.collection('system')
-    .doc('agent')
-    .onSnapshot(
-      snapshot=>{
-        const data=snapshot.exists
-          ?snapshot.data()
-          :{};
-
-        const raw=
-          data.lastSeenIso||
-          data.lastSeen
-            ?.toDate?.()
-            ?.toISOString?.()||
-          '';
-
-        const age=raw
-          ?Date.now()-new Date(raw).getTime()
-          :Infinity;
-
-        const online=
-          Number.isFinite(age) &&
-          age<3*60*1000;
-
-        const indicator=$('agentStatus');
-
-        if(indicator){
-          indicator.textContent=online
-            ?`PC 수집기 정상 · ${relativeTime(raw)}`
-            :'PC 수집기 응답 없음';
-
-          indicator.classList.toggle('ok',online);
-          indicator.classList.toggle('error',!online);
-        }
-
-        const telegram=$('telegramState');
-
-        if(telegram){
-          if(data.telegramLastError){
-            telegram.textContent=
-              '텔레그램 오류 · '+
-              String(data.telegramLastError).slice(0,35);
-          }else{
-            telegram.textContent=data.telegramConfigured
-              ?'텔레그램 연결됨'
-              :'텔레그램 설정 확인';
-          }
-
-          telegram.classList.toggle(
-            'ok',
-            Boolean(
-              data.telegramConfigured &&
-              !data.telegramLastError
-            )
-          );
-        }
-      },
-      error=>{
-        console.warn(
-          'Agent heartbeat read failed:',
-          error
-        );
-
-        showFallback();
-      }
-    );
+    const telegram=$('telegramState');
+    if(telegram){
+      telegram.textContent=data.telegramConfigured
+        ?'텔레그램 연결됨'
+        :'텔레그램 설정 확인';
+      telegram.classList.toggle('ok',Boolean(data.telegramConfigured));
+    }
+  },()=>{
+    const indicator=$('agentStatus');
+    if(indicator){
+      indicator.textContent='PC 수집기 상태 확인 실패';
+      indicator.classList.add('error');
+    }
+  });
 }
 
 function stopCloudListeners(){
@@ -1685,15 +1521,7 @@ function retryCloud(delay=5000){
 function startCloudListeners(){
   stopCloudListeners();
 
-  restoreCloudCache();
-  render();
-
-  cloudMessage(
-    orders.length
-      ?'클라우드 자동 연결 중 · 저장된 데이터 표시'
-      :'클라우드 자동 연결 중',
-    false
-  );
+  cloudMessage('주문 데이터 연결 중',false);
 
   unsubscribeOrders=db.collection('orders').onSnapshot(
     {includeMetadataChanges:true},
@@ -1703,11 +1531,9 @@ function startCloudListeners(){
         ...doc.data()
       }));
 
-      saveCloudCache();
-
       cloudMessage(
         snapshot.metadata.fromCache
-          ?'클라우드 연결됨 · 캐시 동기화 중'
+          ?'클라우드 연결됨 · 저장된 데이터 표시 중'
           :'클라우드 연결됨',
         true
       );
@@ -1715,16 +1541,12 @@ function startCloudListeners(){
       render();
     },
     error=>{
-      console.error('Order listener error:',error);
-
       cloudMessage(
-        orders.length
-          ?'클라우드 재연결 중 · 저장된 데이터 표시'
-          :'주문 연결 오류 · '+readableCloudError(error),
+        '주문 연결 오류 · '+readableCloudError(error),
         false
       );
 
-      retryCloud(3000);
+      retryCloud();
     }
   );
 
@@ -1737,16 +1559,16 @@ function startCloudListeners(){
           ?snapshot.data()
           :{};
 
-        saveCloudCache();
         renderIntegrations();
         renderMarkets();
       },
       error=>{
-        console.error('Integration listener error:',error);
+        cloudMessage(
+          '쇼핑몰 연결현황 오류 · '+readableCloudError(error),
+          false
+        );
 
-        renderIntegrations();
-        renderMarkets();
-        retryCloud(3000);
+        retryCloud();
       }
     );
 
@@ -1754,30 +1576,17 @@ function startCloudListeners(){
   watchAgentHeartbeat();
 }
 
-async function initCloud(force=false){
-  if(cloudStarting&&!force){
+async function initCloud(){
+  if(cloudStarting){
     return;
   }
 
   cloudStarting=true;
   clearTimeout(cloudRetryTimer);
-
-  restoreCloudCache();
-  render();
-
-  cloudMessage(
-    orders.length
-      ?'클라우드 자동 연결 중 · 저장된 데이터 표시'
-      :'Firebase 자동 연결 중',
-    false
-  );
+  cloudMessage('Firebase SDK 확인 중',false);
 
   try{
     await window.firebaseReady;
-
-    if(!window.firebase){
-      throw new Error('Firebase SDK를 불러오지 못했습니다.');
-    }
 
     if(!firebase.apps.length){
       firebase.initializeApp(firebaseConfig);
@@ -1793,14 +1602,10 @@ async function initCloud(force=false){
     }catch{}
 
     try{
-      await db.enablePersistence({
-        synchronizeTabs:true
-      });
-    }catch{}
-
-    try{
       await db.enableNetwork();
     }catch{}
+
+    cloudMessage('Firebase 로그인 중',false);
 
     let user=auth.currentUser;
 
@@ -1809,9 +1614,7 @@ async function initCloud(force=false){
         auth.signInAnonymously(),
         new Promise((_,reject)=>
           setTimeout(
-            ()=>reject(
-              new Error('Firebase 로그인 시간 초과')
-            ),
+            ()=>reject(new Error('Firebase 로그인 시간 초과')),
             15000
           )
         )
@@ -1821,25 +1624,27 @@ async function initCloud(force=false){
     }
 
     if(!user){
-      throw new Error(
-        'Firebase 사용자 인증을 확인할 수 없습니다.'
-      );
+      throw new Error('Firebase 사용자 인증을 확인할 수 없습니다.');
     }
 
     currentUser=user;
+
+    cloudMessage('Firestore 권한 확인 중',false);
+
+    await db.collection('system')
+      .doc('integrations')
+      .get({source:'server'});
+
     startCloudListeners();
   }catch(error){
     console.error('Cloud startup error:',error);
 
     cloudMessage(
-      orders.length
-        ?'클라우드 재연결 중 · 저장된 데이터 표시'
-        :'클라우드 연결 실패 · '+
-          readableCloudError(error),
+      '클라우드 연결 실패 · '+readableCloudError(error),
       false
     );
 
-    retryCloud(3000);
+    retryCloud(8000);
   }finally{
     cloudStarting=false;
   }
@@ -1927,7 +1732,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v58',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v57',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -1943,24 +1748,6 @@ $('cloudStatus').onclick=()=>{
   cloudMessage('수동 재연결 중',false);
   initCloud();
 };
-
-
-restoreCloudCache();
-render();
-
-window.addEventListener('online',()=>{
-  initCloud(true);
-});
-
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){
-    initCloud(true);
-  }
-});
-
-window.addEventListener('pageshow',()=>{
-  initCloud(true);
-});
 
 initCloud();
 
