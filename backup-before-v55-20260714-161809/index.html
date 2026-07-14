@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>올데이픽 주문알림</title>
-<link rel="manifest" href="./manifest.json?v=clean-v55">
+<link rel="manifest" href="./manifest.json?v=clean-v54">
 <link rel="icon" href="./icon.svg">
 <style>
 :root{
@@ -261,14 +261,14 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
   </section>
 
-  <section class="card section">
-    <div class="section-head"><h2>오늘 분석</h2><span class="subtle">실시간 자동 집계</span></div>
+  <details class="card section">
+    <summary style="font-weight:900;cursor:pointer">오늘 분석 펼쳐보기</summary>
     <div class="analytics-grid" style="margin-top:12px">
       <div class="analytics-card"><h3>시간대별 주문</h3><div class="hour-chart" id="hourChart"></div></div>
       <div class="analytics-card"><h3>쇼핑몰별 오늘 매출</h3><div class="share-list" id="marketShare"></div></div>
     </div>
     <div class="analytics-card" style="margin-top:10px"><h3>오늘 판매 TOP 10</h3><div class="top-list" id="todayTopProducts"></div></div>
-  </section>
+  </details>
 
   <nav class="tabs"><button class="tab active" id="ordersTab">주문 현황</button><button class="tab" id="statsTab">주문 통계</button></nav>
 
@@ -1002,16 +1002,9 @@ function filteredOrders(){
   return uniqueLatestOrders().filter(o=>{
     const status=statusKey(o);
 
-    const day=orderDay(o);
-    const cutoff=new Date();
-    cutoff.setDate(cutoff.getDate()-31);
-    const cutoffKey=new Intl.DateTimeFormat(
-      'sv-SE',
-      {timeZone:'Asia/Seoul'}
-    ).format(cutoff);
-
     const visibleByDefault=
-      Boolean(day&&day>=cutoffKey&&day<=todayKey());
+      isPendingStatus(status)&&
+      !isProcessed(o);
 
     const visibleBySelectedClaim=
       activeStatus &&
@@ -1645,7 +1638,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v55',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v54',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
