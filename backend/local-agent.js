@@ -847,21 +847,44 @@ async function refreshEsmStatus(){
 
 
 
-async function writeAgentHeartbeat(){
+async function writeAgentHeartbeat(reason='interval'){
+  const now=new Date();
+  const payload={
+    online:true,
+    channel:'telegram',
+    telegramConfigured:telegramConfigured(),
+    version:'CLEAN-1.0.2',
+    pid:process.pid,
+    host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
+    heartbeatReason:reason,
+    heartbeatIntervalSeconds:30,
+    lastSeen:admin.firestore.FieldValue.serverTimestamp(),
+    lastSeenIso:now.toISOString(),
+    lastSeenEpoch:now.getTime()
+  };
+
   try{
-    await db.collection('system').doc('agent').set({
-      online:true,
-      channel:'telegram',
-      telegramConfigured:telegramConfigured(),
-      version:'CLEAN-1.0.1',
-      lastSeen:admin.firestore.FieldValue.serverTimestamp(),
-      lastSeenIso:new Date().toISOString()
-    },{merge:true});
-  }catch(error){
-    console.error(
-      '클라우드 생존신호 저장 실패:',
-      error instanceof Error?error.message:String(error)
+    await db.collection('system').doc('agent').set(
+      payload,
+      {merge:true}
     );
+
+    console.log(
+      `[생존신호 성공] ${now.toLocaleTimeString('ko-KR')} · ${reason}`
+    );
+
+    return true;
+  }catch(error){
+    const message=
+      error instanceof Error
+        ?error.message
+        :String(error);
+
+    console.error(
+      `[생존신호 실패] ${now.toLocaleTimeString('ko-KR')} · ${message}`
+    );
+
+    return false;
   }
 }
 
@@ -1056,7 +1079,7 @@ async function run(source){
     }
   }finally{
     running=false;
-    await writeAgentHeartbeat();
+    await writeAgentHeartbeat('startup');
   }
 }
 
@@ -1091,8 +1114,8 @@ commandRef.onSnapshot(snap=>{
 await writeAgentHeartbeat();
 
 setInterval(
-  ()=>writeAgentHeartbeat(),
-  60*1000
+  ()=>writeAgentHeartbeat('interval'),
+  30*1000
 );
 
 setInterval(
@@ -1107,7 +1130,7 @@ setInterval(
 
 console.log(
   `로컬 수집기 준비 완료 · ${intervalMinutes}분 자동수집 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 1분`
+  `텔레그램 테스트 즉시 사용 가능 · 생존신호 30초`
 );
 
 run('startup').catch(error=>{

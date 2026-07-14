@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.1';
+const APP_VERSION='CLEAN v1.0.2';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1204,104 +1204,137 @@ function watchAgentHeartbeat(){
     agentUnsubscribe();
   }
 
-  const showFallback=()=>{
-    const lastRuns=Object.values(integrations||{})
-      .map(info=>info?.lastRun)
-      .filter(Boolean)
-      .map(value=>new Date(value).getTime())
-      .filter(Number.isFinite);
+  const indicator=$('agentStatus');
+  const telegram=$('telegramState');
 
-    const latest=lastRuns.length
-      ?Math.max(...lastRuns)
-      :0;
+  function parseHeartbeat(data={}){
+    const candidates=[
+      data.lastSeenEpoch,
+      data.lastSeenIso,
+      data.lastSeen?.toDate?.()?.getTime?.()
+    ];
 
-    const age=latest
-      ?Date.now()-latest
+    for(const value of candidates){
+      if(typeof value==='number'&&Number.isFinite(value)){
+        return value;
+      }
+
+      if(typeof value==='string'){
+        const parsed=new Date(value).getTime();
+        if(Number.isFinite(parsed)){
+          return parsed;
+        }
+      }
+    }
+
+    return 0;
+  }
+
+  function showAgentState(data={}){
+    const heartbeat=parseHeartbeat(data);
+    const age=heartbeat
+      ?Math.max(0,Date.now()-heartbeat)
       :Infinity;
 
-    const online=
-      Number.isFinite(age) &&
-      age<15*60*1000;
+    if(indicator){
+      indicator.classList.remove('ok','error','warning');
 
-    const indicator=$('agentStatus');
+      if(age<=75*1000){
+        indicator.textContent=
+          `PC 수집기 정상 · ${Math.floor(age/1000)}초 전`;
+        indicator.classList.add('ok');
+      }else if(age<=180*1000){
+        indicator.textContent=
+          `PC 수집기 지연 · ${Math.floor(age/1000)}초 전`;
+        indicator.classList.add('warning');
+      }else{
+        indicator.textContent='PC 수집기 응답 없음';
+        indicator.classList.add('error');
+      }
+    }
+
+    if(telegram){
+      telegram.classList.remove('ok','error','warning');
+
+      if(data.telegramLastError){
+        telegram.textContent=
+          '텔레그램 오류 · '+
+          String(data.telegramLastError).slice(0,40);
+        telegram.classList.add('error');
+      }else if(data.telegramConfigured){
+        telegram.textContent='텔레그램 연결됨';
+        telegram.classList.add('ok');
+      }else{
+        telegram.textContent='텔레그램 설정 확인';
+        telegram.classList.add('warning');
+      }
+    }
+  }
+
+  function showIntegrationFallback(){
+    const timestamps=Object.values(integrations||{})
+      .flatMap(info=>[
+        info?.lastRun,
+        info?.lastSuccess,
+        info?.updatedAt
+      ])
+      .filter(Boolean)
+      .map(value=>{
+        if(value?.toDate){
+          return value.toDate().getTime();
+        }
+
+        return new Date(value).getTime();
+      })
+      .filter(Number.isFinite);
+
+    if(!timestamps.length){
+      if(indicator){
+        indicator.textContent='PC 수집기 상태 확인 중';
+        indicator.classList.remove('ok','error','warning');
+      }
+      return;
+    }
+
+    const latest=Math.max(...timestamps);
+    const age=Date.now()-latest;
 
     if(indicator){
-      indicator.textContent=online
-        ?`PC 수집기 정상 · 마켓 수집 ${relativeTime(
+      indicator.classList.remove('ok','error','warning');
+
+      if(age<15*60*1000){
+        indicator.textContent=
+          `PC 수집기 수집 확인 · ${relativeTime(
             new Date(latest).toISOString()
-          )}`
-        :'PC 수집기 상태 확인 중';
-
-      indicator.classList.toggle('ok',online);
-      indicator.classList.toggle('error',false);
+          )}`;
+        indicator.classList.add('ok');
+      }else{
+        indicator.textContent='PC 수집기 응답 없음';
+        indicator.classList.add('error');
+      }
     }
-  };
+  }
 
-  showFallback();
+  showIntegrationFallback();
 
   agentUnsubscribe=db.collection('system')
     .doc('agent')
     .onSnapshot(
+      {includeMetadataChanges:true},
       snapshot=>{
-        const data=snapshot.exists
-          ?snapshot.data()
-          :{};
-
-        const raw=
-          data.lastSeenIso||
-          data.lastSeen
-            ?.toDate?.()
-            ?.toISOString?.()||
-          '';
-
-        const age=raw
-          ?Date.now()-new Date(raw).getTime()
-          :Infinity;
-
-        const online=
-          Number.isFinite(age) &&
-          age<3*60*1000;
-
-        const indicator=$('agentStatus');
-
-        if(indicator){
-          indicator.textContent=online
-            ?`PC 수집기 정상 · ${relativeTime(raw)}`
-            :'PC 수집기 응답 없음';
-
-          indicator.classList.toggle('ok',online);
-          indicator.classList.toggle('error',!online);
-        }
-
-        const telegram=$('telegramState');
-
-        if(telegram){
-          if(data.telegramLastError){
-            telegram.textContent=
-              '텔레그램 오류 · '+
-              String(data.telegramLastError).slice(0,35);
-          }else{
-            telegram.textContent=data.telegramConfigured
-              ?'텔레그램 연결됨'
-              :'텔레그램 설정 확인';
-          }
-
-          telegram.classList.toggle(
-            'ok',
-            Boolean(
-              data.telegramConfigured &&
-              !data.telegramLastError
-            )
-          );
+        if(snapshot.exists){
+          showAgentState(snapshot.data()||{});
+        }else{
+          showIntegrationFallback();
         }
       },
       error=>{
         console.warn(
-          'Agent heartbeat read failed:',
+          'PC 수집기 생존신호 읽기 실패:',
           error
         );
 
-        showFallback();
+        showIntegrationFallback();
       }
     );
 }
@@ -1578,7 +1611,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.2',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
