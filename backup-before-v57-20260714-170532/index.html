@@ -1,11 +1,11 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
 <title>올데이픽 주문알림</title>
-<link rel="manifest" href="./manifest.json?v=clean-v57">
+<link rel="manifest" href="./manifest.json?v=clean-v55">
 <link rel="icon" href="./icon.svg">
 <style>
 :root{
@@ -262,10 +262,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   </section>
 
   <section class="card section">
-    <div class="section-head">
-      <h2>오늘 분석</h2>
-      <span class="subtle">실시간 자동 집계</span>
-    </div>
+    <div class="section-head"><h2>오늘 분석</h2><span class="subtle">실시간 자동 집계</span></div>
     <div class="analytics-grid" style="margin-top:12px">
       <div class="analytics-card"><h3>시간대별 주문</h3><div class="hour-chart" id="hourChart"></div></div>
       <div class="analytics-card"><h3>쇼핑몰별 오늘 매출</h3><div class="share-list" id="marketShare"></div></div>
@@ -314,45 +311,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <div class="modal-actions"><button class="btn primary" id="closeDetailBtn">닫기</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
-function loadFirebaseFile(primary,fallback){
-  return new Promise((resolve,reject)=>{
-    const script=document.createElement('script');
-    script.src=primary;
-    script.async=false;
-    script.onload=()=>resolve();
-    script.onerror=()=>{
-      script.remove();
-      const second=document.createElement('script');
-      second.src=fallback;
-      second.async=false;
-      second.onload=()=>resolve();
-      second.onerror=()=>reject(new Error('Firebase SDK를 불러오지 못했습니다.'));
-      document.head.appendChild(second);
-    };
-    document.head.appendChild(script);
-  });
-}
-
-window.firebaseReady=(async()=>{
-  const status=document.getElementById('cloudStatus');
-  if(status) status.textContent='Firebase SDK 불러오는 중';
-
-  await loadFirebaseFile(
-    'https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js'
-  );
-  await loadFirebaseFile(
-    'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js'
-  );
-  await loadFirebaseFile(
-    'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js'
-  );
-
-  return true;
-})();
+window.firebaseReady=Promise.resolve(true);
 </script>
 <script>const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -385,90 +348,9 @@ function statusKey(o){
 }
 function labelFor(o){return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문'}
 function isUnread(o){return o.readStatus!=='read'}
-function isProcessed(o){
-  return Boolean(o.workflowProcessed);
-}
-
-function completionText(o){
-  return [
-    o.sourceStatus,
-    o.statusLabel,
-    o.claimStatus,
-    o.processingStatus,
-    o.resultStatus
-  ].filter(Boolean).join(' ').toUpperCase();
-}
-
-function isClaimCompleted(o){
-  const key=statusKey(o);
-
-  if(!['cancel','return','exchange','inquiry'].includes(key)){
-    return false;
-  }
-
-  const text=completionText(o);
-
-  return [
-    'COMPLETE','COMPLETED','CLOSED','DONE',
-    'FINISH','FINISHED','WITHDRAW','REJECTED',
-    'CANCEL_COMPLETE','RETURN_COMPLETE','EXCHANGE_COMPLETE',
-    '처리완료','취소완료','반품완료','교환완료',
-    '답변완료','철회','종결'
-  ].some(word=>text.includes(word));
-}
-
-function isActuallyUnresolved(o){
-  return (
-    isPendingStatus(statusKey(o)) &&
-    !isProcessed(o) &&
-    !isClaimCompleted(o)
-  );
-}
-
-function marketIntegrationKey(market){
-  return {
-    쿠팡:'coupang',
-    스마트스토어:'smartstore',
-    '11번가':'elevenst',
-    G마켓:'gmarket',
-    옥션:'auction',
-    롯데온:'lotteon'
-  }[market]||'';
-}
-
-function marketIncludedOrder(o){
-  if(!['G마켓','옥션'].includes(o.market)){
-    return true;
-  }
-
-  const info=integrations[marketIntegrationKey(o.market)]||{};
-
-  if(!info.connected){
-    return false;
-  }
-
-  const connectedAt=info.connectedAt||info.firstConnectedAt||'';
-
-  if(!connectedAt){
-    return true;
-  }
-
-  return new Date(o.datetime||0).getTime()>=
-    new Date(connectedAt).getTime();
-}
-
-function financialOrders(){
-  return salesUniqueOrders().filter(marketIncludedOrder);
-}
+function isProcessed(o){return Boolean(o.workflowProcessed)}
 function isImportant(o){return Boolean(o.workflowImportant)}
-function isSalesOrder(o){
-  const key=statusKey(o);
-
-  return (
-    String(o.eventType||'order')==='order' &&
-    !['cancel','return','exchange','inquiry'].includes(key)
-  );
-}
+function isSalesOrder(o){const key=statusKey(o);return !['cancel','return','exchange','inquiry'].includes(key)||String(o.eventType||'order')==='order'}
 function relativeTime(value){if(!value)return'아직 실행되지 않음';const t=new Date(value).getTime();if(!Number.isFinite(t))return String(value);const s=Math.max(0,Math.floor((Date.now()-t)/1000));if(s<20)return'방금 전';if(s<60)return`${s}초 전`;const m=Math.floor(s/60);if(m<60)return`${m}분 전`;const h=Math.floor(m/60);if(h<24)return`${h}시간 전`;return`${Math.floor(h/24)}일 전`}
 
 function timestampValue(o){
@@ -582,7 +464,7 @@ function isRecentSevenDays(o){
 
 function activePeriodMatch(o,key){
   if(isPendingStatus(key)){
-    return isActuallyUnresolved(o);
+    return !isProcessed(o);
   }
 
   return true;
@@ -842,7 +724,7 @@ function correctedPendingByMarket(){
     if(
       result[market] &&
       isPendingStatus(key) &&
-      isActuallyUnresolved(order)
+      !isProcessed(order)
     ){
       result[market][key]+=1;
     }
@@ -863,7 +745,9 @@ function correctedDeliveryTotals(){
   uniqueLatestOrders().forEach(order=>{
     const key=statusKey(order);
 
-    if(Object.prototype.hasOwnProperty.call(result,key)){
+    if(
+      Object.prototype.hasOwnProperty.call(result,key)
+    ){
       result[key]+=1;
     }
   });
@@ -924,7 +808,7 @@ function renderDeliverySummary(){
 
 function correctedTodayTotals(){
   const today=todayKey();
-  const list=financialOrders().filter(order=>
+  const list=salesUniqueOrders().filter(order=>
     orderDay(order)===today
   );
 
@@ -939,7 +823,7 @@ function correctedTodayTotals(){
 
 function correctedMonthTotals(){
   const month=monthKey();
-  const list=financialOrders().filter(order=>
+  const list=salesUniqueOrders().filter(order=>
     orderDay(order).slice(0,7)===month
   );
 
@@ -1003,7 +887,7 @@ function renderStatus(){
     };
   });
 
-  $('dedupeInfo').textContent='실제 미처리 상태만 표시 · 완료 시 자동 제외';
+  $('dedupeInfo').textContent='미처리 주문은 날짜가 지나도 계속 표시 · 기준 오전 7:45';
   $('statusUpdated').textContent=
     '최근 갱신 '+
     new Date().toLocaleTimeString(
@@ -1084,21 +968,16 @@ function filteredOrders(){
   return uniqueLatestOrders().filter(o=>{
     const status=statusKey(o);
 
+    const day=orderDay(o);
     const cutoff=new Date();
     cutoff.setDate(cutoff.getDate()-31);
-
     const cutoffKey=new Intl.DateTimeFormat(
       'sv-SE',
       {timeZone:'Asia/Seoul'}
     ).format(cutoff);
 
-    const day=orderDay(o);
-
-    const visibleByDefault=Boolean(
-      day &&
-      day>=cutoffKey &&
-      day<=todayKey()
-    );
+    const visibleByDefault=
+      Boolean(day&&day>=cutoffKey&&day<=todayKey());
 
     const visibleBySelectedClaim=
       activeStatus &&
@@ -1732,7 +1611,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v57',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v56-1784014392',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -1778,5 +1657,41 @@ function applyMobileLabels(){
 window.addEventListener('resize',applyMobileLabels);
 setTimeout(applyMobileLabels,300);
 setTimeout(applyMobileLabels,1200);</script>
+<script id="V56_FIREBASE_WATCHDOG">
+(function(){
+  let attempts=0;
+
+  function checkFirebase(){
+    attempts+=1;
+
+    const status=document.getElementById('cloudStatus');
+    const text=status?.textContent||'';
+
+    if(window.firebase&&typeof window.initCloud==='function'){
+      if(
+        text.includes('Firebase SDK') ||
+        text.includes('연결 준비')
+      ){
+        window.initCloud();
+      }
+      return;
+    }
+
+    if(attempts>=10&&status){
+      status.textContent=
+        'Firebase SDK 연결 실패 · 인터넷 또는 광고차단 설정을 확인하세요.';
+    }
+
+    if(attempts<15){
+      setTimeout(checkFirebase,2000);
+    }
+  }
+
+  window.addEventListener('load',()=>{
+    setTimeout(checkFirebase,1000);
+  });
+})();
+</script>
 </body>
 </html>
+
