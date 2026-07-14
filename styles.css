@@ -231,3 +231,93 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 #processedCount{
   display:none!important;
 }
+
+
+/* CLEAN v1.0.7 memo modal hotfix */
+#memoModal[hidden]{
+  display:none!important;
+}
+
+#memoModal{
+  position:fixed!important;
+  inset:0!important;
+  z-index:99999!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:20px!important;
+  background:rgba(15,23,42,.45)!important;
+  overflow:auto!important;
+}
+
+#memoModal .modal-card,
+#memoModal .memo-card,
+#memoModal > div{
+  position:relative!important;
+  width:min(92vw,520px)!important;
+  max-height:85vh!important;
+  margin:auto!important;
+  padding:20px!important;
+  border-radius:20px!important;
+  background:#fff!important;
+  box-shadow:0 24px 70px rgba(15,23,42,.25)!important;
+  overflow:auto!important;
+}
+
+#memoModal textarea{
+  display:block!important;
+  width:100%!important;
+  min-height:150px!important;
+  max-height:45vh!important;
+  box-sizing:border-box!important;
+  resize:vertical!important;
+  margin:0 0 14px!important;
+  padding:14px!important;
+  border:1px solid #d1d5db!important;
+  border-radius:14px!important;
+  font-size:16px!important;
+  line-height:1.5!important;
+}
+
+#memoModal .modal-actions,
+#memoModal .memo-actions{
+  display:flex!important;
+  justify-content:flex-end!important;
+  gap:10px!important;
+  flex-wrap:wrap!important;
+}
+
+#memoModal button{
+  position:static!important;
+  min-width:96px!important;
+  min-height:44px!important;
+  margin:0!important;
+  border-radius:12px!important;
+}
+
+@media(max-width:520px){
+  #memoModal{
+    align-items:flex-end!important;
+    padding:12px!important;
+  }
+
+  #memoModal .modal-card,
+  #memoModal .memo-card,
+  #memoModal > div{
+    width:100%!important;
+    max-height:82vh!important;
+    border-radius:20px 20px 12px 12px!important;
+    padding:16px!important;
+  }
+
+  #memoModal .modal-actions,
+  #memoModal .memo-actions{
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+  }
+
+  #memoModal button{
+    width:100%!important;
+    min-width:0!important;
+  }
+}

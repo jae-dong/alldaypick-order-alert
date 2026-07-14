@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.5';
+const APP_VERSION='CLEAN v1.0.7';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -496,7 +496,7 @@ function unresolvedRowsForMarket(market=''){
 }
 
 function statsGroupsForPeriod(period){
-  const all=financialOrderGroups();
+  const all=canonicalOrderGroups();
 
   if(period==='all'){
     return all;
@@ -506,27 +506,198 @@ function statsGroupsForPeriod(period){
   const cutoff=Date.now()-days*86400000;
 
   return all.filter(group=>{
-    const time=new Date(group.datetime).getTime();
+    const time=
+      group.date instanceof Date
+        ?group.date.getTime()
+        :new Date(group.date).getTime();
+
     return Number.isFinite(time)&&time>=cutoff;
   });
 }
 
 
 
-function currentUnresolvedItems(){
-  const orderItems=activeOrderLines().filter(order=>
-    ['new','shipping_wait'].includes(statusKey(order))
-  );
 
-  const claimItems=activeClaims().filter(claim=>
-    ['cancel','return','exchange','inquiry']
-      .includes(statusKey(claim))
-  );
+function canonicalOrderDate(order){
+  const candidates=[
+    order?.orderDate,
+    order?.orderAt,
+    order?.orderedAt,
+    order?.paymentDate,
+    order?.paymentAt,
+    order?.datetime,
+    order?.createdAt
+  ];
 
-  return [...orderItems,...claimItems];
+  for(const value of candidates){
+    if(!value) continue;
+
+    const date=value?.toDate
+      ?value.toDate()
+      :new Date(value);
+
+    if(!Number.isNaN(date.getTime())){
+      return date;
+    }
+  }
+
+  return new Date(0);
 }
 
-function currentUnresolvedCounts(){
+function canonicalOrderDay(order){
+  const date=canonicalOrderDate(order);
+
+  if(!date.getTime()){
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(
+    'sv-SE',
+    {
+      timeZone:'Asia/Seoul',
+      year:'numeric',
+      month:'2-digit',
+      day:'2-digit'
+    }
+  ).format(date);
+}
+
+function canonicalOrderKey(order){
+  return [
+    normalizedText(order?.market||order?.source),
+    normalizedText(
+      order?.orderNo||
+      order?.orderId||
+      order?.shipmentBoxId||
+      order?.deliveryNo||
+      order?.id
+    )
+  ].join('|');
+}
+
+function canonicalOrderAmount(order){
+  const candidates=[
+    order?.orderTotalAmount,
+    order?.totalAmount,
+    order?.paymentAmount,
+    order?.salePrice,
+    order?.amount
+  ];
+
+  for(const value of candidates){
+    const number=Number(value);
+
+    if(Number.isFinite(number)&&number>=0){
+      return number;
+    }
+  }
+
+  return 0;
+}
+
+function canonicalNormalOrders(){
+  const latest=latestOrderLines();
+
+  return latest.filter(order=>{
+    const key=statusKey(order);
+
+    return (
+      isOrderEvent(order) &&
+      !['cancel','return','exchange','inquiry'].includes(key)
+    );
+  });
+}
+
+function canonicalOrderGroups(){
+  const groups=new Map();
+
+  canonicalNormalOrders().forEach(order=>{
+    const key=canonicalOrderKey(order);
+
+    if(!groups.has(key)){
+      groups.set(key,{
+        key,
+        market:order.market||order.source||'기타',
+        orderNo:order.orderNo||order.orderId||'',
+        date:canonicalOrderDate(order),
+        day:canonicalOrderDay(order),
+        lines:[],
+        amount:0,
+        qty:0,
+        explicitTotal:0
+      });
+    }
+
+    const group=groups.get(key);
+    group.lines.push(order);
+    group.qty+=Number(order.qty||1);
+
+    const explicit=Number(
+      order.orderTotalAmount||
+      order.totalAmount||
+      order.paymentAmount
+    );
+
+    if(Number.isFinite(explicit)&&explicit>0){
+      group.explicitTotal=Math.max(
+        group.explicitTotal,
+        explicit
+      );
+    }else{
+      group.amount+=canonicalOrderAmount(order);
+    }
+
+    const currentDate=canonicalOrderDate(order);
+
+    if(
+      currentDate.getTime() &&
+      (
+        !group.date?.getTime?.() ||
+        currentDate.getTime()<group.date.getTime()
+      )
+    ){
+      group.date=currentDate;
+      group.day=canonicalOrderDay(order);
+    }
+  });
+
+  return [...groups.values()].map(group=>({
+    ...group,
+    amount:
+      Number(group.explicitTotal||0)||
+      Number(group.amount||0)
+  }));
+}
+
+function canonicalTodayGroups(){
+  const today=todayKey();
+
+  return canonicalOrderGroups().filter(group=>
+    group.day===today
+  );
+}
+
+function canonicalMonthGroups(){
+  const month=monthKey();
+
+  return canonicalOrderGroups().filter(group=>
+    String(group.day||'').slice(0,7)===month
+  );
+}
+
+function canonicalUnresolvedItems(){
+  return [
+    ...activeOrderLines().filter(order=>
+      ['new','shipping_wait'].includes(statusKey(order))
+    ),
+    ...activeClaims().filter(claim=>
+      ['cancel','return','exchange','inquiry']
+        .includes(statusKey(claim))
+    )
+  ];
+}
+
+function canonicalUnresolvedCounts(){
   const counts={
     new:0,
     shipping_wait:0,
@@ -536,7 +707,7 @@ function currentUnresolvedCounts(){
     inquiry:0
   };
 
-  currentUnresolvedItems().forEach(item=>{
+  canonicalUnresolvedItems().forEach(item=>{
     const key=statusKey(item);
 
     if(Object.prototype.hasOwnProperty.call(counts,key)){
@@ -547,7 +718,7 @@ function currentUnresolvedCounts(){
   return counts;
 }
 
-function currentUnresolvedByMarket(){
+function canonicalUnresolvedByMarket(){
   const result={};
 
   MARKETS.forEach(([,name])=>{
@@ -565,11 +736,8 @@ function currentUnresolvedByMarket(){
   activeOrderGroups().forEach(group=>{
     if(!result[group.market]) return;
 
-    const statuses=new Set(
-      group.lines
-        .filter(isActiveOrderWork)
-        .map(statusKey)
-    );
+    const activeLines=group.lines.filter(isActiveOrderWork);
+    const statuses=new Set(activeLines.map(statusKey));
 
     if(statuses.has('new')){
       result[group.market].new+=1;
@@ -579,7 +747,7 @@ function currentUnresolvedByMarket(){
       result[group.market].shipping_wait+=1;
     }
 
-    if(statuses.size){
+    if(activeLines.length){
       result[group.market].orderAmount+=
         Number(group.amount||0);
     }
@@ -599,6 +767,19 @@ function currentUnresolvedByMarket(){
   });
 
   return result;
+}
+
+
+function currentUnresolvedItems(){
+  return canonicalUnresolvedItems();
+}
+
+function currentUnresolvedCounts(){
+  return canonicalUnresolvedCounts();
+}
+
+function currentUnresolvedByMarket(){
+  return canonicalUnresolvedByMarket();
 }
 
 
@@ -956,7 +1137,7 @@ function renderDeliverySummary(){
 }
 
 function correctedTodayTotals(){
-  const groups=todayFinancialGroups();
+  const groups=canonicalTodayGroups();
 
   return {
     count:groups.length,
@@ -968,7 +1149,7 @@ function correctedTodayTotals(){
 }
 
 function correctedMonthTotals(){
-  const groups=monthFinancialGroups();
+  const groups=canonicalMonthGroups();
 
   return {
     count:groups.length,
@@ -1111,7 +1292,7 @@ function filteredOrders(){
   const read=$('readFilter').value;
   const workflow=$('workflowFilter').value;
 
-  return currentUnresolvedItems().filter(order=>{
+  return canonicalUnresolvedItems().filter(order=>{
     const status=statusKey(order);
 
     if(activeStatus&&status!==activeStatus){
@@ -1141,24 +1322,15 @@ function filteredOrders(){
       return false;
     }
 
-    if(
-      read==='unread' &&
-      !isUnread(order)
-    ){
+    if(read==='unread'&&!isUnread(order)){
       return false;
     }
 
-    if(
-      read==='read' &&
-      isUnread(order)
-    ){
+    if(read==='read'&&isUnread(order)){
       return false;
     }
 
-    if(
-      workflow==='important' &&
-      !isImportant(order)
-    ){
+    if(workflow==='important'&&!isImportant(order)){
       return false;
     }
 
@@ -1333,12 +1505,13 @@ function renderOperations(){
 }
 
 function renderTodayAnalytics(){
-  const groups=todayFinancialGroups();
-
+  const groups=canonicalTodayGroups();
   const hourly=Array.from({length:24},()=>0);
 
   groups.forEach(group=>{
-    const date=new Date(group.datetime);
+    const date=group.date instanceof Date
+      ?group.date
+      :new Date(group.date);
 
     if(Number.isNaN(date.getTime())) return;
 
@@ -1378,21 +1551,21 @@ function renderTodayAnalytics(){
     `
   ).join('');
 
-  const marketMap={};
+  const marketSales={};
 
   groups.forEach(group=>{
-    marketMap[group.market]=
-      Number(marketMap[group.market]||0)+
+    marketSales[group.market]=
+      Number(marketSales[group.market]||0)+
       Number(group.amount||0);
   });
 
   const totalSales=
-    Object.values(marketMap)
+    Object.values(marketSales)
       .reduce((sum,value)=>sum+value,0)||
     1;
 
   $('marketShare').innerHTML=
-    Object.entries(marketMap)
+    Object.entries(marketSales)
       .sort((a,b)=>b[1]-a[1])
       .map(([market,sales])=>`
         <div class="share-row">
@@ -1429,7 +1602,7 @@ function renderTodayAnalytics(){
 
       products[name].orders.add(group.key);
       products[name].qty+=Number(line.qty||1);
-      products[name].sales+=orderAmountValue(line);
+      products[name].sales+=canonicalOrderAmount(line);
     });
   });
 
@@ -2083,7 +2256,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.5',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.7',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -2189,4 +2362,47 @@ window.addEventListener('error',event=>{
       `화면 오류 · ${String(event.message||'알 수 없는 오류').slice(0,100)}`;
   }
   console.error('CLEAN v1 화면 오류:',event.error||event.message);
+});
+
+
+function forceCloseMemoModal(){
+  const modal=document.getElementById('memoModal');
+  if(!modal) return;
+
+  modal.hidden=true;
+  modal.setAttribute('aria-hidden','true');
+  document.body.style.overflow='';
+}
+
+function forceOpenMemoModal(){
+  const modal=document.getElementById('memoModal');
+  if(!modal) return;
+
+  modal.hidden=false;
+  modal.setAttribute('aria-hidden','false');
+  document.body.style.overflow='hidden';
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  forceCloseMemoModal();
+
+  const close=document.getElementById('memoClose');
+  if(close){
+    close.onclick=forceCloseMemoModal;
+  }
+
+  const modal=document.getElementById('memoModal');
+  if(modal){
+    modal.addEventListener('click',event=>{
+      if(event.target===modal){
+        forceCloseMemoModal();
+      }
+    });
+  }
+
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){
+      forceCloseMemoModal();
+    }
+  });
 });
