@@ -690,7 +690,8 @@ async function syncSmartstoreSafe(source){
 
     console.log(
       `스마트스토어 동기화 완료: 발견 ${result.found}, `+
-      `신규 ${result.created}, 상태변경 ${result.statusChanged}`
+      `신규 ${result.created}, 상태변경 ${result.statusChanged}, `+
+      `조회구간 ${result.rangeCount||1}`
     );
 
     return result;
@@ -853,7 +854,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-1.0.3',
+    version:'CLEAN-1.0.4',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.3';
+const APP_VERSION='CLEAN v1.0.4';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -480,6 +480,37 @@ function monthFinancialGroups(){
     String(group.day||'').slice(0,7)===month
   );
 }
+
+
+function unresolvedRows(){
+  return [
+    ...activeOrderLines(),
+    ...activeClaims()
+  ];
+}
+
+function unresolvedRowsForMarket(market=''){
+  return unresolvedRows().filter(order=>
+    !market || order.market===market
+  );
+}
+
+function statsGroupsForPeriod(period){
+  const all=financialOrderGroups();
+
+  if(period==='all'){
+    return all;
+  }
+
+  const days=Math.max(1,Number(period)||7);
+  const cutoff=Date.now()-days*86400000;
+
+  return all.filter(group=>{
+    const time=new Date(group.datetime).getTime();
+    return Number.isFinite(time)&&time>=cutoff;
+  });
+}
+
 
 function unresolvedByMarket(){
   const result={};
@@ -999,81 +1030,75 @@ function filteredOrders(){
   const read=$('readFilter').value;
   const workflow=$('workflowFilter').value;
 
-  return uniqueLatestOrders().filter(o=>{
-    const status=statusKey(o);
+  return unresolvedRows().filter(order=>{
+    const status=statusKey(order);
 
-    const cutoff=new Date();
-    cutoff.setDate(cutoff.getDate()-31);
+    if(activeStatus && status!==activeStatus){
+      return false;
+    }
 
-    const cutoffKey=new Intl.DateTimeFormat(
-      'sv-SE',
-      {timeZone:'Asia/Seoul'}
-    ).format(cutoff);
+    if(activeMarket && order.market!==activeMarket){
+      return false;
+    }
 
-    const day=orderDay(o);
-
-    const visibleByDefault=Boolean(
-      day &&
-      day>=cutoffKey &&
-      day<=todayKey()
-    );
-
-    const visibleBySelectedClaim=
-      activeStatus &&
-      ['cancel','return','exchange','inquiry'].includes(activeStatus) &&
-      status===activeStatus &&
-      activePeriodMatch(o,activeStatus);
-
-    const visibleBySelectedWorkStatus=
-      activeStatus &&
-      ['new','shipping_wait'].includes(activeStatus) &&
-      status===activeStatus &&
-      isActiveOrderWork(o);
-
-    const visible=
-      activeStatus
-        ? (
-            visibleBySelectedClaim ||
-            visibleBySelectedWorkStatus
-          )
-        : visibleByDefault;
-
-    if(!visible) return false;
+    if(market && order.market!==market){
+      return false;
+    }
 
     const hit=!q||[
-      o.product,
-      o.orderNo,
-      o.buyer,
-      o.phone,
-      o.invoiceNumber,
-      o.workflowNote
-    ].some(v=>
-      String(v||'').toLowerCase().includes(q)
+      order.product,
+      order.orderNo,
+      order.buyer,
+      order.phone,
+      order.invoiceNumber,
+      order.workflowNote
+    ].some(value=>
+      String(value||'').toLowerCase().includes(q)
     );
 
-    const workflowHit=
-      !workflow ||
-      (workflow==='pending'&&(isActiveOrderWork(o)||isActiveClaimWork(o))) ||
-      (workflow==='important'&&isImportant(o)) ||
-      (workflow==='processed'&&isProcessed(o));
+    if(!hit){
+      return false;
+    }
 
-    return hit &&
-      (!market||o.market===market) &&
-      (!activeMarket||o.market===activeMarket) &&
-      (!read||(read==='unread'?isUnread(o):!isUnread(o))) &&
-      workflowHit;
+    if(
+      read &&
+      (
+        read==='unread'
+          ?!isUnread(order)
+          :isUnread(order)
+      )
+    ){
+      return false;
+    }
+
+    if(workflow==='important'&&!isImportant(order)){
+      return false;
+    }
+
+    if(workflow==='processed'){
+      return false;
+    }
+
+    return true;
   }).sort((a,b)=>{
+    const rank={
+      new:1,
+      shipping_wait:2,
+      cancel:3,
+      return:4,
+      exchange:5,
+      inquiry:6
+    };
+
     if(statusKey(a)!==statusKey(b)){
-      const rank={new:1,shipping_wait:2};
-      return (rank[statusKey(a)]||9)-(rank[statusKey(b)]||9);
+      return (
+        (rank[statusKey(a)]||9)-
+        (rank[statusKey(b)]||9)
+      );
     }
 
     if(isImportant(a)!==isImportant(b)){
       return isImportant(a)?-1:1;
-    }
-
-    if(isProcessed(a)!==isProcessed(b)){
-      return isProcessed(a)?1:-1;
     }
 
     return timestampValue(b)-timestampValue(a);
@@ -1142,57 +1167,73 @@ function renderOrders(){
 }
 function renderStats(){
   const period=$('statsPeriod').value;
-  const cut=period==='all'
-    ?0
-    :Date.now()-Number(period)*86400000;
-
-  const list=salesUniqueOrders().filter(o=>{
-    const t=new Date(dateValue(o)).getTime();
-    return !cut||t>=cut;
-  });
-
-  const monthlyTotals=settlementMonthlyTotals();
-  const includesMonth=
-    period==='all' ||
-    Number(period)>=31;
+  const groups=statsGroupsForPeriod(period);
 
   $('statOrders').textContent=
-    (includesMonth&&monthlyTotals.corrected
-      ?monthlyTotals.count
-      :list.length
-    )+'건';
+    groups.length+'건';
 
   $('statQty').textContent=
-    list.reduce((s,o)=>s+Number(o.qty||0),0)+'개';
+    groups.reduce(
+      (sum,group)=>sum+Number(group.qty||0),
+      0
+    )+'개';
 
   $('statSales').textContent=fmt(
-    includesMonth&&monthlyTotals.corrected
-      ?monthlyTotals.sales
-      :list.reduce((s,o)=>s+Number(o.amount||0),0)
+    groups.reduce(
+      (sum,group)=>sum+Number(group.amount||0),
+      0
+    )
   );
 
-  const map={};
-  list.forEach(o=>{
-    const n=o.product||'상품명 없음';
-    if(!map[n])map[n]={count:0,qty:0,sales:0};
-    map[n].count++;
-    map[n].qty+=Number(o.qty||0);
-    map[n].sales+=Number(o.amount||0);
+  const products={};
+
+  groups.forEach(group=>{
+    group.lines.forEach(line=>{
+      const name=line.product||'상품명 없음';
+
+      if(!products[name]){
+        products[name]={
+          orders:new Set(),
+          qty:0,
+          sales:0
+        };
+      }
+
+      products[name].orders.add(group.key);
+      products[name].qty+=Number(line.qty||1);
+      products[name].sales+=orderAmountValue(line);
+    });
   });
 
-  $('productRank').innerHTML=Object.entries(map)
-    .sort((a,b)=>b[1].count-a[1].count)
-    .slice(0,10)
-    .map(([name,v],i)=>`
-      <div class="rank-item">
-        <strong>${i+1}</strong>
-        <div>
-          <strong>${escapeHtml(name)}</strong>
-          <small>주문 ${v.count}건 · ${v.qty}개</small>
+  $('productRank').innerHTML=
+    Object.entries(products)
+      .map(([name,value])=>[
+        name,
+        {
+          count:value.orders.size,
+          qty:value.qty,
+          sales:value.sales
+        }
+      ])
+      .sort(
+        (a,b)=>
+          b[1].count-a[1].count||
+          b[1].sales-a[1].sales
+      )
+      .slice(0,10)
+      .map(([name,value],index)=>`
+        <div class="rank-row">
+          <span class="rank-no">${index+1}</span>
+          <div class="rank-name">
+            <strong>${escapeHtml(name)}</strong>
+            <small>
+              ${value.count}건 · ${value.qty}개
+            </small>
+          </div>
+          <strong>${fmt(value.sales)}</strong>
         </div>
-        <strong>${fmt(v.sales)}</strong>
-      </div>
-    `).join('');
+      `).join('')||
+    '<div class="subtle">해당 기간의 주문이 없습니다.</div>';
 }
 
 function renderOperations(){
@@ -1963,7 +2004,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.3',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.4',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

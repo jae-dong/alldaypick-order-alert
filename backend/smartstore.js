@@ -365,64 +365,117 @@ async function saveOrders(db, orders) {
   };
 }
 
-export async function syncSmartstore(db, config, minutes = 30) {
-  const token = await accessToken(config);
-  const now = new Date();
-  const from = new Date(now.getTime() - minutes * 60 * 1000);
 
-  const params = new URLSearchParams({
-    lastChangedFrom: iso(from),
-    lastChangedTo: iso(now),
-    limitCount: '300'
+function splitDateRange(from,to,maxHours=23){
+  const ranges=[];
+  const maxMs=Math.max(1,maxHours)*60*60*1000;
+  let cursor=new Date(from);
+
+  while(cursor<to){
+    const end=new Date(
+      Math.min(
+        cursor.getTime()+maxMs,
+        to.getTime()
+      )
+    );
+
+    ranges.push({
+      from:new Date(cursor),
+      to:end
+    });
+
+    cursor=new Date(end.getTime()+1000);
+  }
+
+  return ranges;
+}
+
+async function changedProductOrderIds(token,from,to){
+  const params=new URLSearchParams({
+    lastChangedFrom:iso(from),
+    lastChangedTo:iso(to),
+    limitCount:'300'
   });
 
-  const changed = await api(
+  const changed=await api(
     token,
     `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
   );
 
-  const ids = [
-    ...new Set(
-      changedRows(changed)
-        .map(row =>
-          String(
-            row.productOrderId ||
-            row.productOrder?.productOrderId ||
-            ''
-          )
-        )
-        .filter(Boolean)
+  return changedRows(changed)
+    .map(row=>
+      String(
+        row.productOrderId ||
+        row.productOrder?.productOrderId ||
+        ''
+      )
     )
-  ];
+    .filter(Boolean);
+}
 
-  if (!ids.length) {
+
+export async function syncSmartstore(db,config,minutes=30){
+  const token=await accessToken(config);
+  const now=new Date();
+  const from=new Date(
+    now.getTime()-minutes*60*1000
+  );
+
+  const ranges=splitDateRange(from,now,23);
+  const idSet=new Set();
+
+  for(const range of ranges){
+    const ids=await changedProductOrderIds(
+      token,
+      range.from,
+      range.to
+    );
+
+    ids.forEach(id=>idSet.add(id));
+  }
+
+  const ids=[...idSet];
+
+  if(!ids.length){
     return {
-      connected: true,
-      found: 0,
-      created: 0,
-      existing: 0,
-      statusChanged: 0,
-      createdOrders: []
+      connected:true,
+      found:0,
+      created:0,
+      existing:0,
+      statusChanged:0,
+      createdOrders:[],
+      rangeCount:ranges.length
     };
   }
 
-  const details = await api(
-    token,
-    '/v1/pay-order/seller/product-orders/query',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        productOrderIds: ids.slice(0, 300)
-      })
-    }
-  );
+  const allOrders=[];
 
-  const orders = detailRows(details)
-    .map(normalizeDetail)
-    .filter(Boolean);
+  for(let index=0;index<ids.length;index+=300){
+    const batch=ids.slice(index,index+300);
+
+    const details=await api(
+      token,
+      '/v1/pay-order/seller/product-orders/query',
+      {
+        method:'POST',
+        body:JSON.stringify({
+          productOrderIds:batch
+        })
+      }
+    );
+
+    allOrders.push(
+      ...detailRows(details)
+        .map(normalizeDetail)
+        .filter(Boolean)
+    );
+  }
+
+  const saved=await saveOrders(db,allOrders);
 
   return {
-    connected: true,
-    ...(await saveOrders(db, orders))
+    connected:true,
+    ...saved,
+    rangeCount:ranges.length
   };
 }
