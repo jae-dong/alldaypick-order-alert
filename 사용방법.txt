@@ -1,22 +1,20 @@
-﻿올데이픽 주문알림 v51 클라우드 초기화 오류 수정
+﻿v52 클라우드 안정화 + 모바일 가독성
 
-원인
-- 웹푸시 관련 화면 요소를 remove()로 완전히 삭제해 기존 코드가 없는 요소에 textContent를 쓰면서 중단되었습니다.
-
-수정
-- 삭제 대신 화면에서만 숨김
-- 업데이트 시간 요소가 없어도 오류가 나지 않도록 보완
+- 현재 캡처상 쿠팡, 스마트스토어, 11번가, 롯데온은 실제 연결됨입니다.
+- 상단 오류는 UI 요소 누락 때문에 발생한 표시 오류입니다.
+- 누락 요소 자동 보완
+- 모바일 쇼핑몰 현황을 2열 카드로 변경
+- 오늘 주문, 매출, 발송대기, 신규, 취소, 반품, 교환, 배송중 표시
+- 오늘 분석 접기/펼치기
+- 모바일 간격과 글자 크기 조정
 - 캐시 버전 강제 변경
-- 텔레그램 전용 알림 유지
 
-적용
+적용:
 1. 압축 해제
-2. apply-v51.cmd와 apply-v51.ps1을 프로젝트 폴더에 복사
-3. PowerShell:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v51.ps1"
-4. GitHub Desktop Summary:
-   v51 클라우드 초기화 오류 수정
+2. apply-v52.cmd, apply-v52.ps1을 프로젝트 폴더에 복사
+3. powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v52.ps1"
+4. GitHub Desktop: v52 클라우드 안정화 모바일 개선
 5. Commit to main → Push origin
+6. 휴대폰 사이트 데이터 삭제 후 재접속
 
-휴대폰에서 사이트 데이터 한 번 삭제 후 다시 접속하세요.
 npm run agent 재시작은 필요 없습니다.
