@@ -778,6 +778,70 @@ async function refreshEsmStatus(){
 }
 
 
+
+async function writeAgentHeartbeat(){
+  try{
+    await db.collection('system').doc('agent').set({
+      online:true,
+      channel:'telegram',
+      telegramConfigured:telegramConfigured(),
+      version:'53.0.0',
+      lastSeen:admin.firestore.FieldValue.serverTimestamp(),
+      lastSeenIso:new Date().toISOString()
+    },{merge:true});
+  }catch(error){
+    console.error(
+      '클라우드 생존신호 저장 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+  }
+}
+
+async function runTelegramTest(requestId=''){
+  const startedAt=new Date().toISOString();
+
+  try{
+    const result=await sendTelegram(
+      '✅ 올데이픽 텔레그램 테스트',
+      [
+        '텔레그램 주문알림 연결이 정상입니다.',
+        `테스트 시각: ${new Date().toLocaleString('ko-KR')}`,
+        '앞으로 신규주문·취소·반품·교환 알림이 이 채팅으로 전송됩니다.'
+      ].join('\n')
+    );
+
+    const success=(result.sent||0)>0;
+
+    await commandRef.set({
+      status:success?'test_success':'test_error',
+      action:'telegram_test',
+      requestId,
+      testResult:result,
+      completedAt:admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt:admin.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+
+    console.log(
+      success
+        ? '텔레그램 테스트 메시지 전송 성공'
+        : '텔레그램 테스트 메시지 전송 실패'
+    );
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+
+    await commandRef.set({
+      status:'test_error',
+      action:'telegram_test',
+      requestId,
+      error:message,
+      completedAt:admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt:admin.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+
+    console.error('텔레그램 테스트 실패:',message);
+  }
+}
+
 async function runFastSync(){
   if(fastRunning||running) return;
   fastRunning=true;
@@ -950,12 +1014,28 @@ async function run(source){
 
 commandRef.onSnapshot(snap=>{
   if(!snap.exists) return;
-  const data=snap.data()||{};
-  if(data.status!=='requested'||!data.requestId||data.requestId===lastRequestId) return;
-  lastRequestId=data.requestId;
-  run('immediate');
-},error=>console.error('즉시수집 감시 오류:',error.message));
 
+  const data=snap.data()||{};
+
+  if(
+    data.status!=='requested' ||
+    !data.requestId ||
+    data.requestId===lastRequestId
+  ){
+    return;
+  }
+
+  lastRequestId=data.requestId;
+
+  if(data.action==='telegram_test'){
+    runTelegramTest(data.requestId);
+    return;
+  }
+
+  run('immediate');
+},error=>console.error('명령 감시 오류:',error.message));
+
+await writeAgentHeartbeat();
 await run('startup');
 setInterval(
   ()=>runFastSync(),
@@ -969,5 +1049,11 @@ setInterval(
 
 console.log(
   `로컬 수집기 실행 중 · ${intervalMinutes}분 자동수집 · `+
-  `쿠팡 전체동기화 · 스마트스토어 자동동기화 · 429 자동대기`
+  `쿠팡 전체동기화 · 스마트스토어 자동동기화 · 텔레그램 전용 · 클라우드 생존신호 1분`
+);
+
+
+setInterval(
+  ()=>writeAgentHeartbeat(),
+  60*1000
 );
