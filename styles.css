@@ -224,3 +224,10 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .order-sales-cell small{
   font-weight:900;
 }
+
+.operations-grid,
+#dispatchDueCount,
+#importantCount,
+#processedCount{
+  display:none!important;
+}

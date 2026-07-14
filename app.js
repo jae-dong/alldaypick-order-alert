@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.4';
+const APP_VERSION='CLEAN v1.0.5';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -512,6 +512,96 @@ function statsGroupsForPeriod(period){
 }
 
 
+
+function currentUnresolvedItems(){
+  const orderItems=activeOrderLines().filter(order=>
+    ['new','shipping_wait'].includes(statusKey(order))
+  );
+
+  const claimItems=activeClaims().filter(claim=>
+    ['cancel','return','exchange','inquiry']
+      .includes(statusKey(claim))
+  );
+
+  return [...orderItems,...claimItems];
+}
+
+function currentUnresolvedCounts(){
+  const counts={
+    new:0,
+    shipping_wait:0,
+    cancel:0,
+    return:0,
+    exchange:0,
+    inquiry:0
+  };
+
+  currentUnresolvedItems().forEach(item=>{
+    const key=statusKey(item);
+
+    if(Object.prototype.hasOwnProperty.call(counts,key)){
+      counts[key]+=1;
+    }
+  });
+
+  return counts;
+}
+
+function currentUnresolvedByMarket(){
+  const result={};
+
+  MARKETS.forEach(([,name])=>{
+    result[name]={
+      new:0,
+      shipping_wait:0,
+      cancel:0,
+      return:0,
+      exchange:0,
+      inquiry:0,
+      orderAmount:0
+    };
+  });
+
+  activeOrderGroups().forEach(group=>{
+    if(!result[group.market]) return;
+
+    const statuses=new Set(
+      group.lines
+        .filter(isActiveOrderWork)
+        .map(statusKey)
+    );
+
+    if(statuses.has('new')){
+      result[group.market].new+=1;
+    }
+
+    if(statuses.has('shipping_wait')){
+      result[group.market].shipping_wait+=1;
+    }
+
+    if(statuses.size){
+      result[group.market].orderAmount+=
+        Number(group.amount||0);
+    }
+  });
+
+  activeClaims().forEach(claim=>{
+    const market=claim.market;
+    const key=statusKey(claim);
+
+    if(
+      result[market] &&
+      ['cancel','return','exchange','inquiry']
+        .includes(key)
+    ){
+      result[market][key]+=1;
+    }
+  });
+
+  return result;
+}
+
+
 function unresolvedByMarket(){
   const result={};
 
@@ -791,7 +881,7 @@ function processedBaselineAdjustments(){
 }
 
 function correctedPendingByMarket(){
-  return unresolvedByMarket();
+  return currentUnresolvedByMarket();
 }
 
 
@@ -909,19 +999,12 @@ function renderMetrics(){
   $('monthSalesNote').textContent=monthNote;
 }
 function renderStatus(){
-  const pending=unresolvedByMarket();
-  const counts=Object.fromEntries(
-    STATUS_ITEMS.map(([key])=>[key,0])
-  );
-
-  Object.values(pending).forEach(market=>{
-    STATUS_ITEMS.forEach(([key])=>{
-      counts[key]+=Number(market[key]||0);
-    });
-  });
-
+  const counts=currentUnresolvedCounts();
   const statusGrid=$('statusGrid');
-  if(!statusGrid) return;
+
+  if(!statusGrid){
+    return;
+  }
 
   statusGrid.innerHTML=STATUS_ITEMS.map(
     ([key,label])=>`
@@ -930,7 +1013,7 @@ function renderStatus(){
         data-key="${key}"
       >
         <span>${label}</span>
-        <strong>${counts[key]}</strong>
+        <strong>${Number(counts[key]||0)}</strong>
       </button>
     `
   ).join('');
@@ -952,7 +1035,7 @@ function renderStatus(){
 
   if(dedupeInfo){
     dedupeInfo.textContent=
-      '현재 실제 미처리 건만 표시 · 완료되면 자동 제외';
+      '현재 실제 미완료 건만 표시 · 완료되면 자동 제외';
   }
 
   $('statusUpdated').textContent=
@@ -963,15 +1046,15 @@ function renderStatus(){
     );
 }
 function renderMarkets(){
-  const pending=unresolvedByMarket();
+  const pending=currentUnresolvedByMarket();
 
   $('marketBody').innerHTML=MARKETS.map(([key,name])=>{
-    const marketPending=pending[name]||{};
-    const ok=Boolean(integrations[key]?.connected);
+    const data=pending[name]||{};
+    const connected=Boolean(integrations[key]?.connected);
 
     const activeOrderCount=
-      Number(marketPending.new||0)+
-      Number(marketPending.shipping_wait||0);
+      Number(data.new||0)+
+      Number(data.shipping_wait||0);
 
     return `
       <tr
@@ -980,45 +1063,43 @@ function renderMarkets(){
       >
         <td>
           <span class="market-name">
-            <span class="market-dot ${ok?'ok':''}"></span>
+            <span class="market-dot ${connected?'ok':''}"></span>
             ${name}
           </span>
         </td>
         <td class="order-sales-cell">
           <strong>${activeOrderCount}</strong>
-          <small>${fmt(marketPending.orderAmount||0)}</small>
+          <small>${fmt(data.orderAmount||0)}</small>
         </td>
-        <td>${Number(marketPending.new||0)}</td>
-        <td>${Number(marketPending.shipping_wait||0)}</td>
-        <td>${Number(marketPending.cancel||0)}</td>
-        <td>${Number(marketPending.return||0)}</td>
-        <td>${Number(marketPending.exchange||0)}</td>
+        <td>${Number(data.new||0)}</td>
+        <td>${Number(data.shipping_wait||0)}</td>
+        <td>${Number(data.cancel||0)}</td>
+        <td>${Number(data.return||0)}</td>
+        <td>${Number(data.exchange||0)}</td>
       </tr>
     `;
   }).join('');
 
-  $('marketBody')
-    .querySelectorAll('tr')
-    .forEach(row=>{
-      row.onclick=()=>{
-        activeMarket=
-          activeMarket===row.dataset.market
-            ?''
-            :row.dataset.market;
+  $('marketBody').querySelectorAll('tr').forEach(row=>{
+    row.onclick=()=>{
+      activeMarket=
+        activeMarket===row.dataset.market
+          ?''
+          :row.dataset.market;
 
-        currentPage=1;
-        showOrdersTab();
-        render();
+      currentPage=1;
+      showOrdersTab();
+      render();
 
-        $('ordersPanel').scrollIntoView({
-          behavior:'smooth',
-          block:'start'
-        });
-      };
-    });
+      $('ordersPanel').scrollIntoView({
+        behavior:'smooth',
+        block:'start'
+      });
+    };
+  });
 
   $('marketUpdated').textContent=
-    '현재 미처리 기준 · '+
+    '실제 미완료 기준 · '+
     new Date().toLocaleTimeString(
       'ko-KR',
       {hour:'2-digit',minute:'2-digit'}
@@ -1030,22 +1111,22 @@ function filteredOrders(){
   const read=$('readFilter').value;
   const workflow=$('workflowFilter').value;
 
-  return unresolvedRows().filter(order=>{
+  return currentUnresolvedItems().filter(order=>{
     const status=statusKey(order);
 
-    if(activeStatus && status!==activeStatus){
+    if(activeStatus&&status!==activeStatus){
       return false;
     }
 
-    if(activeMarket && order.market!==activeMarket){
+    if(activeMarket&&order.market!==activeMarket){
       return false;
     }
 
-    if(market && order.market!==market){
+    if(market&&order.market!==market){
       return false;
     }
 
-    const hit=!q||[
+    const matchesSearch=!q||[
       order.product,
       order.orderNo,
       order.buyer,
@@ -1056,26 +1137,28 @@ function filteredOrders(){
       String(value||'').toLowerCase().includes(q)
     );
 
-    if(!hit){
+    if(!matchesSearch){
       return false;
     }
 
     if(
-      read &&
-      (
-        read==='unread'
-          ?!isUnread(order)
-          :isUnread(order)
-      )
+      read==='unread' &&
+      !isUnread(order)
     ){
       return false;
     }
 
-    if(workflow==='important'&&!isImportant(order)){
+    if(
+      read==='read' &&
+      isUnread(order)
+    ){
       return false;
     }
 
-    if(workflow==='processed'){
+    if(
+      workflow==='important' &&
+      !isImportant(order)
+    ){
       return false;
     }
 
@@ -1095,10 +1178,6 @@ function filteredOrders(){
         (rank[statusKey(a)]||9)-
         (rank[statusKey(b)]||9)
       );
-    }
-
-    if(isImportant(a)!==isImportant(b)){
-      return isImportant(a)?-1:1;
     }
 
     return timestampValue(b)-timestampValue(a);
@@ -2004,7 +2083,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.4',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.5',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

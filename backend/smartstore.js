@@ -414,6 +414,55 @@ async function changedProductOrderIds(token,from,to){
 }
 
 
+
+function smartstoreWait(ms){
+  return new Promise(resolve=>setTimeout(resolve,ms));
+}
+
+function smartstoreRateLimited(error){
+  const message=String(
+    error instanceof Error?error.message:error
+  ).toLowerCase();
+
+  return (
+    message.includes('429') ||
+    message.includes('too many requests') ||
+    message.includes('요청이 많아')
+  );
+}
+
+async function smartstoreRetry(task,label){
+  const delays=[30000,60000,120000];
+  let lastError;
+
+  for(let attempt=0;attempt<=delays.length;attempt+=1){
+    try{
+      return await task();
+    }catch(error){
+      lastError=error;
+
+      if(
+        !smartstoreRateLimited(error) ||
+        attempt>=delays.length
+      ){
+        throw error;
+      }
+
+      const delay=delays[attempt];
+
+      console.warn(
+        `${label} 요청 제한 · ${delay/1000}초 뒤 자동 재시도 `+
+        `(${attempt+1}/${delays.length})`
+      );
+
+      await smartstoreWait(delay);
+    }
+  }
+
+  throw lastError;
+}
+
+
 export async function syncSmartstore(db,config,minutes=30){
   const token=await accessToken(config);
   const now=new Date();
@@ -424,14 +473,23 @@ export async function syncSmartstore(db,config,minutes=30){
   const ranges=splitDateRange(from,now,23);
   const idSet=new Set();
 
-  for(const range of ranges){
-    const ids=await changedProductOrderIds(
-      token,
-      range.from,
-      range.to
+  for(let index=0;index<ranges.length;index+=1){
+    const range=ranges[index];
+
+    const ids=await smartstoreRetry(
+      ()=>changedProductOrderIds(
+        token,
+        range.from,
+        range.to
+      ),
+      `스마트스토어 변경내역 ${index+1}/${ranges.length}`
     );
 
     ids.forEach(id=>idSet.add(id));
+
+    if(index<ranges.length-1){
+      await smartstoreWait(3000);
+    }
   }
 
   const ids=[...idSet];
@@ -453,15 +511,18 @@ export async function syncSmartstore(db,config,minutes=30){
   for(let index=0;index<ids.length;index+=300){
     const batch=ids.slice(index,index+300);
 
-    const details=await api(
-      token,
-      '/v1/pay-order/seller/product-orders/query',
-      {
-        method:'POST',
-        body:JSON.stringify({
-          productOrderIds:batch
-        })
-      }
+    const details=await smartstoreRetry(
+      ()=>api(
+        token,
+        '/v1/pay-order/seller/product-orders/query',
+        {
+          method:'POST',
+          body:JSON.stringify({
+            productOrderIds:batch
+          })
+        }
+      ),
+      `스마트스토어 상세조회 ${Math.floor(index/300)+1}`
     );
 
     allOrders.push(
@@ -469,6 +530,10 @@ export async function syncSmartstore(db,config,minutes=30){
         .map(normalizeDetail)
         .filter(Boolean)
     );
+
+    if(index+300<ids.length){
+      await smartstoreWait(3000);
+    }
   }
 
   const saved=await saveOrders(db,allOrders);
