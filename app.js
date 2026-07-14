@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.0';
+const APP_VERSION='CLEAN v1.0.1';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -651,7 +651,10 @@ function renderStatus(){
     };
   });
 
-  $('dedupeInfo').textContent='실제 미처리 상태만 표시 · 완료 시 자동 제외';
+  const dedupeInfo=$('dedupeInfo');
+  if(dedupeInfo){
+    dedupeInfo.textContent='실제 미처리 상태만 표시 · 완료 시 자동 제외';
+  }
   $('statusUpdated').textContent=
     '최근 갱신 '+
     new Date().toLocaleTimeString(
@@ -1575,7 +1578,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v58',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.1',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

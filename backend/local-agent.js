@@ -853,7 +853,7 @@ async function writeAgentHeartbeat(){
       online:true,
       channel:'telegram',
       telegramConfigured:telegramConfigured(),
-      version:'CLEAN-1.0.0',
+      version:'CLEAN-1.0.1',
       lastSeen:admin.firestore.FieldValue.serverTimestamp(),
       lastSeenIso:new Date().toISOString()
     },{merge:true});
