@@ -1,5 +1,12 @@
-const CACHE='alldaypick-actual-v60';
-const STATIC=['./','./index.html','./manifest.json','./icon.svg'];
+const CACHE='alldaypick-clean-v1-20260714';
+const STATIC=[
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './manifest.json',
+  './icon.svg'
+];
 
 self.addEventListener('install',event=>{
   event.waitUntil(
@@ -13,9 +20,7 @@ self.addEventListener('activate',event=>{
   event.waitUntil(
     caches.keys()
       .then(keys=>Promise.all(
-        keys
-          .filter(key=>key!==CACHE)
-          .map(key=>caches.delete(key))
+        keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))
       ))
       .then(()=>self.clients.claim())
   );
@@ -23,16 +28,10 @@ self.addEventListener('activate',event=>{
 
 self.addEventListener('fetch',event=>{
   const request=event.request;
-
-  if(request.method!=='GET'){
-    return;
-  }
+  if(request.method!=='GET') return;
 
   const url=new URL(request.url);
-
-  if(!['http:','https:'].includes(url.protocol)){
-    return;
-  }
+  if(!['http:','https:'].includes(url.protocol)) return;
 
   if(request.mode==='navigate'){
     event.respondWith(
@@ -44,12 +43,10 @@ self.addEventListener('fetch',event=>{
               .then(cache=>cache.put('./index.html',copy))
               .catch(()=>{});
           }
-
           return response;
         })
         .catch(()=>caches.match('./index.html'))
     );
-
     return;
   }
 
@@ -62,7 +59,6 @@ self.addEventListener('fetch',event=>{
             .then(cache=>cache.put(request,copy))
             .catch(()=>{});
         }
-
         return response;
       })
       .catch(()=>caches.match(request))

@@ -1,4 +1,11 @@
 backend/.env.local
 backend/node_modules/
 *.log
-backup-v30-*/
+backup-*/
+apply-v*.cmd
+apply-v*.ps1
+V*_FINAL/
+CLEAN_*/
+ACTUAL_*/
+
+CLEAN_V1_PROJECT/
