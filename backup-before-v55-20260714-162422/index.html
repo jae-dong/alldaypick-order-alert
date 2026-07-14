@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -311,11 +311,45 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <div class="modal-actions"><button class="btn primary" id="closeDetailBtn">닫기</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
-window.firebaseReady=Promise.resolve(true);
+function loadFirebaseFile(primary,fallback){
+  return new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src=primary;
+    script.async=false;
+    script.onload=()=>resolve();
+    script.onerror=()=>{
+      script.remove();
+      const second=document.createElement('script');
+      second.src=fallback;
+      second.async=false;
+      second.onload=()=>resolve();
+      second.onerror=()=>reject(new Error('Firebase SDK를 불러오지 못했습니다.'));
+      document.head.appendChild(second);
+    };
+    document.head.appendChild(script);
+  });
+}
+
+window.firebaseReady=(async()=>{
+  const status=document.getElementById('cloudStatus');
+  if(status) status.textContent='Firebase SDK 불러오는 중';
+
+  await loadFirebaseFile(
+    'https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js'
+  );
+  await loadFirebaseFile(
+    'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js'
+  );
+  await loadFirebaseFile(
+    'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js'
+  );
+
+  return true;
+})();
 </script>
 <script>const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1611,7 +1645,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v56-1784014392',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v55',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -1657,41 +1691,5 @@ function applyMobileLabels(){
 window.addEventListener('resize',applyMobileLabels);
 setTimeout(applyMobileLabels,300);
 setTimeout(applyMobileLabels,1200);</script>
-<script id="V56_FIREBASE_WATCHDOG">
-(function(){
-  let attempts=0;
-
-  function checkFirebase(){
-    attempts+=1;
-
-    const status=document.getElementById('cloudStatus');
-    const text=status?.textContent||'';
-
-    if(window.firebase&&typeof window.initCloud==='function'){
-      if(
-        text.includes('Firebase SDK') ||
-        text.includes('연결 준비')
-      ){
-        window.initCloud();
-      }
-      return;
-    }
-
-    if(attempts>=10&&status){
-      status.textContent=
-        'Firebase SDK 연결 실패 · 인터넷 또는 광고차단 설정을 확인하세요.';
-    }
-
-    if(attempts<15){
-      setTimeout(checkFirebase,2000);
-    }
-  }
-
-  window.addEventListener('load',()=>{
-    setTimeout(checkFirebase,1000);
-  });
-})();
-</script>
 </body>
 </html>
-

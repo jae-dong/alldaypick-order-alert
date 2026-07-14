@@ -1,5 +1,5 @@
-﻿
-const CACHE='alldaypick-clean-v56-1784014392';
+
+const CACHE='alldaypick-clean-v1';
 const SHELL=['./','./index.html','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
@@ -44,4 +44,3 @@ self.addEventListener('fetch',event=>{
       .catch(()=>caches.match(event.request))
   );
 });
-
