@@ -1,0 +1,35 @@
+﻿올데이픽 주문알림 CLEAN FINAL
+
+이번 파일은 v15~v60 패치를 다시 덧붙이는 패치가 아닙니다.
+현재 동작하는 주문수집 모듈만 보존하고, index.html과 서비스워커를 새로 정리한 통합본입니다.
+
+정리된 기능
+- 새로고침 즉시 Firebase 익명 로그인 및 Firestore 자동 연결
+- 주문 목록과 쇼핑몰 연결 현황 실시간 onSnapshot
+- PC 수집기 1분 생존신호 표시
+- 텔레그램 설정 상태 표시
+- 텔레그램 테스트 버튼 실제 전송
+- 오늘 주문/매출, 이번달 총주문/총매출
+- 처리 알림
+- 쇼핑몰별 주문 현황
+- 모바일 접힘/펼침 모두 같은 표와 같은 항목
+- 주문 검색/필터/상세/복사/메모/중요/처리완료
+- 오래된 누적 UI 패치 코드 제거
+- 네트워크 우선 서비스워커로 캐시 문제 방지
+- 기존 backend/.env.local 자동 보존
+
+설치
+1. 이 CLEAN FINAL 폴더 전체를 현재 alldaypick-order-alert 폴더 안에 복사하지 마세요.
+2. CLEAN FINAL 폴더를 기존 프로젝트 폴더 바로 아래에 둡니다.
+3. install-clean-final.cmd 실행
+4. GitHub Desktop에서 변경 파일 확인
+5. Summary: clean final 통합정리
+6. Commit to main → Push origin
+7. backend 폴더에서 npm install
+8. 기존 수집기 Ctrl+C 후 npm run agent
+9. 휴대폰 Chrome 사이트 데이터 한 번 삭제 후 재접속
+
+중요
+- backend/.env.local은 설치 프로그램이 그대로 보존합니다.
+- ZIP 안에는 실제 API 키와 텔레그램 토큰을 넣지 않았습니다.
+- 기존 apply-v15~v60 파일은 당장 삭제하지 않아도 되지만 더 이상 실행하지 마세요.
