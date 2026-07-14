@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v1.0.2';
+const APP_VERSION='CLEAN v1.0.3';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -240,6 +240,298 @@ function salesUniqueOrders(){
 
 
 
+
+function isOrderEvent(order){
+  return String(order?.eventType||'order').toLowerCase()==='order';
+}
+
+function isClaimEvent(order){
+  return ['cancel','return','exchange','inquiry']
+    .includes(
+      String(order?.eventType||'').toLowerCase()
+    );
+}
+
+function orderGroupKey(order){
+  return [
+    normalizedText(order?.market||order?.source),
+    normalizedText(
+      order?.orderNo||
+      order?.orderId||
+      order?.shipmentBoxId||
+      order?.deliveryNo||
+      order?.id
+    )
+  ].join('|');
+}
+
+function latestOrderLines(){
+  return uniqueLatestOrders(
+    orders.filter(isOrderEvent)
+  ).filter(marketIncludedOrder);
+}
+
+function latestClaimDocuments(){
+  const claims=orders.filter(isClaimEvent);
+  const groups=new Map();
+
+  claims.forEach(claim=>{
+    const key=[
+      orderGroupKey(claim),
+      statusKey(claim),
+      normalizedText(
+        claim.orderProductSequence||
+        claim.orderItemId||
+        claim.vendorItemId||
+        claim.product||
+        claim.id
+      )
+    ].join('|');
+
+    const current=groups.get(key);
+
+    if(
+      !current ||
+      timestampValue(claim)>timestampValue(current)
+    ){
+      groups.set(key,claim);
+    }
+  });
+
+  return [...groups.values()]
+    .filter(marketIncludedOrder);
+}
+
+function terminalStatusText(order){
+  return [
+    order?.sourceStatus,
+    order?.status,
+    order?.statusLabel,
+    order?.claimStatus,
+    order?.processingStatus,
+    order?.resultStatus,
+    order?.receiptStatus,
+    order?.exchangeStatus
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+}
+
+function isCompletedClaim(order){
+  if(isProcessed(order)){
+    return true;
+  }
+
+  const text=terminalStatusText(order);
+
+  const completedWords=[
+    'COMPLETE','COMPLETED','CLOSED',
+    'FINISH','FINISHED','DONE',
+    'WITHDRAW','WITHDRAWN',
+    'REJECT','REJECTED',
+    'CANCEL_COMPLETE',
+    'RETURN_COMPLETE',
+    'EXCHANGE_COMPLETE',
+    'CANCELLED_COMPLETE',
+    '처리완료','취소완료','반품완료',
+    '교환완료','답변완료',
+    '철회','거부','종결'
+  ];
+
+  return completedWords.some(word=>
+    text.includes(word)
+  );
+}
+
+function isActiveOrderWork(order){
+  if(!isOrderEvent(order)||isProcessed(order)){
+    return false;
+  }
+
+  return ['new','shipping_wait']
+    .includes(statusKey(order));
+}
+
+function isActiveClaimWork(order){
+  if(!isClaimEvent(order)){
+    return false;
+  }
+
+  return !isCompletedClaim(order);
+}
+
+function activeOrderLines(){
+  return latestOrderLines()
+    .filter(isActiveOrderWork);
+}
+
+function activeClaims(){
+  return latestClaimDocuments()
+    .filter(isActiveClaimWork);
+}
+
+function orderAmountValue(order){
+  const candidates=[
+    order?.orderTotalAmount,
+    order?.totalAmount,
+    order?.paymentAmount,
+    order?.salePrice,
+    order?.amount
+  ];
+
+  for(const value of candidates){
+    const number=Number(value);
+
+    if(Number.isFinite(number)&&number>=0){
+      return number;
+    }
+  }
+
+  return 0;
+}
+
+function groupOrderLines(lines){
+  const groups=new Map();
+
+  lines.forEach(line=>{
+    const key=orderGroupKey(line);
+
+    if(!groups.has(key)){
+      groups.set(key,{
+        key,
+        market:line.market||line.source||'기타',
+        orderNo:line.orderNo||line.orderId||'',
+        datetime:dateValue(line),
+        day:orderDay(line),
+        lines:[],
+        amount:0,
+        qty:0
+      });
+    }
+
+    const group=groups.get(key);
+    group.lines.push(line);
+    group.qty+=Number(line.qty||1);
+
+    const explicitTotal=Number(
+      line.orderTotalAmount||
+      line.totalAmount||
+      line.paymentAmount
+    );
+
+    if(Number.isFinite(explicitTotal)&&explicitTotal>0){
+      group.explicitTotal=Math.max(
+        Number(group.explicitTotal||0),
+        explicitTotal
+      );
+    }else{
+      group.amount+=orderAmountValue(line);
+    }
+
+    if(
+      new Date(dateValue(line)).getTime() <
+      new Date(group.datetime).getTime()
+    ){
+      group.datetime=dateValue(line);
+      group.day=orderDay(line);
+    }
+  });
+
+  return [...groups.values()].map(group=>({
+    ...group,
+    amount:
+      Number(group.explicitTotal||0)||
+      Number(group.amount||0)
+  }));
+}
+
+function activeOrderGroups(){
+  return groupOrderLines(activeOrderLines());
+}
+
+function financialOrderGroups(){
+  const validLines=latestOrderLines().filter(order=>{
+    const key=statusKey(order);
+
+    return ![
+      'cancel',
+      'return',
+      'exchange',
+      'inquiry'
+    ].includes(key);
+  });
+
+  return groupOrderLines(validLines);
+}
+
+function todayFinancialGroups(){
+  const today=todayKey();
+
+  return financialOrderGroups().filter(group=>
+    group.day===today
+  );
+}
+
+function monthFinancialGroups(){
+  const month=monthKey();
+
+  return financialOrderGroups().filter(group=>
+    String(group.day||'').slice(0,7)===month
+  );
+}
+
+function unresolvedByMarket(){
+  const result={};
+
+  MARKETS.forEach(([,name])=>{
+    result[name]={
+      new:0,
+      shipping_wait:0,
+      cancel:0,
+      return:0,
+      exchange:0,
+      inquiry:0,
+      orderAmount:0
+    };
+  });
+
+  activeOrderGroups().forEach(group=>{
+    if(!result[group.market]) return;
+
+    const statuses=new Set(
+      group.lines.map(statusKey)
+    );
+
+    if(statuses.has('new')){
+      result[group.market].new+=1;
+    }
+
+    if(statuses.has('shipping_wait')){
+      result[group.market].shipping_wait+=1;
+    }
+
+    result[group.market].orderAmount+=
+      Number(group.amount||0);
+  });
+
+  activeClaims().forEach(claim=>{
+    const market=claim.market;
+    const key=statusKey(claim);
+
+    if(
+      result[market] &&
+      ['cancel','return','exchange','inquiry']
+        .includes(key)
+    ){
+      result[market][key]+=1;
+    }
+  });
+
+  return result;
+}
+
+
 const MONTHLY_SETTLEMENT_BASELINE={
   month:'2026-07',
   cutoffDay:'2026-07-13',
@@ -468,33 +760,7 @@ function processedBaselineAdjustments(){
 }
 
 function correctedPendingByMarket(){
-  const result={};
-
-  MARKETS.forEach(([,name])=>{
-    result[name]={
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    };
-  });
-
-  uniqueLatestOrders().forEach(order=>{
-    const market=order.market;
-    const key=statusKey(order);
-
-    if(
-      result[market] &&
-      isPendingStatus(key) &&
-      isActuallyUnresolved(order)
-    ){
-      result[market][key]+=1;
-    }
-  });
-
-  return result;
+  return unresolvedByMarket();
 }
 
 
@@ -569,30 +835,24 @@ function renderDeliverySummary(){
 }
 
 function correctedTodayTotals(){
-  const today=todayKey();
-  const list=financialOrders().filter(order=>
-    orderDay(order)===today
-  );
+  const groups=todayFinancialGroups();
 
   return {
-    count:list.length,
-    sales:list.reduce(
-      (sum,order)=>sum+Number(order.amount||0),
+    count:groups.length,
+    sales:groups.reduce(
+      (sum,group)=>sum+Number(group.amount||0),
       0
     )
   };
 }
 
 function correctedMonthTotals(){
-  const month=monthKey();
-  const list=financialOrders().filter(order=>
-    orderDay(order).slice(0,7)===month
-  );
+  const groups=monthFinancialGroups();
 
   return {
-    count:list.length,
-    sales:list.reduce(
-      (sum,order)=>sum+Number(order.amount||0),
+    count:groups.length,
+    sales:groups.reduce(
+      (sum,group)=>sum+Number(group.amount||0),
       0
     )
   };
@@ -618,7 +878,7 @@ function renderMetrics(){
   $('monthSalesNote').textContent=monthNote;
 }
 function renderStatus(){
-  const pending=correctedPendingByMarket();
+  const pending=unresolvedByMarket();
   const counts=Object.fromEntries(
     STATUS_ITEMS.map(([key])=>[key,0])
   );
@@ -631,12 +891,18 @@ function renderStatus(){
 
   const statusGrid=$('statusGrid');
   if(!statusGrid) return;
-  statusGrid.innerHTML=STATUS_ITEMS.map(([key,label])=>`
-    <button class="alert-card ${activeStatus===key?'active':''}" data-key="${key}">
-      <span>${label}</span>
-      <strong>${counts[key]}</strong>
-    </button>
-  `).join('');
+
+  statusGrid.innerHTML=STATUS_ITEMS.map(
+    ([key,label])=>`
+      <button
+        class="alert-card ${activeStatus===key?'active':''}"
+        data-key="${key}"
+      >
+        <span>${label}</span>
+        <strong>${counts[key]}</strong>
+      </button>
+    `
+  ).join('');
 
   statusGrid.querySelectorAll('button').forEach(button=>{
     button.onclick=()=>{
@@ -652,9 +918,12 @@ function renderStatus(){
   });
 
   const dedupeInfo=$('dedupeInfo');
+
   if(dedupeInfo){
-    dedupeInfo.textContent='실제 미처리 상태만 표시 · 완료 시 자동 제외';
+    dedupeInfo.textContent=
+      '현재 실제 미처리 건만 표시 · 완료되면 자동 제외';
   }
+
   $('statusUpdated').textContent=
     '최근 갱신 '+
     new Date().toLocaleTimeString(
@@ -663,68 +932,66 @@ function renderStatus(){
     );
 }
 function renderMarkets(){
-  const today=todayKey();
-  const unique=uniqueLatestOrders();
-  const pending=correctedPendingByMarket();
+  const pending=unresolvedByMarket();
 
   $('marketBody').innerHTML=MARKETS.map(([key,name])=>{
-    const todayList=unique.filter(order=>
-      order.market===name &&
-      orderDay(order)===today
-    );
-
-    const salesList=todayList.filter(isSalesOrder);
     const marketPending=pending[name]||{};
     const ok=Boolean(integrations[key]?.connected);
 
-    const todayCount=salesList.length;
-    const todaySales=salesList.reduce(
-      (sum,order)=>sum+Number(order.amount||0),
-      0
-    );
+    const activeOrderCount=
+      Number(marketPending.new||0)+
+      Number(marketPending.shipping_wait||0);
 
-    return `<tr class="market-row ${activeMarket===name?'selected':''}" data-market="${name}">
-      <td>
-        <span class="market-name">
-          <span class="market-dot ${ok?'ok':''}"></span>
-          ${name}
-        </span>
-      </td>
-      <td class="order-sales-cell">
-        <strong>${todayCount}</strong>
-        <small>${fmt(todaySales)}</small>
-      </td>
-      <td class="new-count">${Number(marketPending.new||0)}</td>
-      <td class="wait-count">${Number(marketPending.shipping_wait||0)}</td>
-      <td class="claim-count">${Number(marketPending.cancel||0)}</td>
-      <td class="claim-count">${Number(marketPending.return||0)}</td>
-      <td class="claim-count">${Number(marketPending.exchange||0)}</td>
-    </tr>`;
+    return `
+      <tr
+        class="market-row ${activeMarket===name?'selected':''}"
+        data-market="${name}"
+      >
+        <td>
+          <span class="market-name">
+            <span class="market-dot ${ok?'ok':''}"></span>
+            ${name}
+          </span>
+        </td>
+        <td class="order-sales-cell">
+          <strong>${activeOrderCount}</strong>
+          <small>${fmt(marketPending.orderAmount||0)}</small>
+        </td>
+        <td>${Number(marketPending.new||0)}</td>
+        <td>${Number(marketPending.shipping_wait||0)}</td>
+        <td>${Number(marketPending.cancel||0)}</td>
+        <td>${Number(marketPending.return||0)}</td>
+        <td>${Number(marketPending.exchange||0)}</td>
+      </tr>
+    `;
   }).join('');
 
-  $('marketBody').querySelectorAll('tr').forEach(row=>{
-    row.onclick=()=>{
-      activeMarket=
-        activeMarket===row.dataset.market
-          ?''
-          :row.dataset.market;
+  $('marketBody')
+    .querySelectorAll('tr')
+    .forEach(row=>{
+      row.onclick=()=>{
+        activeMarket=
+          activeMarket===row.dataset.market
+            ?''
+            :row.dataset.market;
 
-      currentPage=1;
-      showOrdersTab();
-      render();
+        currentPage=1;
+        showOrdersTab();
+        render();
 
-      $('ordersPanel').scrollIntoView({
-        behavior:'smooth',
-        block:'start'
-      });
-    };
-  });
+        $('ordersPanel').scrollIntoView({
+          behavior:'smooth',
+          block:'start'
+        });
+      };
+    });
 
   $('marketUpdated').textContent=
-    `오늘 기준 · ${new Date().toLocaleTimeString('ko-KR',{
-      hour:'2-digit',
-      minute:'2-digit'
-    })}`;
+    '현재 미처리 기준 · '+
+    new Date().toLocaleTimeString(
+      'ko-KR',
+      {hour:'2-digit',minute:'2-digit'}
+    );
 }
 function filteredOrders(){
   const q=$('searchInput').value.trim().toLowerCase();
@@ -760,7 +1027,8 @@ function filteredOrders(){
     const visibleBySelectedWorkStatus=
       activeStatus &&
       ['new','shipping_wait'].includes(activeStatus) &&
-      status===activeStatus;
+      status===activeStatus &&
+      isActiveOrderWork(o);
 
     const visible=
       activeStatus
@@ -785,7 +1053,7 @@ function filteredOrders(){
 
     const workflowHit=
       !workflow ||
-      (workflow==='pending'&&!isProcessed(o)) ||
+      (workflow==='pending'&&(isActiveOrderWork(o)||isActiveClaimWork(o))) ||
       (workflow==='important'&&isImportant(o)) ||
       (workflow==='processed'&&isProcessed(o));
 
@@ -928,68 +1196,152 @@ function renderStats(){
 }
 
 function renderOperations(){
-  const today=todayKey();
-  const todayOrders=uniqueLatestOrders().filter(o=>orderDay(o)===today);
-  $('dispatchDueCount').textContent=todayOrders.filter(o=>['new','shipping_wait'].includes(statusKey(o))&&!isProcessed(o)).length;
-  $('importantCount').textContent=uniqueLatestOrders().filter(isImportant).length;
-  $('processedCount').textContent=todayOrders.filter(isProcessed).length;
+  const activeGroups=activeOrderGroups();
+
+  $('dispatchDueCount').textContent=
+    activeGroups.length;
+
+  $('importantCount').textContent=
+    uniqueLatestOrders()
+      .filter(isImportant)
+      .length;
+
+  $('processedCount').textContent=
+    uniqueLatestOrders()
+      .filter(isProcessed)
+      .length;
 }
 
 function renderTodayAnalytics(){
-  const today=todayKey();
-  const list=uniqueLatestOrders().filter(o=>orderDay(o)===today&&isSalesOrder(o));
+  const groups=todayFinancialGroups();
 
   const hourly=Array.from({length:24},()=>0);
-  list.forEach(o=>{
-    const d=new Date(dateValue(o));
-    if(!Number.isNaN(d.getTime())){
-      const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).format(d));
-      if(hour>=0&&hour<24) hourly[hour]++;
+
+  groups.forEach(group=>{
+    const date=new Date(group.datetime);
+
+    if(Number.isNaN(date.getTime())) return;
+
+    const hour=Number(
+      new Intl.DateTimeFormat(
+        'en-GB',
+        {
+          timeZone:'Asia/Seoul',
+          hour:'2-digit',
+          hour12:false
+        }
+      ).format(date)
+    );
+
+    if(hour>=0&&hour<24){
+      hourly[hour]+=1;
     }
   });
 
   const maxHour=Math.max(1,...hourly);
-  $('hourChart').innerHTML=hourly.map((count,hour)=>`
-    <div class="hour-col" title="${hour}시 ${count}건">
-      <span class="hour-value">${count||''}</span>
-      <div class="hour-bar" style="height:${Math.max(2,Math.round(count/maxHour*100))}%"></div>
-      <span class="hour-label">${hour%3===0?hour+'시':''}</span>
-    </div>`).join('');
+
+  $('hourChart').innerHTML=hourly.map(
+    (count,hour)=>`
+      <div class="hour-col" title="${hour}시 ${count}건">
+        <span class="hour-value">${count||''}</span>
+        <div
+          class="hour-bar"
+          style="height:${Math.max(
+            2,
+            Math.round(count/maxHour*100)
+          )}%"
+        ></div>
+        <span class="hour-label">
+          ${hour%3===0?hour+'시':''}
+        </span>
+      </div>
+    `
+  ).join('');
 
   const marketMap={};
-  list.forEach(o=>{
-    const key=o.market||'기타';
-    marketMap[key]=(marketMap[key]||0)+Number(o.amount||0);
+
+  groups.forEach(group=>{
+    marketMap[group.market]=
+      Number(marketMap[group.market]||0)+
+      Number(group.amount||0);
   });
 
-  const totalSales=Object.values(marketMap).reduce((s,v)=>s+v,0)||1;
-  $('marketShare').innerHTML=Object.entries(marketMap)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([market,sales])=>`
-      <div class="share-row">
-        <strong>${escapeHtml(market)}</strong>
-        <div class="share-track"><div class="share-fill" style="width:${Math.max(2,sales/totalSales*100)}%"></div></div>
-        <span class="share-value">${Math.round(sales/totalSales*100)}%</span>
-      </div>`).join('')||'<span class="subtle">오늘 매출이 없습니다.</span>';
+  const totalSales=
+    Object.values(marketMap)
+      .reduce((sum,value)=>sum+value,0)||
+    1;
 
-  const productMap={};
-  list.forEach(o=>{
-    const name=o.product||'상품명 없음';
-    if(!productMap[name]) productMap[name]={orders:0,qty:0,sales:0};
-    productMap[name].orders++;
-    productMap[name].qty+=Number(o.qty||0);
-    productMap[name].sales+=Number(o.amount||0);
+  $('marketShare').innerHTML=
+    Object.entries(marketMap)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([market,sales])=>`
+        <div class="share-row">
+          <strong>${escapeHtml(market)}</strong>
+          <div class="share-track">
+            <div
+              class="share-fill"
+              style="width:${Math.max(
+                2,
+                sales/totalSales*100
+              )}%"
+            ></div>
+          </div>
+          <span class="share-value">
+            ${Math.round(sales/totalSales*100)}%
+          </span>
+        </div>
+      `).join('')||
+    '<span class="subtle">오늘 주문이 없습니다.</span>';
+
+  const products={};
+
+  groups.forEach(group=>{
+    group.lines.forEach(line=>{
+      const name=line.product||'상품명 없음';
+
+      if(!products[name]){
+        products[name]={
+          orders:new Set(),
+          qty:0,
+          sales:0
+        };
+      }
+
+      products[name].orders.add(group.key);
+      products[name].qty+=Number(line.qty||1);
+      products[name].sales+=orderAmountValue(line);
+    });
   });
 
-  $('todayTopProducts').innerHTML=Object.entries(productMap)
-    .sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales)
-    .slice(0,10)
-    .map(([name,v],index)=>`
-      <div class="top-row">
-        <span class="top-no">${index+1}</span>
-        <div><strong>${escapeHtml(name)}</strong><small>${v.orders}건 · ${v.qty}개</small></div>
-        <strong>${fmt(v.sales)}</strong>
-      </div>`).join('')||'<span class="subtle">오늘 판매 상품이 없습니다.</span>';
+  $('todayTopProducts').innerHTML=
+    Object.entries(products)
+      .map(([name,value])=>[
+        name,
+        {
+          orders:value.orders.size,
+          qty:value.qty,
+          sales:value.sales
+        }
+      ])
+      .sort(
+        (a,b)=>
+          b[1].orders-a[1].orders||
+          b[1].sales-a[1].sales
+      )
+      .slice(0,10)
+      .map(([name,value],index)=>`
+        <div class="top-row">
+          <span class="top-no">${index+1}</span>
+          <div>
+            <strong>${escapeHtml(name)}</strong>
+            <small>
+              ${value.orders}건 · ${value.qty}개
+            </small>
+          </div>
+          <strong>${fmt(value.sales)}</strong>
+        </div>
+      `).join('')||
+    '<span class="subtle">오늘 판매 상품이 없습니다.</span>';
 }
 
 async function toggleImportant(id){
@@ -1611,7 +1963,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.2',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v1.0.3',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

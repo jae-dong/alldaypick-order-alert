@@ -853,7 +853,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-1.0.2',
+    version:'CLEAN-1.0.3',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1133,7 +1133,7 @@ console.log(
   `텔레그램 테스트 즉시 사용 가능 · 생존신호 30초`
 );
 
-run('startup').catch(error=>{
+run('reconcile').catch(error=>{
   console.error(
     '시작 수집 실패:',
     error instanceof Error?error.message:String(error)
