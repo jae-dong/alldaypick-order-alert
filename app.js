@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v3.1.1';
+const APP_VERSION='CLEAN v3.2.0';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1350,6 +1350,117 @@ function engineUnresolvedByMarket(){
 }
 
 
+
+function todayOrderSourceLines(){
+  return engineLatestLines().filter(order=>
+    String(order?.eventType||'order').toLowerCase()==='order' &&
+    engineOrderDay(order)===todayKey()
+  );
+}
+
+function todayOrderGroups(){
+  const groups=new Map();
+
+  todayOrderSourceLines().forEach(line=>{
+    const key=engineOrderKey(line);
+
+    if(!groups.has(key)){
+      groups.set(key,{
+        key,
+        market:line.market||line.source||'기타',
+        orderNo:line.orderNo||line.orderId||'',
+        day:engineOrderDay(line),
+        date:engineOrderDate(line),
+        lines:[],
+        qty:0,
+        lineAmount:0,
+        explicitTotal:0
+      });
+    }
+
+    const group=groups.get(key);
+    group.lines.push(line);
+    group.qty+=Number(line.qty||1);
+
+    const explicit=Number(
+      line.orderTotalAmount||
+      line.totalAmount||
+      line.paymentAmount
+    );
+
+    if(Number.isFinite(explicit)&&explicit>0){
+      group.explicitTotal=Math.max(
+        group.explicitTotal,
+        explicit
+      );
+    }else{
+      group.lineAmount+=engineAmount(line);
+    }
+  });
+
+  return [...groups.values()].map(group=>({
+    ...group,
+    amount:
+      Number(group.explicitTotal||0)||
+      Number(group.lineAmount||0)
+  }));
+}
+
+function todayMarketSummary(){
+  const result={};
+
+  MARKETS.forEach(([,name])=>{
+    result[name]={
+      orders:0,
+      sales:0,
+      new:0,
+      shipping_wait:0,
+      cancel:0,
+      return:0,
+      exchange:0,
+      inquiry:0
+    };
+  });
+
+  todayOrderGroups().forEach(group=>{
+    if(!result[group.market]) return;
+
+    result[group.market].orders+=1;
+    result[group.market].sales+=Number(group.amount||0);
+
+    const currentStatuses=new Set(
+      group.lines.map(statusKey)
+    );
+
+    if(currentStatuses.has('new')){
+      result[group.market].new+=1;
+    }
+
+    if(currentStatuses.has('shipping_wait')){
+      result[group.market].shipping_wait+=1;
+    }
+  });
+
+  engineLatestLines()
+    .filter(item=>
+      ['cancel','return','exchange','inquiry']
+        .includes(statusKey(item)) &&
+      engineOrderDay(item)===todayKey() &&
+      !engineCompleted(item)
+    )
+    .forEach(item=>{
+      const market=item.market;
+      const key=statusKey(item);
+
+      if(result[market]&&key in result[market]){
+        result[market][key]+=1;
+      }
+    });
+
+  return result;
+}
+
+
 function correctedPendingByMarket(){
   return engineUnresolvedByMarket();
 }
@@ -1426,7 +1537,7 @@ function renderDeliverySummary(){
 }
 
 function correctedTodayTotals(){
-  const groups=engineTodayGroups();
+  const groups=todayOrderGroups();
 
   return {
     count:groups.length,
@@ -1512,13 +1623,11 @@ function renderStatus(){
     );
 }
 function renderMarkets(){
-  const pending=engineUnresolvedByMarket();
+  const today=todayMarketSummary();
 
   $('marketBody').innerHTML=MARKETS.map(([key,name])=>{
-    const data=pending[name]||{};
+    const data=today[name]||{};
     const connected=Boolean(integrations[key]?.connected);
-    const activeOrders=
-      Number(data.new||0)+Number(data.shipping_wait||0);
 
     return `
       <tr
@@ -1532,8 +1641,8 @@ function renderMarkets(){
           </span>
         </td>
         <td class="order-sales-cell">
-          <strong>${activeOrders}</strong>
-          <small>${fmt(data.orderAmount||0)}</small>
+          <strong>${Number(data.orders||0)}</strong>
+          <small>${fmt(data.sales||0)}</small>
         </td>
         <td>${Number(data.new||0)}</td>
         <td>${Number(data.shipping_wait||0)}</td>
@@ -1550,9 +1659,11 @@ function renderMarkets(){
         activeMarket===row.dataset.market
           ?''
           :row.dataset.market;
+
       currentPage=1;
       showOrdersTab();
       render();
+
       $('ordersPanel').scrollIntoView({
         behavior:'smooth',
         block:'start'
@@ -1561,7 +1672,7 @@ function renderMarkets(){
   });
 
   $('marketUpdated').textContent=
-    '주문상품별 최신 상태 기준 · '+
+    `오늘 ${todayKey()} 00:00부터 · `+
     new Date().toLocaleTimeString(
       'ko-KR',
       {hour:'2-digit',minute:'2-digit'}
@@ -1743,7 +1854,7 @@ function renderStats(){
 
 
 function renderTodayAnalytics(){
-  const groups=engineTodayGroups();
+  const groups=todayOrderGroups();
   const hourly=Array.from({length:24},()=>0);
   groups.forEach(group=>{
     const date=group.date;
@@ -2385,7 +2496,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.1.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -2505,3 +2616,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }
 });
+
+
+let renderedKoreaDay=todayKey();
+
+setInterval(()=>{
+  const currentDay=todayKey();
+
+  if(currentDay!==renderedKoreaDay){
+    renderedKoreaDay=currentDay;
+    currentPage=1;
+    activeStatus='';
+    activeMarket='';
+    render();
+    toast('날짜가 변경되어 오늘 주문 현황을 초기화했습니다.');
+  }
+},30000);
