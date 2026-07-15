@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v3.2.2';
+const APP_VERSION='CLEAN v3.2.3';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1208,59 +1208,101 @@ function lifecycleLatestLines(){
 }
 
 
-function strictStatusRank(order){
-  const rank={inquiry:60,exchange:50,return:40,cancel:30,shipping_wait:20,new:10};
-  return rank[statusKey(order)]||0;
+function oneStatusPriority(order){
+  const key=statusKey(order);
+  const priority={
+    inquiry:60,
+    exchange:50,
+    return:40,
+    cancel:30,
+    shipping_wait:20,
+    new:10
+  };
+  return priority[key]||0;
 }
 
-function strictCompleted(order){
-  if(engineCompleted(order)) return true;
+function oneStatusCompleted(order){
+  if(engineCompleted(order)||isProcessed(order)){
+    return true;
+  }
+
   const text=[
-    order?.sourceStatus,order?.status,order?.statusLabel,order?.claimStatus,
-    order?.processingStatus,order?.resultStatus,order?.receiptStatus,
-    order?.exchangeStatus,order?.answerStatus,order?.inquiryStatus
+    order?.sourceStatus,
+    order?.status,
+    order?.statusLabel,
+    order?.claimStatus,
+    order?.processingStatus,
+    order?.resultStatus,
+    order?.receiptStatus,
+    order?.exchangeStatus,
+    order?.answerStatus,
+    order?.inquiryStatus
   ].filter(Boolean).join(' ').toUpperCase();
+
   return [
-    'ANSWERED','ANSWER_COMPLETE','REPLIED','RESOLVED','CANCEL_DONE',
-    'RETURN_DONE','EXCHANGE_DONE','CLAIM_COMPLETE','CLAIM_CLOSED',
-    '처리완료','답변완료','답변처리','취소완료','반품완료','교환완료',
-    '회수완료','환불완료','종결'
+    'COMPLETE','COMPLETED','CLOSED','DONE',
+    'FINISH','FINISHED','WITHDRAW','WITHDRAWN',
+    'REJECT','REJECTED','DELIVERED','PURCHASE_CONFIRMED',
+    'ANSWERED','ANSWER_COMPLETE','REPLIED','RESOLVED',
+    'CANCEL_COMPLETE','RETURN_COMPLETE','EXCHANGE_COMPLETE',
+    '처리완료','취소완료','반품완료','교환완료',
+    '답변완료','배송완료','구매확정','철회','거부','종결'
   ].some(word=>text.includes(word));
 }
 
-function strictLatestStatusItems(){
+function oneCurrentStatusPerOrder(){
   const groups=new Map();
-  orders.filter(marketIncludedOrder).forEach(order=>{
-    const status=statusKey(order);
-    if(!['new','shipping_wait','cancel','return','exchange','inquiry'].includes(status)) return;
-    const key=engineLineKey(order);
-    if(!groups.has(key)) groups.set(key,[]);
-    groups.get(key).push(order);
+
+  lifecycleLatestLines().forEach(item=>{
+    const status=statusKey(item);
+
+    if(![
+      'new','shipping_wait','cancel',
+      'return','exchange','inquiry'
+    ].includes(status)){
+      return;
+    }
+
+    if(oneStatusCompleted(item)){
+      return;
+    }
+
+    const key=engineOrderKey(item);
+
+    if(!groups.has(key)){
+      groups.set(key,[]);
+    }
+
+    groups.get(key).push(item);
   });
+
   const result=[];
-  groups.forEach(history=>{
-    history.sort((a,b)=>{
-      const diff=engineTimestamp(a)-engineTimestamp(b);
-      return diff!==0?diff:strictStatusRank(a)-strictStatusRank(b);
+
+  groups.forEach(items=>{
+    items.sort((a,b)=>{
+      const timeDiff=engineTimestamp(a)-engineTimestamp(b);
+
+      if(timeDiff!==0){
+        return timeDiff;
+      }
+
+      return oneStatusPriority(a)-oneStatusPriority(b);
     });
-    const latest=history[history.length-1];
-    if(!strictCompleted(latest)) result.push(latest);
+
+    const newestTime=Math.max(...items.map(engineTimestamp));
+    const newest=items.filter(item=>engineTimestamp(item)===newestTime);
+
+    newest.sort((a,b)=>oneStatusPriority(a)-oneStatusPriority(b));
+    result.push(newest[newest.length-1]);
   });
+
   return result;
 }
 
-function strictUnresolvedByOrder(){
-  const groups=new Map();
-  strictLatestStatusItems().forEach(item=>{
-    const key=[engineOrderKey(item),statusKey(item)].join('|');
-    const current=groups.get(key);
-    if(!current||engineTimestamp(item)>engineTimestamp(current)) groups.set(key,item);
-  });
-  return [...groups.values()];
+
+function lifecycleUnresolvedGroups(){
+  return oneCurrentStatusPerOrder();
 }
-
-
-function lifecycleUnresolvedGroups(){return strictUnresolvedByOrder();}
 
 
 function engineLatestLines(){
@@ -1412,67 +1454,39 @@ function engineMonthGroups(){
   );
 }
 
-function engineUnresolvedItems(){return strictUnresolvedByOrder();}
+function engineUnresolvedItems(){
+  return oneCurrentStatusPerOrder();
+}
 
 function engineUnresolvedCounts(){
-  const sets={new:new Set(),shipping_wait:new Set(),cancel:new Set(),return:new Set(),exchange:new Set(),inquiry:new Set()};
-  strictUnresolvedByOrder().forEach(item=>{const s=statusKey(item);if(sets[s])sets[s].add(engineOrderKey(item));});
-  return Object.fromEntries(Object.entries(sets).map(([k,v])=>[k,v.size]));
+  const counts={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0};
+
+  oneCurrentStatusPerOrder().forEach(item=>{
+    const key=statusKey(item);
+    if(key in counts) counts[key]+=1;
+  });
+
+  return counts;
 }
 
 function engineUnresolvedByMarket(){
   const result={};
-  const seen={};
 
   MARKETS.forEach(([,name])=>{
-    result[name]={
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0,
-      orderAmount:0
-    };
-
-    seen[name]={
-      new:new Set(),
-      shipping_wait:new Set(),
-      cancel:new Set(),
-      return:new Set(),
-      exchange:new Set(),
-      inquiry:new Set(),
-      amount:new Set()
-    };
+    result[name]={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0,orderAmount:0};
   });
 
-  engineUnresolvedItems().forEach(item=>{
+  oneCurrentStatusPerOrder().forEach(item=>{
     const market=item.market;
     const status=statusKey(item);
-    const orderKey=engineOrderKey(item);
 
-    if(!result[market]||!seen[market]?.[status]){
-      return;
-    }
+    if(!result[market]||!(status in result[market])) return;
 
-    seen[market][status].add(orderKey);
+    result[market][status]+=1;
 
-    if(
-      ['new','shipping_wait'].includes(status) &&
-      !seen[market].amount.has(orderKey)
-    ){
-      seen[market].amount.add(orderKey);
+    if(['new','shipping_wait'].includes(status)){
       result[market].orderAmount+=engineAmount(item);
     }
-  });
-
-  Object.keys(result).forEach(market=>{
-    [
-      'new','shipping_wait','cancel',
-      'return','exchange','inquiry'
-    ].forEach(status=>{
-      result[market][status]=seen[market][status].size;
-    });
   });
 
   return result;
@@ -1713,10 +1727,25 @@ function renderMetrics(){
 function renderStatus(){
   const counts=engineUnresolvedCounts();
   const grid=$('statusGrid');
-  if(!grid)return;
-  grid.innerHTML=STATUS_ITEMS.map(([key,label])=>`<button class="alert-card ${activeStatus===key?'active':''}" data-key="${key}"><span>${label}</span><strong>${Number(counts[key]||0)}</strong></button>`).join('');
-  grid.querySelectorAll('button').forEach(button=>{button.onclick=()=>{activeStatus=activeStatus===button.dataset.key?'':button.dataset.key;currentPage=1;showOrdersTab();render();};});
-  const info=$('dedupeInfo');if(info)info.textContent='주문번호·상품번호별 최종 미처리 상태만 표시';
+  if(!grid) return;
+
+  grid.innerHTML=STATUS_ITEMS.map(([key,label])=>`
+    <button class="alert-card ${activeStatus===key?'active':''}" data-key="${key}">
+      <span>${label}</span><strong>${Number(counts[key]||0)}</strong>
+    </button>`).join('');
+
+  grid.querySelectorAll('button').forEach(button=>{
+    button.onclick=()=>{
+      activeStatus=activeStatus===button.dataset.key?'':button.dataset.key;
+      currentPage=1;
+      showOrdersTab();
+      render();
+    };
+  });
+
+  const info=$('dedupeInfo');
+  if(info) info.textContent='주문번호별 현재 처리상태 하나만 표시 · 완료 시 자동 제외';
+
   $('statusUpdated').textContent='최근 갱신 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
 }
 function renderMarkets(){
@@ -1779,20 +1808,27 @@ function filteredOrders(){
   const q=$('searchInput').value.trim().toLowerCase();
   const market=$('marketFilter').value;
   const read=$('readFilter').value;
-  return strictUnresolvedByOrder().filter(order=>{
+
+  return oneCurrentStatusPerOrder().filter(order=>{
     const status=statusKey(order);
-    if(activeStatus&&status!==activeStatus)return false;
-    if(activeMarket&&order.market!==activeMarket)return false;
-    if(market&&order.market!==market)return false;
-    const hit=!q||[order.product,order.orderNo,order.buyer,order.phone,order.invoiceNumber,order.workflowNote].some(v=>String(v||'').toLowerCase().includes(q));
-    if(!hit)return false;
-    if(read==='unread'&&!isUnread(order))return false;
-    if(read==='read'&&isUnread(order))return false;
+
+    if(activeStatus&&status!==activeStatus) return false;
+    if(activeMarket&&order.market!==activeMarket) return false;
+    if(market&&order.market!==market) return false;
+
+    const hit=!q||[
+      order.product,order.orderNo,order.buyer,order.phone,
+      order.invoiceNumber,order.workflowNote
+    ].some(value=>String(value||'').toLowerCase().includes(q));
+
+    if(!hit) return false;
+    if(read==='unread'&&!isUnread(order)) return false;
+    if(read==='read'&&isUnread(order)) return false;
     return true;
   }).sort((a,b)=>{
-    const rank={new:1,shipping_wait:2,cancel:3,return:4,exchange:5,inquiry:6};
-    if(statusKey(a)!==statusKey(b))return (rank[statusKey(a)]||9)-(rank[statusKey(b)]||9);
-    return engineTimestamp(b)-engineTimestamp(a);
+    const priority={new:1,shipping_wait:2,cancel:3,return:4,exchange:5,inquiry:6};
+    const diff=(priority[statusKey(a)]||9)-(priority[statusKey(b)]||9);
+    return diff||engineTimestamp(b)-engineTimestamp(a);
   });
 }
 
@@ -2565,7 +2601,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.2',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.3',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
