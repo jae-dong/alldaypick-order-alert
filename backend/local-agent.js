@@ -63,6 +63,9 @@ function coupang(){
 admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 
 const db=admin.firestore();
+db.settings({
+  ignoreUndefinedProperties:true
+});
 const commandRef=db.collection('system').doc('commands').collection('requests').doc('coupang');
 const intervalMinutes=Math.max(1,Number(process.env.POLL_INTERVAL_MINUTES||10));
 
@@ -349,18 +352,68 @@ async function slowSync(){
 }
 
 
-async function syncAllCoupangStatuses(source='interval'){
-  const reconcile=source==='reconcile';
-  const days=reconcile?Math.max(1,new Date().getDate()):7;
-  const maxPages=reconcile?15:4;
-  return withTimeout(
-    '쿠팡 전체 상태조회',
-    pollCoupangStatuses(db,coupang(),{statuses:[...FAST,...SLOW],days,maxPages}),
-    reconcile?240000:120000
-  );
+function sanitizeFirestoreValue(value){
+  if(value===undefined){
+    return undefined;
+  }
+
+  if(value===null){
+    return null;
+  }
+
+  if(Array.isArray(value)){
+    return value
+      .map(sanitizeFirestoreValue)
+      .filter(item=>item!==undefined);
+  }
+
+  if(
+    value instanceof Date ||
+    typeof value?.toDate==='function' ||
+    value?.constructor?.name==='FieldValue'
+  ){
+    return value;
+  }
+
+  if(typeof value==='object'){
+    const result={};
+
+    for(const [key,item] of Object.entries(value)){
+      const clean=sanitizeFirestoreValue(item);
+
+      if(clean!==undefined){
+        result[key]=clean;
+      }
+    }
+
+    return result;
+  }
+
+  return value;
 }
+
+async function safeSetDocument(reference,data,options={merge:true}){
+  const clean=sanitizeFirestoreValue(data);
+
+  try{
+    await reference.set(clean,options);
+    return true;
+  }catch(error){
+    const message=error instanceof Error
+      ?error.message
+      :String(error);
+
+    console.error(
+      `[Firestore 저장 실패] ${reference.path} · ${message}`
+    );
+
+    throw error;
+  }
+}
+
+
 async function saveIntegration(fast,slow){
-  await db.collection('system').doc('integrations').set({
+  await safeSetDocument(db.collection('system').doc('integrations'),{
     coupang:{
       name:'쿠팡',
       connected:true,
@@ -377,7 +430,11 @@ async function saveIntegration(fast,slow){
           existing:fast.existing,
           statusChanged:fast.statusChanged,
           counts:fast.counts,
-          push:fast.push
+          push:fast.push??{
+            enabled:false,
+            sent:0,
+            failed:0
+          }
         },
         slow:slow?{
           found:slow.found,
@@ -554,7 +611,7 @@ async function syncElevenstSafe(source){
     const config=elevenstConfigFromEnv(process.env);
 
     if(!isElevenstConfigured(config)){
-      await db.collection('system').doc('integrations').set({
+      await safeSetDocument(db.collection('system').doc('integrations'),{
         elevenst:{
           name:'11번가',
           connected:false,
@@ -596,7 +653,7 @@ async function syncElevenstSafe(source){
       statusResult.changedOrders||[]
     );
 
-    await db.collection('system').doc('integrations').set({
+    await safeSetDocument(db.collection('system').doc('integrations'),{
       elevenst:{
         name:'11번가',
         connected:true,
@@ -633,7 +690,7 @@ async function syncElevenstSafe(source){
 
     console.error('11번가 동기화 실패:',message);
 
-    await db.collection('system').doc('integrations').set({
+    await safeSetDocument(db.collection('system').doc('integrations'),{
       elevenst:{
         name:'11번가',
         connected:false,
@@ -655,7 +712,7 @@ async function syncSmartstoreSafe(source){
 
   try{
     if(!smartstoreConfigured()){
-      await db.collection('system').doc('integrations').set({
+      await safeSetDocument(db.collection('system').doc('integrations'),{
         smartstore:{
           name:'스마트스토어',
           connected:false,
@@ -683,7 +740,7 @@ async function syncSmartstoreSafe(source){
       '스마트스토어'
     );
 
-    await db.collection('system').doc('integrations').set({
+    await safeSetDocument(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',
         connected:true,
@@ -710,7 +767,7 @@ async function syncSmartstoreSafe(source){
     const message=error instanceof Error?error.message:String(error);
     console.error('스마트스토어 동기화 실패:',message);
 
-    await db.collection('system').doc('integrations').set({
+    await safeSetDocument(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',
         connected:false,
@@ -865,7 +922,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-3.1.0',
+    version:'CLEAN-3.1.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1010,7 +1067,7 @@ async function run(source){
 
   try{
     try{
-      const fast=await syncAllCoupangStatuses(source);
+      const fast=await fastSync(reconcile?'reconcile':'interval');
       summary.coupang=fast;
       await saveIntegration(fast,null);
 
@@ -1045,7 +1102,7 @@ async function run(source){
 
     try{
       summary.claims=
-        reconcile||source==='immediate'||source==='startup'
+        reconcile||source==='immediate'
           ?await withTimeout(
               '쿠팡 CS 전체조회',
               syncAllClaimTypes(),
