@@ -1,0 +1,12 @@
+backend/.env.local
+backend/node_modules/
+*.log
+backup-*/
+apply-v*.cmd
+apply-v*.ps1
+install-v*.cmd
+install-v*.ps1
+V*_FINAL/
+v*-files/
+CLEAN_*/
+ACTUAL_*/
