@@ -216,6 +216,8 @@ async function saveClaims(db, documents) {
       if (!snapshot.exists) {
         tx.create(ref, {
           ...claim,
+          activeClaim:true,
+          workflowResolved:false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -232,6 +234,8 @@ async function saveClaims(db, documents) {
         ref,
         {
           ...claim,
+          activeClaim:true,
+          workflowResolved:false,
           createdAt:
             before.createdAt ||
             admin.firestore.FieldValue.serverTimestamp(),
@@ -262,6 +266,22 @@ async function saveClaims(db, documents) {
   };
 }
 
+
+async function resolveMissingClaims(db,eventType,documents){
+  const activeIds=new Set(documents.map(item=>item.id));
+  const snap=await db.collection('orders').where('source','==','coupang').where('eventType','==',eventType).get();
+  const batch=db.batch();
+  let changed=0;
+  for(const doc of snap.docs){
+    if(activeIds.has(doc.id)) continue;
+    const data=doc.data()||{};
+    if(data.activeClaim===false&&data.workflowResolved===true) continue;
+    batch.set(doc.ref,{activeClaim:false,workflowResolved:true,resolvedAt:new Date().toISOString(),updatedAt:admin.firestore.FieldValue.serverTimestamp()},{merge:true});
+    changed+=1;
+  }
+  if(changed) await batch.commit();
+  return changed;
+}
 async function fetchReturnStatus(config, status) {
   const now = new Date();
   const from = new Date(now.getTime() - (23 * 60 + 59) * 60 * 1000);
@@ -302,13 +322,17 @@ export async function syncCancellations(db, config) {
     'cancel'
   );
 
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db,documents);
+  saved.resolved=await resolveMissingClaims(db,'cancel',documents);
+  return saved;
 }
 
 export async function syncReturns(db, config) {
   const received = await fetchReturnStatus(config, 'UC');
   const documents = returnClaimDocuments(received, 'return');
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db,documents);
+  saved.resolved=await resolveMissingClaims(db,'return',documents);
+  return saved;
 }
 
 export async function syncExchanges(db, config) {
@@ -339,5 +363,7 @@ export async function syncExchanges(db, config) {
     await sleep(1500);
   }
 
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db,documents);
+  saved.resolved=await resolveMissingClaims(db,'exchange',documents);
+  return saved;
 }

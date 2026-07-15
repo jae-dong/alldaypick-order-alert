@@ -348,6 +348,17 @@ async function slowSync(){
   return {...result,slowStatus:status};
 }
 
+
+async function syncAllCoupangStatuses(source='interval'){
+  const reconcile=source==='reconcile';
+  const days=reconcile?Math.max(1,new Date().getDate()):7;
+  const maxPages=reconcile?15:4;
+  return withTimeout(
+    '쿠팡 전체 상태조회',
+    pollCoupangStatuses(db,coupang(),{statuses:[...FAST,...SLOW],days,maxPages}),
+    reconcile?240000:120000
+  );
+}
 async function saveIntegration(fast,slow){
   await db.collection('system').doc('integrations').set({
     coupang:{
@@ -854,7 +865,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-3.0.0',
+    version:'CLEAN-3.1.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -999,7 +1010,7 @@ async function run(source){
 
   try{
     try{
-      const fast=await fastSync(reconcile?'reconcile':'interval');
+      const fast=await syncAllCoupangStatuses(source);
       summary.coupang=fast;
       await saveIntegration(fast,null);
 
@@ -1034,7 +1045,7 @@ async function run(source){
 
     try{
       summary.claims=
-        reconcile||source==='immediate'
+        reconcile||source==='immediate'||source==='startup'
           ?await withTimeout(
               '쿠팡 CS 전체조회',
               syncAllClaimTypes(),

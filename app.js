@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v3.0.0';
+const APP_VERSION='CLEAN v3.1.0';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -495,16 +495,7 @@ function unresolvedRowsForMarket(market=''){
   );
 }
 
-function statsGroupsForPeriod(period){
-  const all=engineNormalGroups();
-
-  if(period==='all') return all;
-
-  const days=Math.max(1,Number(period)||7);
-  const cutoff=Date.now()-days*86400000;
-
-  return all.filter(group=>group.date?.getTime?.()>=cutoff);
-}
+function statsGroupsForPeriod(period){const all=engineOrderGroups();if(period==='all')return all;const days=Math.max(1,Number(period)||7),cutoff=Date.now()-days*86400000;return all.filter(g=>g.date?.getTime?.()>=cutoff);}
 
 
 
@@ -1053,306 +1044,136 @@ function processedBaselineAdjustments(){
 }
 
 
+
 function engineTimestamp(order){
-  const candidates=[
-    order?.sourceUpdatedAt,
-    order?.lastChangedAt,
-    order?.statusChangedAt,
-    order?.updatedAt,
-    order?.syncedAt,
-    order?.createdAt,
-    order?.datetime
+  const values=[
+    order?.sourceUpdatedAt,order?.lastChangedAt,order?.statusChangedAt,
+    order?.modifiedAt,order?.updatedAt,order?.syncedAt,
+    order?.createdAt,order?.datetime
   ];
-
-  for(const value of candidates){
+  for(const value of values){
     if(!value) continue;
-
-    if(value?.toDate){
-      const time=value.toDate().getTime();
-      if(Number.isFinite(time)) return time;
-    }
-
-    const time=new Date(value).getTime();
+    const time=value?.toDate?value.toDate().getTime():new Date(value).getTime();
     if(Number.isFinite(time)) return time;
   }
-
   return 0;
-}
-
-function engineLineKey(order){
-  const market=normalizedText(order?.market||order?.source);
-  const orderNo=normalizedText(order?.orderNo||order?.orderId);
-  const lineId=normalizedText(
-    order?.productOrderId||
-    order?.orderProductSequence||
-    order?.orderItemId||
-    order?.vendorItemId||
-    order?.deliveryNo||
-    order?.shipmentBoxId||
-    order?.productNo||
-    order?.itemId||
-    order?.sku||
-    order?.product||
-    order?.id
-  );
-
-  return `${market}|${orderNo}|${lineId}`;
 }
 
 function engineOrderKey(order){
   return [
     normalizedText(order?.market||order?.source),
+    normalizedText(order?.orderNo||order?.orderId||order?.shipmentBoxId||order?.deliveryNo||order?.id)
+  ].join('|');
+}
+
+function engineLineKey(order){
+  return [
+    engineOrderKey(order),
     normalizedText(
-      order?.orderNo||
-      order?.orderId||
-      order?.shipmentBoxId||
-      order?.deliveryNo||
-      order?.id
+      order?.productOrderId||order?.orderProductSequence||order?.orderItemId||
+      order?.vendorItemId||order?.productNo||order?.itemId||order?.sku||
+      order?.product||order?.id
     )
   ].join('|');
 }
 
-function engineLatestLines(){
+function engineLatestLines(source=orders){
   const map=new Map();
-
-  orders
-    .filter(marketIncludedOrder)
-    .forEach(order=>{
-      const key=engineLineKey(order);
-      const current=map.get(key);
-
-      if(
-        !current ||
-        engineTimestamp(order)>engineTimestamp(current) ||
-        (
-          engineTimestamp(order)===engineTimestamp(current) &&
-          statusPriority(order)>statusPriority(current)
-        )
-      ){
-        map.set(key,order);
-      }
-    });
-
+  source.filter(marketIncludedOrder).forEach(order=>{
+    const key=engineLineKey(order);
+    const current=map.get(key);
+    if(!current||engineTimestamp(order)>engineTimestamp(current)||(
+      engineTimestamp(order)===engineTimestamp(current)&&statusPriority(order)>statusPriority(current)
+    )) map.set(key,order);
+  });
   return [...map.values()];
 }
 
 function engineOrderDate(order){
-  for(const value of [
-    order?.orderDate,
-    order?.orderAt,
-    order?.orderedAt,
-    order?.paymentDate,
-    order?.paymentAt,
-    order?.datetime,
-    order?.createdAt
-  ]){
+  const values=[order?.orderDate,order?.orderAt,order?.orderedAt,order?.paymentDate,order?.paymentAt,order?.datetime,order?.createdAt];
+  for(const value of values){
     if(!value) continue;
     const date=value?.toDate?value.toDate():new Date(value);
     if(!Number.isNaN(date.getTime())) return date;
   }
-
   return new Date(0);
 }
 
-function engineOrderDay(order){
-  const date=engineOrderDate(order);
-  if(!date.getTime()) return '';
-
-  return new Intl.DateTimeFormat(
-    'sv-SE',
-    {
-      timeZone:'Asia/Seoul',
-      year:'numeric',
-      month:'2-digit',
-      day:'2-digit'
-    }
-  ).format(date);
+function engineEventDate(order){
+  const values=[order?.claimCreatedAt,order?.requestedAt,order?.modifiedAt,order?.datetime,order?.createdAt];
+  for(const value of values){
+    if(!value) continue;
+    const date=value?.toDate?value.toDate():new Date(value);
+    if(!Number.isNaN(date.getTime())) return date;
+  }
+  return new Date(0);
 }
 
-function engineAmount(order){
-  for(const value of [
-    order?.orderTotalAmount,
-    order?.totalAmount,
-    order?.paymentAmount,
-    order?.amount,
-    order?.salePrice
-  ]){
-    const number=Number(value);
-    if(Number.isFinite(number)&&number>=0) return number;
-  }
+function engineDayFromDate(date){
+  if(!date?.getTime?.()) return '';
+  return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
+}
+function engineOrderDay(order){return engineDayFromDate(engineOrderDate(order));}
+function engineEventDay(order){return engineDayFromDate(engineEventDate(order));}
 
+function engineAmount(order){
+  for(const value of [order?.orderTotalAmount,order?.totalAmount,order?.paymentAmount,order?.amount,order?.salePrice]){
+    const n=Number(value); if(Number.isFinite(n)&&n>=0) return n;
+  }
   return 0;
 }
 
 function engineCompleted(order){
-  if(isProcessed(order)) return true;
-
-  const text=[
-    order?.sourceStatus,
-    order?.status,
-    order?.statusLabel,
-    order?.claimStatus,
-    order?.processingStatus,
-    order?.resultStatus,
-    order?.receiptStatus,
-    order?.exchangeStatus
-  ].filter(Boolean).join(' ').toUpperCase();
-
-  return [
-    'COMPLETE','COMPLETED','CLOSED','DONE',
-    'FINISH','FINISHED','WITHDRAW','WITHDRAWN',
-    'REJECT','REJECTED','DELIVERED','PURCHASE_CONFIRMED',
-    '처리완료','취소완료','반품완료','교환완료',
-    '답변완료','배송완료','구매확정','철회','거부','종결'
-  ].some(word=>text.includes(word));
+  if(isProcessed(order)||order?.workflowResolved===true||order?.activeClaim===false) return true;
+  const text=[order?.sourceStatus,order?.status,order?.statusLabel,order?.claimStatus,order?.processingStatus,order?.resultStatus,order?.receiptStatus,order?.exchangeStatus].filter(Boolean).join(' ').toUpperCase();
+  return ['COMPLETE','COMPLETED','CLOSED','DONE','FINISH','FINISHED','WITHDRAW','WITHDRAWN','REJECT','REJECTED','DELIVERED','PURCHASE_CONFIRMED','CANCEL_COMPLETE','RETURN_COMPLETE','EXCHANGE_COMPLETE','처리완료','취소완료','반품완료','교환완료','답변완료','배송완료','구매확정','철회','거부','종결'].some(word=>text.includes(word));
 }
 
-function engineNormalLines(){
-  const latest=engineLatestLines();
-  const excludedOrders=new Set();
-
-  latest.forEach(item=>{
-    const event=String(item?.eventType||'order').toLowerCase();
-    const key=statusKey(item);
-    if(event!=='order'&&['cancel','return','exchange'].includes(key)){
-      excludedOrders.add(engineOrderKey(item));
-    }
-  });
-
-  return latest.filter(order=>
-    String(order?.eventType||'order').toLowerCase()==='order' &&
-    !excludedOrders.has(engineOrderKey(order)) &&
-    !['cancel','return','exchange','inquiry'].includes(statusKey(order))
-  );
-}
-
-function engineNormalGroups(){
+function engineOrderGroups(){
   const groups=new Map();
-
-  engineNormalLines().forEach(line=>{
+  engineLatestLines().filter(order=>String(order?.eventType||'order').toLowerCase()==='order').forEach(line=>{
     const key=engineOrderKey(line);
-
-    if(!groups.has(key)){
-      groups.set(key,{
-        key,
-        market:line.market||line.source||'기타',
-        orderNo:line.orderNo||line.orderId||'',
-        day:engineOrderDay(line),
-        date:engineOrderDate(line),
-        lines:[],
-        qty:0,
-        lineAmount:0,
-        explicitTotal:0
-      });
-    }
-
-    const group=groups.get(key);
-    group.lines.push(line);
-    group.qty+=Number(line.qty||1);
-
-    const explicit=Number(
-      line.orderTotalAmount||
-      line.totalAmount||
-      line.paymentAmount
-    );
-
-    if(Number.isFinite(explicit)&&explicit>0){
-      group.explicitTotal=Math.max(group.explicitTotal,explicit);
-    }else{
-      group.lineAmount+=engineAmount(line);
-    }
+    if(!groups.has(key)) groups.set(key,{key,market:line.market||line.source||'기타',orderNo:line.orderNo||line.orderId||'',date:engineOrderDate(line),day:engineOrderDay(line),lines:[],qty:0,lineAmount:0,explicitTotal:0});
+    const group=groups.get(key); group.lines.push(line); group.qty+=Number(line.qty||1);
+    const explicit=Number(line.orderTotalAmount||line.totalAmount||line.paymentAmount);
+    if(Number.isFinite(explicit)&&explicit>0) group.explicitTotal=Math.max(group.explicitTotal,explicit);
+    else group.lineAmount+=engineAmount(line);
   });
-
-  return [...groups.values()].map(group=>({
-    ...group,
-    amount:Number(group.explicitTotal||0)||Number(group.lineAmount||0)
-  }));
+  return [...groups.values()].map(group=>({...group,amount:Number(group.explicitTotal||0)||Number(group.lineAmount||0)}));
 }
 
-function engineTodayGroups(){
-  const today=todayKey();
-  return engineNormalGroups().filter(group=>group.day===today);
-}
-
-function engineMonthGroups(){
-  const month=monthKey();
-  return engineNormalGroups().filter(
-    group=>String(group.day||'').slice(0,7)===month
-  );
-}
+function engineTodayGroups(){const today=todayKey();return engineOrderGroups().filter(group=>group.day===today);}
+function engineMonthGroups(){const month=monthKey();return engineOrderGroups().filter(group=>String(group.day||'').slice(0,7)===month);}
 
 function engineUnresolvedItems(){
-  const latest=engineLatestLines();
-  const claimsByOrder=new Map();
-
-  latest.forEach(item=>{
-    const key=statusKey(item);
-    if(!['cancel','return','exchange','inquiry'].includes(key)) return;
-    if(engineCompleted(item)) return;
-
-    const orderKey=engineOrderKey(item);
-    const current=claimsByOrder.get(orderKey);
-    if(!current||engineTimestamp(item)>=engineTimestamp(current)){
-      claimsByOrder.set(orderKey,item);
-    }
+  return engineLatestLines().filter(order=>{
+    const key=statusKey(order);
+    return ['new','shipping_wait','cancel','return','exchange','inquiry'].includes(key)&&!engineCompleted(order);
   });
-
-  const orderGroups=new Map();
-  latest.forEach(item=>{
-    if(String(item?.eventType||'order').toLowerCase()!=='order') return;
-    const key=statusKey(item);
-    if(!['new','shipping_wait'].includes(key)||engineCompleted(item)) return;
-
-    const orderKey=engineOrderKey(item);
-    if(claimsByOrder.has(orderKey)) return;
-
-    const current=orderGroups.get(orderKey);
-    if(!current||engineTimestamp(item)>=engineTimestamp(current)){
-      orderGroups.set(orderKey,item);
-    }
-  });
-
-  return [...orderGroups.values(),...claimsByOrder.values()];
 }
 
 function engineUnresolvedCounts(){
-  const counts={
-    new:0,
-    shipping_wait:0,
-    cancel:0,
-    return:0,
-    exchange:0,
-    inquiry:0
-  };
-
-  engineUnresolvedItems().forEach(item=>{
-    const key=statusKey(item);
-    if(key in counts) counts[key]+=1;
-  });
-
+  const counts={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0};
+  engineUnresolvedItems().forEach(item=>{const key=statusKey(item);if(key in counts) counts[key]+=1;});
   return counts;
 }
 
-function engineUnresolvedByMarket(){
+function engineTodayMarketRows(){
+  const today=todayKey();
   const result={};
-  MARKETS.forEach(([,name])=>{
-    result[name]={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0,orderAmount:0};
-  });
-
-  engineUnresolvedItems().forEach(item=>{
-    const market=item.market;
-    const key=statusKey(item);
-    if(!result[market]) return;
-    if(key in result[market]) result[market][key]+=1;
-    if(['new','shipping_wait'].includes(key)) result[market].orderAmount+=engineAmount(item);
+  MARKETS.forEach(([,name])=>{result[name]={orders:0,sales:0,new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0};});
+  engineTodayGroups().forEach(group=>{if(!result[group.market]) return;result[group.market].orders+=1;result[group.market].sales+=Number(group.amount||0);});
+  engineLatestLines().forEach(item=>{
+    const market=item.market; const key=statusKey(item); if(!result[market]||!['new','shipping_wait','cancel','return','exchange','inquiry'].includes(key)) return;
+    const day=String(item.eventType||'order').toLowerCase()==='order'?engineOrderDay(item):engineEventDay(item);
+    if(day===today) result[market][key]+=1;
   });
   return result;
 }
 
 
-function correctedPendingByMarket(){
-  return engineUnresolvedByMarket();
-}
+
+function correctedPendingByMarket(){return engineTodayMarketRows();}
 
 
 function correctedDeliveryTotals(){
@@ -1425,29 +1246,9 @@ function renderDeliverySummary(){
     `).join('');
 }
 
-function correctedTodayTotals(){
-  const groups=engineTodayGroups();
+function correctedTodayTotals(){const groups=engineTodayGroups();return {count:groups.length,sales:groups.reduce((sum,g)=>sum+Number(g.amount||0),0)};}
 
-  return {
-    count:groups.length,
-    sales:groups.reduce(
-      (sum,group)=>sum+Number(group.amount||0),
-      0
-    )
-  };
-}
-
-function correctedMonthTotals(){
-  const groups=engineMonthGroups();
-
-  return {
-    count:groups.length,
-    sales:groups.reduce(
-      (sum,group)=>sum+Number(group.amount||0),
-      0
-    )
-  };
-}
+function correctedMonthTotals(){const groups=engineMonthGroups();return {count:groups.length,sales:groups.reduce((sum,g)=>sum+Number(g.amount||0),0)};}
 
 function renderIntegrations(){
   $('integrationGrid').innerHTML=MARKETS.map(([key,name])=>{const info=integrations[key]||{},ok=Boolean(info.connected);return`<div class="integration"><strong>${name}</strong><span class="connection ${ok?'ok':''}">${ok?'연결됨':'미연결'}</span><small>${relativeTime(info.lastRun)}</small></div>`}).join('');
@@ -1469,151 +1270,21 @@ function renderMetrics(){
   $('monthSalesNote').textContent=monthNote;
 }
 function renderStatus(){
-  const counts=engineUnresolvedCounts();
-  const statusGrid=$('statusGrid');
-
-  if(!statusGrid) return;
-
-  statusGrid.innerHTML=STATUS_ITEMS.map(
-    ([key,label])=>`
-      <button
-        class="alert-card ${activeStatus===key?'active':''}"
-        data-key="${key}"
-      >
-        <span>${label}</span>
-        <strong>${Number(counts[key]||0)}</strong>
-      </button>
-    `
-  ).join('');
-
-  statusGrid.querySelectorAll('button').forEach(button=>{
-    button.onclick=()=>{
-      activeStatus=
-        activeStatus===button.dataset.key
-          ?''
-          :button.dataset.key;
-      currentPage=1;
-      showOrdersTab();
-      render();
-    };
-  });
-
-  const dedupeInfo=$('dedupeInfo');
-  if(dedupeInfo){
-    dedupeInfo.textContent=
-      '주문상품별 최신 상태 기준 · 완료 시 자동 제외';
-  }
-
-  $('statusUpdated').textContent=
-    '최근 갱신 '+
-    new Date().toLocaleTimeString(
-      'ko-KR',
-      {hour:'2-digit',minute:'2-digit'}
-    );
+  const counts=engineUnresolvedCounts(); const grid=$('statusGrid'); if(!grid) return;
+  grid.innerHTML=STATUS_ITEMS.map(([key,label])=>`<button class="alert-card ${activeStatus===key?'active':''}" data-key="${key}"><span>${label}</span><strong>${Number(counts[key]||0)}</strong></button>`).join('');
+  grid.querySelectorAll('button').forEach(button=>{button.onclick=()=>{activeStatus=activeStatus===button.dataset.key?'':button.dataset.key;currentPage=1;showOrdersTab();render();};});
+  const info=$('dedupeInfo'); if(info) info.textContent='현재 실제 미완료 건만 표시 · 완료되면 자동 제외';
+  $('statusUpdated').textContent='최근 갱신 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
 }
 function renderMarkets(){
-  const pending=engineUnresolvedByMarket();
-
-  $('marketBody').innerHTML=MARKETS.map(([key,name])=>{
-    const data=pending[name]||{};
-    const connected=Boolean(integrations[key]?.connected);
-    const activeOrders=
-      Number(data.new||0)+Number(data.shipping_wait||0);
-
-    return `
-      <tr
-        class="market-row ${activeMarket===name?'selected':''}"
-        data-market="${name}"
-      >
-        <td>
-          <span class="market-name">
-            <span class="market-dot ${connected?'ok':''}"></span>
-            ${name}
-          </span>
-        </td>
-        <td class="order-sales-cell">
-          <strong>${activeOrders}</strong>
-          <small>${fmt(data.orderAmount||0)}</small>
-        </td>
-        <td>${Number(data.new||0)}</td>
-        <td>${Number(data.shipping_wait||0)}</td>
-        <td>${Number(data.cancel||0)}</td>
-        <td>${Number(data.return||0)}</td>
-        <td>${Number(data.exchange||0)}</td>
-      </tr>
-    `;
-  }).join('');
-
-  $('marketBody').querySelectorAll('tr').forEach(row=>{
-    row.onclick=()=>{
-      activeMarket=
-        activeMarket===row.dataset.market
-          ?''
-          :row.dataset.market;
-      currentPage=1;
-      showOrdersTab();
-      render();
-      $('ordersPanel').scrollIntoView({
-        behavior:'smooth',
-        block:'start'
-      });
-    };
-  });
-
-  $('marketUpdated').textContent=
-    '주문상품별 최신 상태 기준 · '+
-    new Date().toLocaleTimeString(
-      'ko-KR',
-      {hour:'2-digit',minute:'2-digit'}
-    );
+  const rows=engineTodayMarketRows();
+  $('marketBody').innerHTML=MARKETS.map(([key,name])=>{const d=rows[name]||{};const connected=Boolean(integrations[key]?.connected);return `<tr class="market-row ${activeMarket===name?'selected':''}" data-market="${name}"><td><span class="market-name"><span class="market-dot ${connected?'ok':''}"></span>${name}</span></td><td class="order-sales-cell"><strong>${Number(d.orders||0)}</strong><small>${fmt(d.sales||0)}</small></td><td>${Number(d.new||0)}</td><td>${Number(d.shipping_wait||0)}</td><td>${Number(d.cancel||0)}</td><td>${Number(d.return||0)}</td><td>${Number(d.exchange||0)}</td></tr>`;}).join('');
+  $('marketBody').querySelectorAll('tr').forEach(row=>{row.onclick=()=>{activeMarket=activeMarket===row.dataset.market?'':row.dataset.market;currentPage=1;showOrdersTab();render();$('ordersPanel').scrollIntoView({behavior:'smooth',block:'start'});};});
+  $('marketUpdated').textContent='오늘 00:00부터 현재까지 · 자정 자동 초기화';
 }
 function filteredOrders(){
-  const q=$('searchInput').value.trim().toLowerCase();
-  const market=$('marketFilter').value;
-  const read=$('readFilter').value;
-
-  return engineUnresolvedItems().filter(order=>{
-    const status=statusKey(order);
-
-    if(activeStatus&&status!==activeStatus) return false;
-    if(activeMarket&&order.market!==activeMarket) return false;
-    if(market&&order.market!==market) return false;
-
-    const hit=!q||[
-      order.product,
-      order.orderNo,
-      order.buyer,
-      order.phone,
-      order.invoiceNumber,
-      order.workflowNote
-    ].some(value=>
-      String(value||'').toLowerCase().includes(q)
-    );
-
-    if(!hit) return false;
-    if(read==='unread'&&!isUnread(order)) return false;
-    if(read==='read'&&isUnread(order)) return false;
-
-    return true;
-  }).sort((a,b)=>{
-    const rank={
-      new:1,
-      shipping_wait:2,
-      cancel:3,
-      return:4,
-      exchange:5,
-      inquiry:6
-    };
-
-    if(statusKey(a)!==statusKey(b)){
-      return (
-        (rank[statusKey(a)]||9)-
-        (rank[statusKey(b)]||9)
-      );
-    }
-
-    return engineTimestamp(b)-engineTimestamp(a);
-  });
+  const q=$('searchInput').value.trim().toLowerCase();const market=$('marketFilter').value;const read=$('readFilter').value;
+  return engineUnresolvedItems().filter(order=>{const status=statusKey(order);if(activeStatus&&status!==activeStatus)return false;if(activeMarket&&order.market!==activeMarket)return false;if(market&&order.market!==market)return false;const hit=!q||[order.product,order.orderNo,order.buyer,order.phone,order.invoiceNumber,order.workflowNote].some(v=>String(v||'').toLowerCase().includes(q));if(!hit)return false;if(read==='unread'&&!isUnread(order))return false;if(read==='read'&&isUnread(order))return false;return true;}).sort((a,b)=>{const rank={new:1,shipping_wait:2,cancel:3,return:4,exchange:5,inquiry:6};return (rank[statusKey(a)]||9)-(rank[statusKey(b)]||9)||engineTimestamp(b)-engineTimestamp(a);});
 }
 
 function renderOrders(){
@@ -2385,7 +2056,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.0.0',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.1.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -2505,3 +2176,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }
 });
+
+
+let dashboardDayKey=todayKey();
+setInterval(()=>{const next=todayKey();if(next!==dashboardDayKey){dashboardDayKey=next;currentPage=1;render();}},30000);
