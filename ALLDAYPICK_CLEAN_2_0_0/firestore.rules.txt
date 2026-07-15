@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /orders/{orderId} {
+      allow read, write: if signedIn();
+    }
+
+    match /devices/{deviceId} {
+      allow read, write: if signedIn();
+    }
+
+    match /system/integrations {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /system/agent {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /system/syncDiagnostics {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /system/commands/requests/{market} {
+      allow read: if signedIn();
+
+      allow create, update: if signedIn()
+        && market == 'coupang'
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.action in [
+          'collect',
+          'reconcile',
+          'telegram_test'
+        ];
+
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
