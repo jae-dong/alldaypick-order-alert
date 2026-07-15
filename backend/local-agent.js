@@ -878,7 +878,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-3.2.0',
+    version:'CLEAN-3.2.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

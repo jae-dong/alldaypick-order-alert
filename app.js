@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v3.2.0';
+const APP_VERSION='CLEAN v3.2.1';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1112,28 +1112,139 @@ function engineOrderKey(order){
   ].join('|');
 }
 
-function engineLatestLines(){
-  const map=new Map();
+
+function lifecycleOriginalDate(history){
+  const candidates=[];
+
+  history.forEach(item=>{
+    for(const value of [
+      item?.orderDate,
+      item?.orderAt,
+      item?.orderedAt,
+      item?.paymentDate,
+      item?.paymentAt,
+      item?.datetime
+    ]){
+      if(!value) continue;
+      const date=value?.toDate?value.toDate():new Date(value);
+
+      if(!Number.isNaN(date.getTime())){
+        candidates.push(date);
+      }
+    }
+  });
+
+  if(!candidates.length){
+    return new Date(0);
+  }
+
+  return new Date(
+    Math.min(...candidates.map(date=>date.getTime()))
+  );
+}
+
+function lifecycleLatestLines(){
+  const histories=new Map();
 
   orders
     .filter(marketIncludedOrder)
     .forEach(order=>{
       const key=engineLineKey(order);
+
+      if(!histories.has(key)){
+        histories.set(key,[]);
+      }
+
+      histories.get(key).push(order);
+    });
+
+  return [...histories.values()].map(history=>{
+    history.sort(
+      (a,b)=>engineTimestamp(a)-engineTimestamp(b)
+    );
+
+    const original=history[0];
+    const latest=history[history.length-1];
+    const originalDate=lifecycleOriginalDate(history);
+
+    const amountSource=history.find(item=>
+      Number(
+        item?.orderTotalAmount||
+        item?.totalAmount||
+        item?.paymentAmount||
+        item?.amount||
+        item?.salePrice
+      )>0
+    )||original;
+
+    return {
+      ...original,
+      ...latest,
+      orderDate:
+        originalDate.getTime()
+          ?originalDate.toISOString()
+          :latest.orderDate,
+      orderAt:
+        original.orderAt||latest.orderAt,
+      orderedAt:
+        original.orderedAt||latest.orderedAt,
+      paymentDate:
+        original.paymentDate||latest.paymentDate,
+      paymentAt:
+        original.paymentAt||latest.paymentAt,
+      orderTotalAmount:
+        amountSource.orderTotalAmount,
+      totalAmount:
+        amountSource.totalAmount,
+      paymentAmount:
+        amountSource.paymentAmount,
+      amount:
+        amountSource.amount,
+      salePrice:
+        amountSource.salePrice,
+      lifecycleHistoryCount:history.length
+    };
+  });
+}
+
+function lifecycleUnresolvedGroups(){
+  const map=new Map();
+
+  lifecycleLatestLines()
+    .filter(order=>{
+      const key=statusKey(order);
+
+      return (
+        [
+          'new','shipping_wait','cancel',
+          'return','exchange','inquiry'
+        ].includes(key) &&
+        !engineCompleted(order)
+      );
+    })
+    .forEach(order=>{
+      const status=statusKey(order);
+      const key=[
+        engineOrderKey(order),
+        status
+      ].join('|');
+
       const current=map.get(key);
 
       if(
         !current ||
-        engineTimestamp(order)>engineTimestamp(current) ||
-        (
-          engineTimestamp(order)===engineTimestamp(current) &&
-          statusPriority(order)>statusPriority(current)
-        )
+        engineTimestamp(order)>engineTimestamp(current)
       ){
         map.set(key,order);
       }
     });
 
   return [...map.values()];
+}
+
+
+function engineLatestLines(){
+  return lifecycleLatestLines();
 }
 
 function engineOrderDate(order){
@@ -1282,77 +1393,96 @@ function engineMonthGroups(){
 }
 
 function engineUnresolvedItems(){
-  const latest=engineLatestLines();
-  const claimsByOrder=new Map();
-
-  latest.forEach(item=>{
-    const key=statusKey(item);
-    if(!['cancel','return','exchange','inquiry'].includes(key)) return;
-    if(engineCompleted(item)) return;
-
-    const orderKey=engineOrderKey(item);
-    const current=claimsByOrder.get(orderKey);
-    if(!current||engineTimestamp(item)>=engineTimestamp(current)){
-      claimsByOrder.set(orderKey,item);
-    }
-  });
-
-  const orderGroups=new Map();
-  latest.forEach(item=>{
-    if(String(item?.eventType||'order').toLowerCase()!=='order') return;
-    const key=statusKey(item);
-    if(!['new','shipping_wait'].includes(key)||engineCompleted(item)) return;
-
-    const orderKey=engineOrderKey(item);
-    if(claimsByOrder.has(orderKey)) return;
-
-    const current=orderGroups.get(orderKey);
-    if(!current||engineTimestamp(item)>=engineTimestamp(current)){
-      orderGroups.set(orderKey,item);
-    }
-  });
-
-  return [...orderGroups.values(),...claimsByOrder.values()];
+  return lifecycleUnresolvedGroups();
 }
 
 function engineUnresolvedCounts(){
-  const counts={
-    new:0,
-    shipping_wait:0,
-    cancel:0,
-    return:0,
-    exchange:0,
-    inquiry:0
+  const sets={
+    new:new Set(),
+    shipping_wait:new Set(),
+    cancel:new Set(),
+    return:new Set(),
+    exchange:new Set(),
+    inquiry:new Set()
   };
 
   engineUnresolvedItems().forEach(item=>{
     const key=statusKey(item);
-    if(key in counts) counts[key]+=1;
+
+    if(sets[key]){
+      sets[key].add(engineOrderKey(item));
+    }
   });
 
-  return counts;
+  return Object.fromEntries(
+    Object.entries(sets).map(
+      ([key,value])=>[key,value.size]
+    )
+  );
 }
 
 function engineUnresolvedByMarket(){
   const result={};
+  const seen={};
+
   MARKETS.forEach(([,name])=>{
-    result[name]={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0,orderAmount:0};
+    result[name]={
+      new:0,
+      shipping_wait:0,
+      cancel:0,
+      return:0,
+      exchange:0,
+      inquiry:0,
+      orderAmount:0
+    };
+
+    seen[name]={
+      new:new Set(),
+      shipping_wait:new Set(),
+      cancel:new Set(),
+      return:new Set(),
+      exchange:new Set(),
+      inquiry:new Set(),
+      amount:new Set()
+    };
   });
 
   engineUnresolvedItems().forEach(item=>{
     const market=item.market;
-    const key=statusKey(item);
-    if(!result[market]) return;
-    if(key in result[market]) result[market][key]+=1;
-    if(['new','shipping_wait'].includes(key)) result[market].orderAmount+=engineAmount(item);
+    const status=statusKey(item);
+    const orderKey=engineOrderKey(item);
+
+    if(!result[market]||!seen[market]?.[status]){
+      return;
+    }
+
+    seen[market][status].add(orderKey);
+
+    if(
+      ['new','shipping_wait'].includes(status) &&
+      !seen[market].amount.has(orderKey)
+    ){
+      seen[market].amount.add(orderKey);
+      result[market].orderAmount+=engineAmount(item);
+    }
   });
+
+  Object.keys(result).forEach(market=>{
+    [
+      'new','shipping_wait','cancel',
+      'return','exchange','inquiry'
+    ].forEach(status=>{
+      result[market][status]=seen[market][status].size;
+    });
+  });
+
   return result;
 }
 
 
 
 function todayOrderSourceLines(){
-  return engineLatestLines().filter(order=>
+  return lifecycleLatestLines().filter(order=>
     String(order?.eventType||'order').toLowerCase()==='order' &&
     engineOrderDay(order)===todayKey()
   );
@@ -1408,6 +1538,7 @@ function todayOrderGroups(){
 
 function todayMarketSummary(){
   const result={};
+  const statusSets={};
 
   MARKETS.forEach(([,name])=>{
     result[name]={
@@ -1420,6 +1551,15 @@ function todayMarketSummary(){
       exchange:0,
       inquiry:0
     };
+
+    statusSets[name]={
+      new:new Set(),
+      shipping_wait:new Set(),
+      cancel:new Set(),
+      return:new Set(),
+      exchange:new Set(),
+      inquiry:new Set()
+    };
   });
 
   todayOrderGroups().forEach(group=>{
@@ -1427,35 +1567,27 @@ function todayMarketSummary(){
 
     result[group.market].orders+=1;
     result[group.market].sales+=Number(group.amount||0);
-
-    const currentStatuses=new Set(
-      group.lines.map(statusKey)
-    );
-
-    if(currentStatuses.has('new')){
-      result[group.market].new+=1;
-    }
-
-    if(currentStatuses.has('shipping_wait')){
-      result[group.market].shipping_wait+=1;
-    }
   });
 
-  engineLatestLines()
-    .filter(item=>
-      ['cancel','return','exchange','inquiry']
-        .includes(statusKey(item)) &&
-      engineOrderDay(item)===todayKey() &&
-      !engineCompleted(item)
-    )
+  lifecycleUnresolvedGroups()
+    .filter(item=>engineOrderDay(item)===todayKey())
     .forEach(item=>{
       const market=item.market;
-      const key=statusKey(item);
+      const status=statusKey(item);
 
-      if(result[market]&&key in result[market]){
-        result[market][key]+=1;
+      if(statusSets[market]?.[status]){
+        statusSets[market][status].add(
+          engineOrderKey(item)
+        );
       }
     });
+
+  Object.keys(result).forEach(market=>{
+    Object.keys(statusSets[market]).forEach(status=>{
+      result[market][status]=
+        statusSets[market][status].size;
+    });
+  });
 
   return result;
 }
@@ -2496,7 +2628,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.0',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.1',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
