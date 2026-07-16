@@ -269,6 +269,10 @@ async function saveClaims(db, documents) {
         before.status !== claim.status ||
         before.modifiedAt !== claim.modifiedAt;
 
+      if(!changed){
+        return 'existing';
+      }
+
       tx.set(
         ref,
         {
@@ -276,12 +280,13 @@ async function saveClaims(db, documents) {
           createdAt:
             before.createdAt ||
             admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt:
+            admin.firestore.FieldValue.serverTimestamp()
         },
         { merge: true }
       );
 
-      return changed ? 'changed' : 'existing';
+      return 'changed';
     });
 
     if (result === 'created') {
@@ -320,7 +325,7 @@ async function fetchReturnStatus(config, status) {
   return Array.isArray(payload.data) ? payload.data : [];
 }
 
-export async function syncCancellations(db, config) {
+export async function syncCancellations(db, config, reconcile=false) {
   const now = new Date();
   const from = new Date(now.getTime() - (23 * 60 + 59) * 60 * 1000);
   const path =
@@ -344,21 +349,25 @@ export async function syncCancellations(db, config) {
   );
 
   const saved=await saveClaims(db, documents);
-  saved.deactivated=await reconcileActiveClaims(db,'cancel',documents,from);
+  saved.deactivated=reconcile
+    ?await reconcileActiveClaims(db,'cancel',documents,from)
+    :0;
   return saved;
 }
 
-export async function syncReturns(db, config) {
+export async function syncReturns(db, config, reconcile=false) {
   const now=new Date();
   const from=new Date(now.getTime()-(23*60+59)*60*1000);
   const received = await fetchReturnStatus(config, 'UC');
   const documents = returnClaimDocuments(received, 'return');
   const saved=await saveClaims(db, documents);
-  saved.deactivated=await reconcileActiveClaims(db,'return',documents,from);
+  saved.deactivated=reconcile
+    ?await reconcileActiveClaims(db,'return',documents,from)
+    :0;
   return saved;
 }
 
-export async function syncExchanges(db, config) {
+export async function syncExchanges(db, config, reconcile=false) {
   const now = new Date();
   const from = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
   const path =
@@ -387,6 +396,8 @@ export async function syncExchanges(db, config) {
   }
 
   const saved=await saveClaims(db, documents);
-  saved.deactivated=await reconcileActiveClaims(db,'exchange',documents,from);
+  saved.deactivated=reconcile
+    ?await reconcileActiveClaims(db,'exchange',documents,from)
+    :0;
   return saved;
 }

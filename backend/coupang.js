@@ -215,13 +215,20 @@ async function save(db,orders){
         Number(before.qty||0)!==Number(order.qty||0)||
         String(before.invoiceNumber||'')!==String(order.invoiceNumber||'');
 
+      if(!changed){
+        return 'existing';
+      }
+
       tx.set(ref,{
         ...order,
-        createdAt:before.createdAt||admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt:admin.firestore.FieldValue.serverTimestamp()
+        createdAt:
+          before.createdAt||
+          admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt:
+          admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
 
-      return changed?'changed':'existing';
+      return 'changed';
     });
 
     if(result==='created'){ created++; createdOrders.push(order); }
@@ -235,7 +242,7 @@ async function save(db,orders){
 export async function pollCoupangStatuses(
   db,
   config,
-  {statuses,days,maxPages=2}
+  {statuses,days,maxPages=2,reconcile=false}
 ){
   const now=new Date();
   const from=new Date(now.getTime()-days*86400000);
@@ -251,11 +258,16 @@ export async function pollCoupangStatuses(
     counts[status]=orders.length;
     all.push(...orders);
 
-    const complete=orders.length<(maxPages*50);
-    const reconciled=await reconcileCurrentStatus(
-      db,status,orders,from,complete
-    );
-    counts[`${status}_DEACTIVATED`]=reconciled.deactivated||0;
+    if(reconcile){
+      const complete=orders.length<(maxPages*50);
+      const reconciled=await reconcileCurrentStatus(
+        db,status,orders,from,complete
+      );
+      counts[`${status}_DEACTIVATED`]=
+        reconciled.deactivated||0;
+    }else{
+      counts[`${status}_DEACTIVATED`]=0;
+    }
   }
 
   const unique=[...new Map(all.map(o=>[o.id,o])).values()];

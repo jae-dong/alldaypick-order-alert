@@ -66,7 +66,7 @@ const db=admin.firestore();
 
 
 const QUOTA_COOLDOWN_MS=15*60*1000;
-const HEARTBEAT_INTERVAL_MS=5*60*1000;
+const HEARTBEAT_INTERVAL_MS=10*60*1000;
 let quotaBlockedUntil=0;
 let agentLockReleased=false;
 
@@ -141,6 +141,8 @@ function stableJson(value){
   return JSON.stringify(stableObject(value));
 }
 
+const lastWrittenHashes=new Map();
+
 async function setOnlyWhenChanged(reference,data,options={merge:true}){
   if(inQuotaCooldown()){
     return {
@@ -150,27 +152,19 @@ async function setOnlyWhenChanged(reference,data,options={merge:true}){
   }
 
   const clean=stableObject(data);
+  const hash=stableJson(clean);
+  const previous=lastWrittenHashes.get(reference.path);
+
+  if(previous===hash){
+    return {
+      skipped:true,
+      reason:'unchanged'
+    };
+  }
 
   try{
-    const snapshot=await reference.get();
-    const current=snapshot.exists
-      ?snapshot.data()
-      :null;
-
-    if(
-      current &&
-      stableJson(current)===stableJson({
-        ...current,
-        ...clean
-      })
-    ){
-      return {
-        skipped:true,
-        reason:'unchanged'
-      };
-    }
-
     await reference.set(clean,options);
+    lastWrittenHashes.set(reference.path,hash);
 
     return {
       skipped:false
@@ -511,7 +505,8 @@ async function fullCoupangStatusSync(source='interval'){
       days:reconcile
         ?Math.max(1,new Date().getDate())
         :7,
-      maxPages:reconcile?15:5
+      maxPages:reconcile?15:5,
+      reconcile
     }),
     reconcile?240000:150000
   );
@@ -606,11 +601,11 @@ async function syncAllClaimTypes(){
     let result;
 
     if(type==='cancel'){
-      result=await syncCancellations(db,coupang());
+      result=await syncCancellations(db,coupang(),reconcile);
     }else if(type==='return'){
-      result=await syncReturns(db,coupang());
+      result=await syncReturns(db,coupang(),reconcile);
     }else{
-      result=await syncExchanges(db,coupang());
+      result=await syncExchanges(db,coupang(),reconcile);
     }
 
     const push=await sendClaimPush(result.createdClaims||[]);
@@ -631,11 +626,11 @@ async function syncOneClaimType(){
   let result;
 
   if(type==='cancel'){
-    result=await syncCancellations(db,coupang());
+    result=await syncCancellations(db,coupang(),reconcile);
   }else if(type==='return'){
-    result=await syncReturns(db,coupang());
+    result=await syncReturns(db,coupang(),reconcile);
   }else{
-    result=await syncExchanges(db,coupang());
+    result=await syncExchanges(db,coupang(),reconcile);
   }
 
   const push=await sendClaimPush(result.createdClaims||[]);
@@ -1042,7 +1037,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-4.1.0',
+    version:'FINAL-4.2.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1323,24 +1318,64 @@ commandRef.onSnapshot(snap=>{
 
 await writeAgentHeartbeat();
 
-setInterval(
-  ()=>writeAgentHeartbeat('interval'),
-  30*1000
-);
+setInterval(()=>writeAgentHeartbeat('interval'),HEARTBEAT_INTERVAL_MS);
 
 setInterval(
   ()=>runFastSync(),
-  Math.max(1,Number.isFinite(fastPollMinutes)?fastPollMinutes:3)*60*1000
+  Math.max(10,Number.isFinite(fastPollMinutes)?fastPollMinutes:10)*60*1000
 );
 
 setInterval(
   ()=>run('interval'),
-  Math.max(5,Number.isFinite(intervalMinutes)?intervalMinutes:10)*60*1000
+  Math.max(30,Number.isFinite(intervalMinutes)?intervalMinutes:30)*60*1000
 );
+
+
+let lastDailyReconcileDay='';
+
+setInterval(()=>{
+  const parts=new Intl.DateTimeFormat(
+    'sv-SE',
+    {
+      timeZone:'Asia/Seoul',
+      year:'numeric',
+      month:'2-digit',
+      day:'2-digit',
+      hour:'2-digit',
+      minute:'2-digit',
+      hour12:false
+    }
+  ).formatToParts(new Date());
+
+  const values=Object.fromEntries(
+    parts.map(part=>[part.type,part.value])
+  );
+
+  const day=`${values.year}-${values.month}-${values.day}`;
+  const hour=Number(values.hour);
+  const minute=Number(values.minute);
+
+  if(
+    hour===3 &&
+    minute>=10 &&
+    minute<20 &&
+    day!==lastDailyReconcileDay
+  ){
+    lastDailyReconcileDay=day;
+
+    run('reconcile').catch(error=>{
+      console.error(
+        '일일 상태정리 실패:',
+        error instanceof Error?error.message:String(error)
+      );
+    });
+  }
+},5*60*1000);
+
 
 console.log(
   `로컬 수집기 준비 완료 · ${intervalMinutes}분 자동수집 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 5분`
+  `텔레그램 테스트 즉시 사용 가능 · 생존신호 10분`
 );
 
 run('startup').catch(error=>{

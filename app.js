@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v4.1.0';
+const APP_VERSION='FINAL v4.2.0';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -2342,7 +2342,10 @@ function startCloudListeners(){
     false
   );
 
-  unsubscribeOrders=db.collection('orders').onSnapshot(
+  unsubscribeOrders=db.collection('orders')
+    .orderBy('createdAt','desc')
+    .limit(600)
+    .onSnapshot(
     {includeMetadataChanges:true},
     snapshot=>{
       orders=snapshot.docs.map(doc=>({
@@ -2371,7 +2374,7 @@ function startCloudListeners(){
         false
       );
 
-      retryCloud(3000);
+      retryCloud(60000);
     }
   );
 
@@ -2393,7 +2396,7 @@ function startCloudListeners(){
 
         renderIntegrations();
         renderMarkets();
-        retryCloud(3000);
+        retryCloud(60000);
       }
     );
 
@@ -2486,7 +2489,7 @@ async function initCloud(force=false){
       false
     );
 
-    retryCloud(3000);
+    retryCloud(60000);
   }finally{
     cloudStarting=false;
   }
@@ -2572,7 +2575,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.1.0',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -2722,3 +2725,24 @@ function replaceSubscription(slot,unsubscribe){
 
   window[slot]=unsubscribe;
 }
+
+
+const FREE_MODE_LIMITS={
+  maxLoadedOrders:600,
+  listenerReconnectMs:60000,
+  mode:'무료 한도 보호'
+};
+
+function renderFreeModeBadge(){
+  const badge=document.getElementById('versionBadge');
+
+  if(
+    badge &&
+    !badge.textContent.includes('무료 보호')
+  ){
+    badge.textContent+=' · 무료 보호';
+  }
+}
+
+
+document.addEventListener('DOMContentLoaded',renderFreeModeBadge);
