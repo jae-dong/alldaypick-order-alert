@@ -1,4 +1,4 @@
-const APP_VERSION='CLEAN v3.2.3';
+const APP_VERSION='FINAL v4.0.0';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1147,7 +1147,7 @@ function lifecycleLatestLines(){
   const histories=new Map();
 
   orders
-    .filter(marketIncludedOrder)
+    .filter(order=>marketIncludedOrder(order)&&order.activeState!==false)
     .forEach(order=>{
       const key=engineLineKey(order);
 
@@ -1251,52 +1251,18 @@ function oneStatusCompleted(order){
 }
 
 function oneCurrentStatusPerOrder(){
-  const groups=new Map();
-
-  lifecycleLatestLines().forEach(item=>{
+  return lifecycleLatestLines().filter(item=>{
     const status=statusKey(item);
 
-    if(![
-      'new','shipping_wait','cancel',
-      'return','exchange','inquiry'
-    ].includes(status)){
-      return;
-    }
-
-    if(oneStatusCompleted(item)){
-      return;
-    }
-
-    const key=engineOrderKey(item);
-
-    if(!groups.has(key)){
-      groups.set(key,[]);
-    }
-
-    groups.get(key).push(item);
+    return (
+      [
+        'new','shipping_wait','cancel',
+        'return','exchange','inquiry'
+      ].includes(status) &&
+      item.activeState!==false &&
+      !oneStatusCompleted(item)
+    );
   });
-
-  const result=[];
-
-  groups.forEach(items=>{
-    items.sort((a,b)=>{
-      const timeDiff=engineTimestamp(a)-engineTimestamp(b);
-
-      if(timeDiff!==0){
-        return timeDiff;
-      }
-
-      return oneStatusPriority(a)-oneStatusPriority(b);
-    });
-
-    const newestTime=Math.max(...items.map(engineTimestamp));
-    const newest=items.filter(item=>engineTimestamp(item)===newestTime);
-
-    newest.sort((a,b)=>oneStatusPriority(a)-oneStatusPriority(b));
-    result.push(newest[newest.length-1]);
-  });
-
-  return result;
 }
 
 
@@ -1459,14 +1425,19 @@ function engineUnresolvedItems(){
 }
 
 function engineUnresolvedCounts(){
-  const counts={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0};
+  const sets={
+    new:new Set(),shipping_wait:new Set(),cancel:new Set(),
+    return:new Set(),exchange:new Set(),inquiry:new Set()
+  };
 
-  oneCurrentStatusPerOrder().forEach(item=>{
-    const key=statusKey(item);
-    if(key in counts) counts[key]+=1;
+  engineUnresolvedItems().forEach(item=>{
+    const status=statusKey(item);
+    if(sets[status]) sets[status].add(engineLineKey(item));
   });
 
-  return counts;
+  return Object.fromEntries(
+    Object.entries(sets).map(([key,set])=>[key,set.size])
+  );
 }
 
 function engineUnresolvedByMarket(){
@@ -2601,7 +2572,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=clean-v3.2.3',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.0.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

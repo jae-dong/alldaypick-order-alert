@@ -290,6 +290,11 @@ function normalizeDetail(row) {
       productOrder.productOrderStatus ||
       productOrder.status ||
       '',
+    claimStatus:
+      claim.claimStatus || productOrder.claimStatus || '',
+    claimType:
+      claim.claimType || productOrder.claimType || '',
+    activeState:true,
     invoiceNumber:
       productOrder.trackingNumber ||
       productOrder.invoiceNumber ||

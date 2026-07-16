@@ -120,6 +120,7 @@ function normalize(sheets,requestedStatus){
         vendorItemId,
         invoiceNumber:item.invoiceNumber||sheet.invoiceNumber||'',
         deliveryCompanyName:item.deliveryCompanyName||sheet.deliveryCompanyName||'',
+        activeState:true,
         syncedAt:new Date().toISOString()
       });
     }
@@ -149,6 +150,44 @@ async function fetchStatus(config,path,from,to,status,maxPages){
     await sleep(1500);
   }
   return orders;
+}
+
+
+async function reconcileCurrentStatus(db,status,currentOrders,from,complete){
+  if(!complete){
+    return {deactivated:0,skipped:true};
+  }
+
+  const currentIds=new Set(currentOrders.map(order=>order.id));
+  const snapshot=await db.collection('orders').where('source','==','coupang').get();
+  const fromTime=from.getTime();
+  const stale=[];
+
+  snapshot.forEach(doc=>{
+    const data=doc.data()||{};
+    if(data.eventType!=='order') return;
+    if(String(data.sourceStatus||'')!==status) return;
+    if(data.activeState===false) return;
+    const ordered=new Date(data.datetime||0).getTime();
+    if(!Number.isFinite(ordered)||ordered<fromTime) return;
+    if(currentIds.has(doc.id)) return;
+    stale.push(doc.ref);
+  });
+
+  for(let i=0;i<stale.length;i+=400){
+    const batch=db.batch();
+    stale.slice(i,i+400).forEach(ref=>batch.set(ref,{
+      activeState:false,
+      status:'resolved',
+      statusLabel:'처리완료',
+      resolvedReason:'현재 API 상태에서 제외됨',
+      resolvedAt:admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt:admin.firestore.FieldValue.serverTimestamp()
+    },{merge:true}));
+    await batch.commit();
+  }
+
+  return {deactivated:stale.length,skipped:false};
 }
 
 async function save(db,orders){
@@ -211,6 +250,12 @@ export async function pollCoupangStatuses(
     const orders=await fetchStatus(config,path,from,now,status,maxPages);
     counts[status]=orders.length;
     all.push(...orders);
+
+    const complete=orders.length<(maxPages*50);
+    const reconciled=await reconcileCurrentStatus(
+      db,status,orders,from,complete
+    );
+    counts[`${status}_DEACTIVATED`]=reconciled.deactivated||0;
   }
 
   const unique=[...new Map(all.map(o=>[o.id,o])).values()];

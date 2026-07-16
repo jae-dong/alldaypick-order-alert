@@ -148,6 +148,10 @@ function returnClaimDocuments(rows, kind) {
           row.cancelReasonCategory2 ||
           '',
         modifiedAt: row.modifiedAt || '',
+        activeState: true,
+        claimStatus: row.returnStatus || row.cancelStatus || row.exchangeStatus || '',
+        activeState: true,
+        claimStatus: row.returnStatus || row.cancelStatus || row.exchangeStatus || '',
         syncedAt: new Date().toISOString()
       });
     }
@@ -193,12 +197,49 @@ function exchangeDocuments(rows) {
           row.reasonEtcDetail ||
           '',
         modifiedAt: row.modifiedAt || '',
+        activeState: true,
+        claimStatus: row.returnStatus || row.cancelStatus || row.exchangeStatus || '',
+        activeState: true,
+        claimStatus: row.returnStatus || row.cancelStatus || row.exchangeStatus || '',
         syncedAt: new Date().toISOString()
       });
     }
   }
 
   return documents;
+}
+
+
+async function reconcileActiveClaims(db,eventType,currentDocuments,from){
+  const currentIds=new Set(currentDocuments.map(item=>item.id));
+  const snapshot=await db.collection('orders').where('source','==','coupang').get();
+  const cutoff=from.getTime();
+  const stale=[];
+
+  snapshot.forEach(doc=>{
+    const data=doc.data()||{};
+    if(data.eventType!==eventType) return;
+    if(data.activeState===false) return;
+    const created=new Date(data.datetime||0).getTime();
+    if(!Number.isFinite(created)||created<cutoff) return;
+    if(currentIds.has(doc.id)) return;
+    stale.push(doc.ref);
+  });
+
+  for(let i=0;i<stale.length;i+=400){
+    const batch=db.batch();
+    stale.slice(i,i+400).forEach(ref=>batch.set(ref,{
+      activeState:false,
+      status:'resolved',
+      statusLabel:'처리완료',
+      resolvedReason:'현재 미처리 API 목록에서 제외됨',
+      resolvedAt:admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt:admin.firestore.FieldValue.serverTimestamp()
+    },{merge:true}));
+    await batch.commit();
+  }
+
+  return stale.length;
 }
 
 async function saveClaims(db, documents) {
@@ -302,13 +343,19 @@ export async function syncCancellations(db, config) {
     'cancel'
   );
 
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db, documents);
+  saved.deactivated=await reconcileActiveClaims(db,'cancel',documents,from);
+  return saved;
 }
 
 export async function syncReturns(db, config) {
+  const now=new Date();
+  const from=new Date(now.getTime()-(23*60+59)*60*1000);
   const received = await fetchReturnStatus(config, 'UC');
   const documents = returnClaimDocuments(received, 'return');
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db, documents);
+  saved.deactivated=await reconcileActiveClaims(db,'return',documents,from);
+  return saved;
 }
 
 export async function syncExchanges(db, config) {
@@ -339,5 +386,7 @@ export async function syncExchanges(db, config) {
     await sleep(1500);
   }
 
-  return saveClaims(db, documents);
+  const saved=await saveClaims(db, documents);
+  saved.deactivated=await reconcileActiveClaims(db,'exchange',documents,from);
+  return saved;
 }

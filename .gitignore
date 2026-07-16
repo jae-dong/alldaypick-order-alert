@@ -2,12 +2,10 @@ backend/.env.local
 backend/node_modules/
 *.log
 backup-*/
+ALLDAYPICK_*/
+CLEAN_*/
+ACTUAL_*/
 apply-v*.cmd
 apply-v*.ps1
 install-v*.cmd
 install-v*.ps1
-V*_FINAL/
-v*-files/
-CLEAN_*/
-ACTUAL_*/
-ALLDAYPICK_CLEAN_*/

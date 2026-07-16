@@ -584,13 +584,13 @@ async function syncElevenstSafe(source){
       source==='reconcile'
         ?monthStartMinutes()
         :source==='startup'||source==='immediate'
-          ?24*60
+          ?6*60
           :30;
 
     const result=await withTimeout(
       '11번가 주문조회',
       syncElevenstOrders(db,config,minutes),
-      source==='reconcile'?180000:45000
+      source==='reconcile'?180000:90000
     );
 
     await new Promise(r=>setTimeout(r,1800));
@@ -683,12 +683,12 @@ async function syncSmartstoreSafe(source){
       source==='reconcile'
         ?monthStartMinutes()
         :source==='startup'||source==='immediate'
-          ?24*60
+          ?6*60
           :30;
     const result=await withTimeout(
       '스마트스토어 주문조회',
       syncSmartstore(db,smartstoreConfig(),minutes),
-      source==='reconcile'?180000:45000
+      source==='reconcile'?180000:90000
     );
 
     const push=await sendMarketplacePush(
@@ -799,7 +799,7 @@ async function syncLotteonSafe(source){
       source==='reconcile'
         ?monthStartMinutes()
         :source==='startup'||source==='immediate'
-          ?24*60
+          ?6*60
           :30;
 
     const auth=await withTimeout(
@@ -811,7 +811,7 @@ async function syncLotteonSafe(source){
     const result=await withTimeout(
       '롯데온 주문조회',
       syncLotteonOrders(db,config,minutes),
-      source==='reconcile'?180000:45000
+      source==='reconcile'?180000:90000
     );
 
     result.identity=auth.identity;
@@ -878,7 +878,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'CLEAN-3.2.3',
+    version:'FINAL-4.0.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1023,16 +1023,26 @@ async function run(source){
 
   try{
     try{
-      const fast=await fullCoupangStatusSync(reconcile?'reconcile':source);
-      summary.coupang=fast;
-      await saveIntegration(fast,null);
+      const fast=await fastSync(reconcile?'reconcile':source);
+      let slow=null;
+
+      try{
+        slow=await withTimeout(
+          '쿠팡 상태 순환조회',
+          slowSync(),
+          70000
+        );
+      }catch(error){
+        console.error('쿠팡 상태 순환조회 실패:',error.message);
+      }
+
+      summary.coupang={fast,slow};
+      await saveIntegration(fast,slow);
 
       console.log(
-        `쿠팡 전체상태 완료: 발견 ${fast.found}, 신규 ${fast.created}, `+
-        `상태변경 ${fast.statusChanged} · `+
-        `신규 ${fast.counts?.ACCEPT||0}, 발송대기 ${fast.counts?.INSTRUCT||0}, `+
-        `배송중 ${(fast.counts?.DEPARTURE||0)+(fast.counts?.DELIVERING||0)}, `+
-        `배송완료 ${fast.counts?.FINAL_DELIVERY||0}`
+        `쿠팡 동기화 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
+        `발송대기 ${fast.counts?.INSTRUCT||0}`+
+        (slow?` · ${slow.slowStatus} ${slow.counts?.[slow.slowStatus]||0}`:'')
       );
     }catch(error){
       const message=error instanceof Error?error.message:String(error);
@@ -1040,23 +1050,27 @@ async function run(source){
       console.error('쿠팡 실패:',message);
     }
 
-    summary.smartstore=await syncSmartstoreSafe(source).catch(error=>{
-      console.error('스마트스토어 실행 오류:',error.message);
-      return null;
-    });
+    const [smartstoreResult,elevenstResult,lotteonResult]=await Promise.all([
+      syncSmartstoreSafe(source).catch(error=>{
+        console.error('스마트스토어 실행 오류:',error.message);
+        return null;
+      }),
+      syncElevenstSafe(source).catch(error=>{
+        console.error('11번가 실행 오류:',error.message);
+        return null;
+      }),
+      syncLotteonSafe(source).catch(error=>{
+        console.error('롯데온 실행 오류:',error.message);
+        return null;
+      })
+    ]);
 
-    summary.elevenst=await syncElevenstSafe(source).catch(error=>{
-      console.error('11번가 실행 오류:',error.message);
-      return null;
-    });
+    summary.smartstore=smartstoreResult;
+    summary.elevenst=elevenstResult;
+    summary.lotteon=lotteonResult;
 
     await refreshEsmStatus().catch(error=>{
       console.error('ESM 상태 오류:',error.message);
-    });
-
-    summary.lotteon=await syncLotteonSafe(source).catch(error=>{
-      console.error('롯데온 실행 오류:',error.message);
-      return null;
     });
 
     try{
