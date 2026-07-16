@@ -63,6 +63,170 @@ function coupang(){
 admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 
 const db=admin.firestore();
+
+
+const QUOTA_COOLDOWN_MS=15*60*1000;
+const HEARTBEAT_INTERVAL_MS=5*60*1000;
+let quotaBlockedUntil=0;
+let agentLockReleased=false;
+
+function quotaExceeded(error){
+  const message=String(
+    error instanceof Error
+      ?error.message
+      :error
+  ).toUpperCase();
+
+  return (
+    message.includes('RESOURCE_EXHAUSTED') ||
+    message.includes('QUOTA EXCEEDED')
+  );
+}
+
+function inQuotaCooldown(){
+  return Date.now()<quotaBlockedUntil;
+}
+
+function markQuotaCooldown(error){
+  if(!quotaExceeded(error)){
+    return false;
+  }
+
+  quotaBlockedUntil=Date.now()+QUOTA_COOLDOWN_MS;
+
+  console.error(
+    '[Firestore 한도 대기] 15분 동안 저장을 멈춥니다.'
+  );
+
+  return true;
+}
+
+function stableObject(value){
+  if(value===undefined){
+    return undefined;
+  }
+
+  if(value===null||typeof value!=='object'){
+    return value;
+  }
+
+  if(Array.isArray(value)){
+    return value
+      .map(stableObject)
+      .filter(item=>item!==undefined);
+  }
+
+  if(
+    value instanceof Date ||
+    typeof value?.toDate==='function' ||
+    value?.constructor?.name==='FieldValue'
+  ){
+    return value;
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce((result,key)=>{
+      const clean=stableObject(value[key]);
+
+      if(clean!==undefined){
+        result[key]=clean;
+      }
+
+      return result;
+    },{});
+}
+
+function stableJson(value){
+  return JSON.stringify(stableObject(value));
+}
+
+async function setOnlyWhenChanged(reference,data,options={merge:true}){
+  if(inQuotaCooldown()){
+    return {
+      skipped:true,
+      reason:'quota-cooldown'
+    };
+  }
+
+  const clean=stableObject(data);
+
+  try{
+    const snapshot=await reference.get();
+    const current=snapshot.exists
+      ?snapshot.data()
+      :null;
+
+    if(
+      current &&
+      stableJson(current)===stableJson({
+        ...current,
+        ...clean
+      })
+    ){
+      return {
+        skipped:true,
+        reason:'unchanged'
+      };
+    }
+
+    await reference.set(clean,options);
+
+    return {
+      skipped:false
+    };
+  }catch(error){
+    markQuotaCooldown(error);
+    throw error;
+  }
+}
+
+function acquireSingleAgentLock(){
+  const lockPath=new URL(
+    './.agent-running.lock',
+    import.meta.url
+  );
+
+  try{
+    const fd=fs.openSync(lockPath,'wx');
+    fs.writeFileSync(
+      fd,
+      String(process.pid),
+      'utf8'
+    );
+    fs.closeSync(fd);
+
+    const release=()=>{
+      if(agentLockReleased){
+        return;
+      }
+
+      agentLockReleased=true;
+
+      try{
+        fs.unlinkSync(lockPath);
+      }catch{}
+    };
+
+    process.on('exit',release);
+    process.on('SIGINT',()=>{
+      release();
+      process.exit(0);
+    });
+    process.on('SIGTERM',()=>{
+      release();
+      process.exit(0);
+    });
+
+    return true;
+  }catch{
+    console.error(
+      '이미 다른 PC 수집기가 실행 중입니다. 기존 검은 창을 먼저 종료해 주세요.'
+    );
+    return false;
+  }
+}
+
 const commandRef=db.collection('system').doc('commands').collection('requests').doc('coupang');
 const intervalMinutes=Math.max(1,Number(process.env.POLL_INTERVAL_MINUTES||10));
 
@@ -373,7 +537,7 @@ async function slowSync(){
 }
 
 async function saveIntegration(fast,slow){
-  await db.collection('system').doc('integrations').set({
+  await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
     coupang:{
       name:'쿠팡',
       connected:true,
@@ -567,7 +731,7 @@ async function syncElevenstSafe(source){
     const config=elevenstConfigFromEnv(process.env);
 
     if(!isElevenstConfigured(config)){
-      await db.collection('system').doc('integrations').set({
+      await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
         elevenst:{
           name:'11번가',
           connected:false,
@@ -609,7 +773,7 @@ async function syncElevenstSafe(source){
       statusResult.changedOrders||[]
     );
 
-    await db.collection('system').doc('integrations').set({
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       elevenst:{
         name:'11번가',
         connected:true,
@@ -646,7 +810,7 @@ async function syncElevenstSafe(source){
 
     console.error('11번가 동기화 실패:',message);
 
-    await db.collection('system').doc('integrations').set({
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       elevenst:{
         name:'11번가',
         connected:false,
@@ -668,7 +832,7 @@ async function syncSmartstoreSafe(source){
 
   try{
     if(!smartstoreConfigured()){
-      await db.collection('system').doc('integrations').set({
+      await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
         smartstore:{
           name:'스마트스토어',
           connected:false,
@@ -696,7 +860,7 @@ async function syncSmartstoreSafe(source){
       '스마트스토어'
     );
 
-    await db.collection('system').doc('integrations').set({
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',
         connected:true,
@@ -723,7 +887,7 @@ async function syncSmartstoreSafe(source){
     const message=error instanceof Error?error.message:String(error);
     console.error('스마트스토어 동기화 실패:',message);
 
-    await db.collection('system').doc('integrations').set({
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',
         connected:false,
@@ -878,7 +1042,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-4.0.0',
+    version:'FINAL-4.1.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1001,6 +1165,10 @@ async function runFastSync(){
 
 
 async function run(source){
+  if(inQuotaCooldown()){
+    console.log('[Firestore 한도 대기 중] 이번 주기는 건너뜁니다.');
+    return;
+  }
   if(running) return;
 
   running=true;
@@ -1172,7 +1340,7 @@ setInterval(
 
 console.log(
   `로컬 수집기 준비 완료 · ${intervalMinutes}분 자동수집 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 30초`
+  `텔레그램 테스트 즉시 사용 가능 · 생존신호 5분`
 );
 
 run('startup').catch(error=>{
@@ -1181,3 +1349,5 @@ run('startup').catch(error=>{
     error instanceof Error?error.message:String(error)
   );
 });
+
+if(!acquireSingleAgentLock()){process.exit(1);}
