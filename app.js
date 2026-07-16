@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v4.2.1';
+const APP_VERSION='FINAL v4.2.2';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -496,14 +496,18 @@ function unresolvedRowsForMarket(market=''){
 }
 
 function statsGroupsForPeriod(period){
-  const all=engineNormalGroups();
+  const all=historicalNormalGroups();
 
-  if(period==='all') return all;
+  if(period==='all'){
+    return all;
+  }
 
   const days=Math.max(1,Number(period)||7);
   const cutoff=Date.now()-days*86400000;
 
-  return all.filter(group=>group.date?.getTime?.()>=cutoff);
+  return all.filter(group=>
+    group.date?.getTime?.()>=cutoff
+  );
 }
 
 
@@ -1113,6 +1117,125 @@ function engineOrderKey(order){
 }
 
 
+
+function allLifecycleLatestLines(){
+  const histories=new Map();
+
+  orders
+    .filter(marketIncludedOrder)
+    .forEach(order=>{
+      const key=engineLineKey(order);
+
+      if(!histories.has(key)){
+        histories.set(key,[]);
+      }
+
+      histories.get(key).push(order);
+    });
+
+  return [...histories.values()].map(history=>{
+    history.sort(
+      (a,b)=>engineTimestamp(a)-engineTimestamp(b)
+    );
+
+    const original=history[0];
+    const latest=history[history.length-1];
+    const originalDate=lifecycleOriginalDate(history);
+
+    const amountSource=history.find(item=>
+      Number(
+        item?.orderTotalAmount||
+        item?.totalAmount||
+        item?.paymentAmount||
+        item?.amount||
+        item?.salePrice
+      )>0
+    )||original;
+
+    return {
+      ...original,
+      ...latest,
+      originalActiveState:
+        original.activeState!==false,
+      orderDate:
+        originalDate.getTime()
+          ?originalDate.toISOString()
+          :(
+            original.orderDate||
+            latest.orderDate
+          ),
+      orderAt:
+        original.orderAt||
+        latest.orderAt,
+      orderedAt:
+        original.orderedAt||
+        latest.orderedAt,
+      paymentDate:
+        original.paymentDate||
+        latest.paymentDate,
+      paymentAt:
+        original.paymentAt||
+        latest.paymentAt,
+      orderTotalAmount:
+        amountSource.orderTotalAmount,
+      totalAmount:
+        amountSource.totalAmount,
+      paymentAmount:
+        amountSource.paymentAmount,
+      amount:
+        amountSource.amount,
+      salePrice:
+        amountSource.salePrice,
+      lifecycleHistoryCount:history.length
+    };
+  });
+}
+
+function currentStatusPerOrder(){
+  const groups=new Map();
+
+  lifecycleLatestLines()
+    .filter(item=>{
+      const status=statusKey(item);
+
+      return (
+        [
+          'new','shipping_wait','cancel',
+          'return','exchange','inquiry'
+        ].includes(status) &&
+        item.activeState!==false &&
+        !oneStatusCompleted(item)
+      );
+    })
+    .forEach(item=>{
+      const key=engineOrderKey(item);
+      const current=groups.get(key);
+
+      if(!current){
+        groups.set(key,item);
+        return;
+      }
+
+      const currentTime=engineTimestamp(current);
+      const nextTime=engineTimestamp(item);
+
+      if(nextTime>currentTime){
+        groups.set(key,item);
+        return;
+      }
+
+      if(
+        nextTime===currentTime &&
+        oneStatusPriority(item)>oneStatusPriority(current)
+      ){
+        groups.set(key,item);
+      }
+    });
+
+  return [...groups.values()];
+}
+
+
 function lifecycleOriginalDate(history){
   const candidates=[];
 
@@ -1251,18 +1374,7 @@ function oneStatusCompleted(order){
 }
 
 function oneCurrentStatusPerOrder(){
-  return lifecycleLatestLines().filter(item=>{
-    const status=statusKey(item);
-
-    return (
-      [
-        'new','shipping_wait','cancel',
-        'return','exchange','inquiry'
-      ].includes(status) &&
-      item.activeState!==false &&
-      !oneStatusCompleted(item)
-    );
-  });
+  return currentStatusPerOrder();
 }
 
 
@@ -1346,6 +1458,60 @@ function engineCompleted(order){
   ].some(word=>text.includes(word));
 }
 
+
+function historicalNormalGroups(){
+  const groups=new Map();
+
+  allLifecycleLatestLines()
+    .filter(line=>
+      String(line?.eventType||'order').toLowerCase()==='order'
+    )
+    .forEach(line=>{
+      const key=engineOrderKey(line);
+
+      if(!groups.has(key)){
+        groups.set(key,{
+          key,
+          market:line.market||line.source||'기타',
+          orderNo:line.orderNo||line.orderId||'',
+          day:engineOrderDay(line),
+          date:engineOrderDate(line),
+          lines:[],
+          qty:0,
+          lineAmount:0,
+          explicitTotal:0
+        });
+      }
+
+      const group=groups.get(key);
+      group.lines.push(line);
+      group.qty+=Number(line.qty||1);
+
+      const explicit=Number(
+        line.orderTotalAmount||
+        line.totalAmount||
+        line.paymentAmount
+      );
+
+      if(Number.isFinite(explicit)&&explicit>0){
+        group.explicitTotal=Math.max(
+          group.explicitTotal,
+          explicit
+        );
+      }else{
+        group.lineAmount+=engineAmount(line);
+      }
+    });
+
+  return [...groups.values()].map(group=>({
+    ...group,
+    amount:
+      Number(group.explicitTotal||0)||
+      Number(group.lineAmount||0)
+  }));
+}
+
+
 function engineNormalLines(){
   const latest=engineLatestLines();
   const excludedOrders=new Set();
@@ -1415,8 +1581,10 @@ function engineTodayGroups(){
 
 function engineMonthGroups(){
   const month=monthKey();
-  return engineNormalGroups().filter(
-    group=>String(group.day||'').slice(0,7)===month
+
+  return historicalNormalGroups().filter(
+    group=>
+      String(group.day||'').slice(0,7)===month
   );
 }
 
@@ -1425,33 +1593,48 @@ function engineUnresolvedItems(){
 }
 
 function engineUnresolvedCounts(){
-  const sets={
-    new:new Set(),shipping_wait:new Set(),cancel:new Set(),
-    return:new Set(),exchange:new Set(),inquiry:new Set()
+  const counts={
+    new:0,
+    shipping_wait:0,
+    cancel:0,
+    return:0,
+    exchange:0,
+    inquiry:0
   };
 
-  engineUnresolvedItems().forEach(item=>{
+  currentStatusPerOrder().forEach(item=>{
     const status=statusKey(item);
-    if(sets[status]) sets[status].add(engineLineKey(item));
+
+    if(status in counts){
+      counts[status]+=1;
+    }
   });
 
-  return Object.fromEntries(
-    Object.entries(sets).map(([key,set])=>[key,set.size])
-  );
+  return counts;
 }
 
 function engineUnresolvedByMarket(){
   const result={};
 
   MARKETS.forEach(([,name])=>{
-    result[name]={new:0,shipping_wait:0,cancel:0,return:0,exchange:0,inquiry:0,orderAmount:0};
+    result[name]={
+      new:0,
+      shipping_wait:0,
+      cancel:0,
+      return:0,
+      exchange:0,
+      inquiry:0,
+      orderAmount:0
+    };
   });
 
-  oneCurrentStatusPerOrder().forEach(item=>{
+  currentStatusPerOrder().forEach(item=>{
     const market=item.market;
     const status=statusKey(item);
 
-    if(!result[market]||!(status in result[market])) return;
+    if(!result[market]||!(status in result[market])){
+      return;
+    }
 
     result[market][status]+=1;
 
@@ -1466,7 +1649,7 @@ function engineUnresolvedByMarket(){
 
 
 function todayOrderSourceLines(){
-  return lifecycleLatestLines().filter(order=>
+  return allLifecycleLatestLines().filter(order=>
     String(order?.eventType||'order').toLowerCase()==='order' &&
     engineOrderDay(order)===todayKey()
   );
@@ -1522,7 +1705,6 @@ function todayOrderGroups(){
 
 function todayMarketSummary(){
   const result={};
-  const statusSets={};
 
   MARKETS.forEach(([,name])=>{
     result[name]={
@@ -1535,43 +1717,27 @@ function todayMarketSummary(){
       exchange:0,
       inquiry:0
     };
-
-    statusSets[name]={
-      new:new Set(),
-      shipping_wait:new Set(),
-      cancel:new Set(),
-      return:new Set(),
-      exchange:new Set(),
-      inquiry:new Set()
-    };
   });
 
   todayOrderGroups().forEach(group=>{
-    if(!result[group.market]) return;
+    if(!result[group.market]){
+      return;
+    }
 
     result[group.market].orders+=1;
     result[group.market].sales+=Number(group.amount||0);
   });
 
-  lifecycleUnresolvedGroups()
+  currentStatusPerOrder()
     .filter(item=>engineOrderDay(item)===todayKey())
     .forEach(item=>{
       const market=item.market;
       const status=statusKey(item);
 
-      if(statusSets[market]?.[status]){
-        statusSets[market][status].add(
-          engineOrderKey(item)
-        );
+      if(result[market]&&status in result[market]){
+        result[market][status]+=1;
       }
     });
-
-  Object.keys(result).forEach(market=>{
-    Object.keys(statusSets[market]).forEach(status=>{
-      result[market][status]=
-        statusSets[market][status].size;
-    });
-  });
 
   return result;
 }
@@ -1780,26 +1946,63 @@ function filteredOrders(){
   const market=$('marketFilter').value;
   const read=$('readFilter').value;
 
-  return oneCurrentStatusPerOrder().filter(order=>{
+  return currentStatusPerOrder().filter(order=>{
     const status=statusKey(order);
 
-    if(activeStatus&&status!==activeStatus) return false;
-    if(activeMarket&&order.market!==activeMarket) return false;
-    if(market&&order.market!==market) return false;
+    if(activeStatus&&status!==activeStatus){
+      return false;
+    }
+
+    if(activeMarket&&order.market!==activeMarket){
+      return false;
+    }
+
+    if(market&&order.market!==market){
+      return false;
+    }
 
     const hit=!q||[
-      order.product,order.orderNo,order.buyer,order.phone,
-      order.invoiceNumber,order.workflowNote
-    ].some(value=>String(value||'').toLowerCase().includes(q));
+      order.product,
+      order.orderNo,
+      order.buyer,
+      order.phone,
+      order.invoiceNumber,
+      order.workflowNote
+    ].some(value=>
+      String(value||'').toLowerCase().includes(q)
+    );
 
-    if(!hit) return false;
-    if(read==='unread'&&!isUnread(order)) return false;
-    if(read==='read'&&isUnread(order)) return false;
+    if(!hit){
+      return false;
+    }
+
+    if(read==='unread'&&!isUnread(order)){
+      return false;
+    }
+
+    if(read==='read'&&isUnread(order)){
+      return false;
+    }
+
     return true;
   }).sort((a,b)=>{
-    const priority={new:1,shipping_wait:2,cancel:3,return:4,exchange:5,inquiry:6};
-    const diff=(priority[statusKey(a)]||9)-(priority[statusKey(b)]||9);
-    return diff||engineTimestamp(b)-engineTimestamp(a);
+    const rank={
+      new:1,
+      shipping_wait:2,
+      cancel:3,
+      return:4,
+      exchange:5,
+      inquiry:6
+    };
+
+    if(statusKey(a)!==statusKey(b)){
+      return (
+        (rank[statusKey(a)]||9)-
+        (rank[statusKey(b)]||9)
+      );
+    }
+
+    return engineTimestamp(b)-engineTimestamp(a);
   });
 }
 
@@ -2575,7 +2778,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.2',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
