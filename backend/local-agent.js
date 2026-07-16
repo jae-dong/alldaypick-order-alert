@@ -234,6 +234,259 @@ let claimIndex=0;
 const CLAIM_TYPES=['cancel','return','exchange'];
 
 
+
+const TELEGRAM_LEDGER_PATH=path.resolve('.telegram-alert-ledger.json');
+const AGENT_STARTED_AT=Date.now();
+const TELEGRAM_NEW_EVENT_GRACE_MS=10*60*1000;
+const TELEGRAM_LEDGER_MAX=5000;
+
+let telegramBaselineMode=true;
+let telegramLedger=loadTelegramLedger();
+
+function loadTelegramLedger(){
+  try{
+    if(!fs.existsSync(TELEGRAM_LEDGER_PATH)){
+      return {
+        version:1,
+        initializedAt:'',
+        sent:{}
+      };
+    }
+
+    const parsed=JSON.parse(
+      fs.readFileSync(TELEGRAM_LEDGER_PATH,'utf8')
+    );
+
+    return {
+      version:1,
+      initializedAt:String(parsed.initializedAt||''),
+      sent:
+        parsed.sent&&typeof parsed.sent==='object'
+          ?parsed.sent
+          :{}
+    };
+  }catch(error){
+    console.error(
+      '텔레그램 중복방지 기록 읽기 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+
+    return {
+      version:1,
+      initializedAt:'',
+      sent:{}
+    };
+  }
+}
+
+function saveTelegramLedger(){
+  try{
+    const entries=Object.entries(telegramLedger.sent||{})
+      .sort((a,b)=>Number(b[1]||0)-Number(a[1]||0))
+      .slice(0,TELEGRAM_LEDGER_MAX);
+
+    telegramLedger.sent=Object.fromEntries(entries);
+
+    const temporary=`${TELEGRAM_LEDGER_PATH}.tmp`;
+
+    fs.writeFileSync(
+      temporary,
+      JSON.stringify(telegramLedger,null,2),
+      'utf8'
+    );
+
+    fs.renameSync(temporary,TELEGRAM_LEDGER_PATH);
+  }catch(error){
+    console.error(
+      '텔레그램 중복방지 기록 저장 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+  }
+}
+
+function telegramEventTimestamp(order){
+  const values=[
+    order?.claimRequestedAt,
+    order?.requestDate,
+    order?.requestAt,
+    order?.inquiryDate,
+    order?.inquiryAt,
+    order?.statusChangedAt,
+    order?.sourceUpdatedAt,
+    order?.orderDate,
+    order?.orderAt,
+    order?.orderedAt,
+    order?.paymentDate,
+    order?.paymentAt,
+    order?.createdAt,
+    order?.datetime
+  ];
+
+  for(const value of values){
+    if(!value) continue;
+
+    if(typeof value?.toDate==='function'){
+      const time=value.toDate().getTime();
+
+      if(Number.isFinite(time)){
+        return time;
+      }
+    }
+
+    const time=new Date(value).getTime();
+
+    if(Number.isFinite(time)){
+      return time;
+    }
+  }
+
+  return 0;
+}
+
+function telegramAlertKey(order,marketName){
+  const type=telegramAlertType(order);
+  const orderNo=String(
+    order?.orderNo||
+    order?.orderId||
+    order?.claimId||
+    order?.inquiryId||
+    order?.id||
+    ''
+  ).trim();
+
+  const itemNo=String(
+    order?.productOrderId||
+    order?.orderItemId||
+    order?.vendorItemId||
+    order?.productNo||
+    order?.itemId||
+    order?.sku||
+    order?.product||
+    ''
+  ).trim();
+
+  return [
+    marketName,
+    type,
+    orderNo,
+    itemNo
+  ].join('|');
+}
+
+function rememberTelegramAlert(order,marketName){
+  const key=telegramAlertKey(order,marketName);
+
+  if(!key||key.endsWith('||')){
+    return;
+  }
+
+  telegramLedger.sent[key]=Date.now();
+  saveTelegramLedger();
+}
+
+function telegramAlertAlreadySent(order,marketName){
+  const key=telegramAlertKey(order,marketName);
+  return Boolean(key&&telegramLedger.sent?.[key]);
+}
+
+function shouldSendTelegramAlert(order,marketName,source='interval'){
+  const type=telegramAlertType(order);
+
+  if(!['new_order','cancel','return','inquiry'].includes(type)){
+    return {
+      send:false,
+      reason:'unsupported'
+    };
+  }
+
+  if(inQuotaCooldown()){
+    return {
+      send:false,
+      reason:'quota-cooldown'
+    };
+  }
+
+  if(telegramAlertAlreadySent(order,marketName)){
+    return {
+      send:false,
+      reason:'duplicate'
+    };
+  }
+
+  if(
+    telegramBaselineMode ||
+    source==='startup' ||
+    source==='reconcile'
+  ){
+    rememberTelegramAlert(order,marketName);
+
+    return {
+      send:false,
+      reason:'baseline'
+    };
+  }
+
+  const eventTime=telegramEventTimestamp(order);
+
+  if(
+    eventTime &&
+    eventTime<AGENT_STARTED_AT-TELEGRAM_NEW_EVENT_GRACE_MS
+  ){
+    rememberTelegramAlert(order,marketName);
+
+    return {
+      send:false,
+      reason:'old-event'
+    };
+  }
+
+  return {
+    send:true,
+    reason:'new-event'
+  };
+}
+
+async function sendOrderTelegramAlert(
+  order,
+  marketName,
+  source='interval'
+){
+  const decision=shouldSendTelegramAlert(
+    order,
+    marketName,
+    source
+  );
+
+  if(!decision.send){
+    return {
+      enabled:telegramConfigured(),
+      sent:0,
+      failed:0,
+      skipped:1,
+      reason:decision.reason
+    };
+  }
+
+  const result=await sendTelegram(
+    telegramAlertTitle(order,marketName),
+    telegramOrderBody(order),
+    {
+      attempts:2,
+      alert:true
+    }
+  );
+
+  if(result.sent){
+    rememberTelegramAlert(order,marketName);
+  }
+
+  return {
+    ...result,
+    skipped:0
+  };
+}
+
+
 function telegramConfigured(){
   return Boolean(
     String(process.env.TELEGRAM_BOT_TOKEN||'').trim() &&
@@ -242,6 +495,18 @@ function telegramConfigured(){
 }
 
 async function sendTelegram(title,body,options={}){
+  if(
+    inQuotaCooldown() &&
+    !options.test
+  ){
+    return {
+      enabled:telegramConfigured(),
+      sent:0,
+      failed:0,
+      skipped:1,
+      reason:'quota-cooldown'
+    };
+  }
   if(!telegramConfigured()){
     const error='TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 없습니다.';
 
@@ -420,28 +685,36 @@ function telegramAlertTitle(order,marketName){
   return '';
 }
 
-async function sendPush(orders){
+async function sendPush(
+  orders,
+  marketName='쿠팡',
+  source='interval'
+){
   let sent=0;
   let failed=0;
+  let skipped=0;
 
   for(const order of orders){
     if(telegramAlertType(order)!=='new_order'){
       continue;
     }
 
-    const result=await sendTelegram(
-      telegramAlertTitle(order,'쿠팡'),
-      telegramOrderBody(order)
+    const result=await sendOrderTelegramAlert(
+      order,
+      marketName,
+      source
     );
 
     sent+=result.sent||0;
     failed+=result.failed||0;
+    skipped+=result.skipped||0;
   }
 
   return {
     devices:0,
     sent,
     failed,
+    skipped,
     channel:'telegram'
   };
 }
@@ -490,7 +763,7 @@ async function fastSync(source='interval'){
     }),
     reconcile?180000:45000
   );
-  return {...result,push:await sendPush(result.createdOrders||[])};
+  return {...result,push:await sendPush(result.createdOrders||[],'쿠팡',source)};
 }
 
 
@@ -513,7 +786,7 @@ async function fullCoupangStatusSync(source='interval'){
 
   return {
     ...result,
-    push:await sendPush(result.createdOrders||[])
+    push:await sendPush(result.createdOrders||[],'쿠팡',source)
   };
 }
 
@@ -565,9 +838,13 @@ async function saveIntegration(fast,slow){
 }
 
 
-async function sendClaimPush(claims){
+async function sendClaimPush(
+  claims,
+  source='interval'
+){
   let sent=0;
   let failed=0;
+  let skipped=0;
 
   for(const claim of claims){
     const type=telegramAlertType(claim);
@@ -576,25 +853,28 @@ async function sendClaimPush(claims){
       continue;
     }
 
-    const result=await sendTelegram(
-      telegramAlertTitle(claim,'쿠팡'),
-      telegramOrderBody(claim)
+    const result=await sendOrderTelegramAlert(
+      claim,
+      '쿠팡',
+      source
     );
 
     sent+=result.sent||0;
     failed+=result.failed||0;
+    skipped+=result.skipped||0;
   }
 
   return {
     devices:0,
     sent,
     failed,
+    skipped,
     channel:'telegram'
   };
 }
 
 
-async function syncAllClaimTypes(){
+async function syncAllClaimTypes(source='interval'){
   const results=[];
 
   for(const type of CLAIM_TYPES){
@@ -608,7 +888,7 @@ async function syncAllClaimTypes(){
       result=await syncExchanges(db,coupang(),reconcile);
     }
 
-    const push=await sendClaimPush(result.createdClaims||[]);
+    const push=await sendClaimPush(result.createdClaims||[],source);
     results.push({...result,claimType:type,push});
 
     // Avoid Coupang rate limiting between claim API calls.
@@ -619,7 +899,7 @@ async function syncAllClaimTypes(){
 }
 
 
-async function syncOneClaimType(){
+async function syncOneClaimType(source='interval'){
   const type=CLAIM_TYPES[claimIndex%CLAIM_TYPES.length];
   claimIndex=(claimIndex+1)%CLAIM_TYPES.length;
 
@@ -633,7 +913,7 @@ async function syncOneClaimType(){
     result=await syncExchanges(db,coupang(),reconcile);
   }
 
-  const push=await sendClaimPush(result.createdClaims||[]);
+  const push=await sendClaimPush(result.createdClaims||[],source);
 
   return {
     ...result,
@@ -657,28 +937,36 @@ function smartstoreConfigured(){
 }
 
 
-async function sendMarketplacePush(orders,marketName){
+async function sendMarketplacePush(
+  orders,
+  marketName,
+  source='interval'
+){
   let sent=0;
   let failed=0;
+  let skipped=0;
 
   for(const order of orders){
     if(telegramAlertType(order)!=='new_order'){
       continue;
     }
 
-    const result=await sendTelegram(
-      telegramAlertTitle(order,marketName),
-      telegramOrderBody(order)
+    const result=await sendOrderTelegramAlert(
+      order,
+      marketName,
+      source
     );
 
     sent+=result.sent||0;
     failed+=result.failed||0;
+    skipped+=result.skipped||0;
   }
 
   return {
     devices:0,
     sent,
     failed,
+    skipped,
     channel:'telegram'
   };
 }
@@ -687,9 +975,13 @@ async function sendMarketplacePush(orders,marketName){
 
 
 
-async function sendElevenstStatusPush(changes){
+async function sendElevenstStatusPush(
+  changes,
+  source='interval'
+){
   let sent=0;
   let failed=0;
+  let skipped=0;
 
   for(const order of changes){
     const type=telegramAlertType(order);
@@ -698,19 +990,22 @@ async function sendElevenstStatusPush(changes){
       continue;
     }
 
-    const result=await sendTelegram(
-      telegramAlertTitle(order,'11번가'),
-      telegramOrderBody(order)
+    const result=await sendOrderTelegramAlert(
+      order,
+      '11번가',
+      source
     );
 
     sent+=result.sent||0;
     failed+=result.failed||0;
+    skipped+=result.skipped||0;
   }
 
   return {
     devices:0,
     sent,
     failed,
+    skipped,
     channel:'telegram'
   };
 }
@@ -761,11 +1056,13 @@ async function syncElevenstSafe(source){
 
     const push=await sendMarketplacePush(
       result.createdOrders||[],
-      '11번가'
+      '11번가',
+      source
     );
 
     const statusPush=await sendElevenstStatusPush(
-      statusResult.changedOrders||[]
+      statusResult.changedOrders||[],
+      source
     );
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
@@ -852,7 +1149,8 @@ async function syncSmartstoreSafe(source){
 
     const push=await sendMarketplacePush(
       result.createdOrders||[],
-      '스마트스토어'
+      '스마트스토어',
+      source
     );
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
@@ -902,9 +1200,13 @@ async function syncSmartstoreSafe(source){
 
 
 
-async function sendLotteonStatusPush(changes){
+async function sendLotteonStatusPush(
+  changes,
+  source='interval'
+){
   let sent=0;
   let failed=0;
+  let skipped=0;
 
   for(const order of changes){
     const type=telegramAlertType(order);
@@ -913,19 +1215,22 @@ async function sendLotteonStatusPush(changes){
       continue;
     }
 
-    const result=await sendTelegram(
-      telegramAlertTitle(order,'롯데온'),
-      telegramOrderBody(order)
+    const result=await sendOrderTelegramAlert(
+      order,
+      '롯데온',
+      source
     );
 
     sent+=result.sent||0;
     failed+=result.failed||0;
+    skipped+=result.skipped||0;
   }
 
   return {
     devices:0,
     sent,
     failed,
+    skipped,
     channel:'telegram'
   };
 }
@@ -978,11 +1283,13 @@ async function syncLotteonSafe(source){
 
     const push=await sendMarketplacePush(
       result.createdOrders||[],
-      '롯데온'
+      '롯데온',
+      source
     );
 
     const statusPush=await sendLotteonStatusPush(
-      result.changedOrders||[]
+      result.changedOrders||[],
+      source
     );
 
     result.push=push;
@@ -1037,7 +1344,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-4.2.0',
+    version:'FINAL-4.2.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1241,14 +1548,14 @@ async function run(source){
         reconcile||source==='immediate'
           ?await withTimeout(
               '쿠팡 CS 전체조회',
-              syncAllClaimTypes(),
+              syncAllClaimTypes(source),
               180000
             )
           :source==='interval'
             ?[
                 await withTimeout(
                   '쿠팡 CS 순환조회',
-                  syncOneClaimType(),
+                  syncOneClaimType(source),
                   45000
                 )
               ]
@@ -1269,6 +1576,18 @@ async function run(source){
     }
 
     console.log(`${label} 완료`);
+
+    if(source==='startup'){
+      telegramBaselineMode=false;
+      telegramLedger.initializedAt=
+        telegramLedger.initializedAt||
+        new Date().toISOString();
+      saveTelegramLedger();
+
+      console.log(
+        '텔레그램 기준설정 완료 · 이후 새 주문만 알림'
+      );
+    }
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
 

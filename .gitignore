@@ -9,3 +9,5 @@ apply-v*.cmd
 apply-v*.ps1
 install-v*.cmd
 install-v*.ps1
+backend/.telegram-alert-ledger.json
+backend/.telegram-alert-ledger.json.tmp
