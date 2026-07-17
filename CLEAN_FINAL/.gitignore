@@ -1,4 +1,0 @@
-backend/.env.local
-backend/node_modules/
-*.log
-backup-v30-*/

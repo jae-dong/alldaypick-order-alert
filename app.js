@@ -1,5 +1,5 @@
-const APP_VERSION='FINAL v4.2.4';
-const BUILD_DATE='2026-07-14';
+const APP_VERSION='FINAL v5.0.0';
+const BUILD_DATE='2026-07-18';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -680,381 +680,21 @@ function canonicalMonthGroups(){
   );
 }
 
-function canonicalUnresolvedItems(){
-  return [
-    ...activeOrderLines().filter(order=>
-      ['new','shipping_wait'].includes(statusKey(order))
-    ),
-    ...activeClaims().filter(claim=>
-      ['cancel','return','exchange','inquiry']
-        .includes(statusKey(claim))
-    )
-  ];
-}
-
-function canonicalUnresolvedCounts(){
-  const counts={
-    new:0,
-    shipping_wait:0,
-    cancel:0,
-    return:0,
-    exchange:0,
-    inquiry:0
-  };
-
-  canonicalUnresolvedItems().forEach(item=>{
-    const key=statusKey(item);
-
-    if(Object.prototype.hasOwnProperty.call(counts,key)){
-      counts[key]+=1;
-    }
-  });
-
-  return counts;
-}
-
-function canonicalUnresolvedByMarket(){
-  const result={};
-
-  MARKETS.forEach(([,name])=>{
-    result[name]={
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0,
-      orderAmount:0
-    };
-  });
-
-  activeOrderGroups().forEach(group=>{
-    if(!result[group.market]) return;
-
-    const activeLines=group.lines.filter(isActiveOrderWork);
-    const statuses=new Set(activeLines.map(statusKey));
-
-    if(statuses.has('new')){
-      result[group.market].new+=1;
-    }
-
-    if(statuses.has('shipping_wait')){
-      result[group.market].shipping_wait+=1;
-    }
-
-    if(activeLines.length){
-      result[group.market].orderAmount+=
-        Number(group.amount||0);
-    }
-  });
-
-  activeClaims().forEach(claim=>{
-    const market=claim.market;
-    const key=statusKey(claim);
-
-    if(
-      result[market] &&
-      ['cancel','return','exchange','inquiry']
-        .includes(key)
-    ){
-      result[market][key]+=1;
-    }
-  });
-
-  return result;
-}
 
 
-function currentUnresolvedItems(){
-  return canonicalUnresolvedItems();
-}
-
-function currentUnresolvedCounts(){
-  return canonicalUnresolvedCounts();
-}
-
-function currentUnresolvedByMarket(){
-  return canonicalUnresolvedByMarket();
-}
 
 
-function unresolvedByMarket(){
-  const result={};
-
-  MARKETS.forEach(([,name])=>{
-    result[name]={
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0,
-      orderAmount:0
-    };
-  });
-
-  activeOrderGroups().forEach(group=>{
-    if(!result[group.market]) return;
-
-    const statuses=new Set(
-      group.lines.map(statusKey)
-    );
-
-    if(statuses.has('new')){
-      result[group.market].new+=1;
-    }
-
-    if(statuses.has('shipping_wait')){
-      result[group.market].shipping_wait+=1;
-    }
-
-    result[group.market].orderAmount+=
-      Number(group.amount||0);
-  });
-
-  activeClaims().forEach(claim=>{
-    const market=claim.market;
-    const key=statusKey(claim);
-
-    if(
-      result[market] &&
-      ['cancel','return','exchange','inquiry']
-        .includes(key)
-    ){
-      result[market][key]+=1;
-    }
-  });
-
-  return result;
-}
 
 
-const MONTHLY_SETTLEMENT_BASELINE={
-  month:'2026-07',
-  cutoffDay:'2026-07-13',
-  orderCount:445,
-  salesAmount:16869770,
-  daily:{
-    '2026-07-01':{orders:33,sales:1541000},
-    '2026-07-02':{orders:36,sales:1122130},
-    '2026-07-03':{orders:33,sales:1063690},
-    '2026-07-04':{orders:18,sales:601080},
-    '2026-07-05':{orders:30,sales:1262220},
-    '2026-07-06':{orders:41,sales:2014670},
-    '2026-07-07':{orders:47,sales:1584420},
-    '2026-07-08':{orders:36,sales:1241020},
-    '2026-07-09':{orders:31,sales:1290870},
-    '2026-07-10':{orders:22,sales:747570},
-    '2026-07-11':{orders:40,sales:1589250},
-    '2026-07-12':{orders:32,sales:1155400},
-    '2026-07-13':{orders:46,sales:1656450}
-  }
-};
-
-function settlementMonthlyTotals(){
-  const month=monthKey();
-  const salesOrders=salesUniqueOrders();
-
-  if(month!==MONTHLY_SETTLEMENT_BASELINE.month){
-    const monthly=salesOrders.filter(o=>
-      orderDay(o).slice(0,7)===month
-    );
-
-    return {
-      count:monthly.length,
-      sales:monthly.reduce(
-        (sum,o)=>sum+Number(o.amount||0),
-        0
-      ),
-      corrected:false
-    };
-  }
-
-  const afterCutoff=salesOrders.filter(o=>{
-    const day=orderDay(o);
-    return day>MONTHLY_SETTLEMENT_BASELINE.cutoffDay &&
-      day.slice(0,7)===month;
-  });
-
-  return {
-    count:
-      MONTHLY_SETTLEMENT_BASELINE.orderCount+
-      afterCutoff.length,
-    sales:
-      MONTHLY_SETTLEMENT_BASELINE.salesAmount+
-      afterCutoff.reduce(
-        (sum,o)=>sum+Number(o.amount||0),
-        0
-      ),
-    corrected:true
-  };
-}
 
 
-const CURRENT_REFERENCE={
-  financialCutoff:'2026-07-14T07:44:48+09:00',
-  pendingCutoff:'2026-07-14T07:45:30+09:00',
-  today:'2026-07-14',
-  todayOrders:6,
-  todaySales:212670,
-  monthOrders:451,
-  monthSales:17082440,
 
-  pending:{
-    스마트스토어:{
-      new:2,
-      shipping_wait:6,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    },
-    쿠팡:{
-      new:13,
-      shipping_wait:13,
-      cancel:0,
-      return:0,
-      exchange:1,
-      inquiry:0
-    },
-    '11번가':{
-      new:0,
-      shipping_wait:2,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    },
-    G마켓:{
-      new:1,
-      shipping_wait:4,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    },
-    옥션:{
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    },
-    롯데온:{
-      new:0,
-      shipping_wait:0,
-      cancel:0,
-      return:0,
-      exchange:0,
-      inquiry:0
-    }
-  },
 
-  delivery:{
-    스마트스토어:{
-      return_complete:1,
-      delivering:15,
-      delivered:17,
-      purchase_confirmed:40
-    },
-    쿠팡:{
-      return_complete:5,
-      delivering:50,
-      delivered:170,
-      purchase_confirmed:104
-    },
-    '11번가':{
-      return_complete:0,
-      delivering:8,
-      delivered:10,
-      purchase_confirmed:5
-    },
-    G마켓:{
-      return_complete:0,
-      delivering:4,
-      delivered:10,
-      purchase_confirmed:6
-    },
-    옥션:{
-      return_complete:0,
-      delivering:0,
-      delivered:2,
-      purchase_confirmed:1
-    },
-    롯데온:{
-      return_complete:0,
-      delivering:1,
-      delivered:0,
-      purchase_confirmed:6
-    }
-  }
-};
 
-function referenceCutoffMs(){
-  return new Date(
-    CURRENT_REFERENCE.financialCutoff
-  ).getTime();
-}
 
-function pendingReferenceCutoffMs(){
-  return new Date(
-    CURRENT_REFERENCE.pendingCutoff
-  ).getTime();
-}
 
-function createdTimestampValue(order){
-  const values=[
-    order.createdAt?.toDate?.()?.getTime?.(),
-    order.datetime?new Date(order.datetime).getTime():0
-  ].filter(value=>Number.isFinite(value)&&value>0);
 
-  return values.length?Math.min(...values):0;
-}
 
-function processedTimestampValue(order){
-  const value=
-    order.workflowProcessedAt
-      ?.toDate?.()
-      ?.getTime?.();
-
-  return Number.isFinite(value)?value:0;
-}
-
-function isPendingStatus(key){
-  return [
-    'new',
-    'shipping_wait',
-    'cancel',
-    'return',
-    'exchange',
-    'inquiry'
-  ].includes(key);
-}
-
-function isUnresolved(order){
-  return (
-    isPendingStatus(statusKey(order)) &&
-    !isProcessed(order)
-  );
-}
-
-function liveOrdersAfterReference(){
-  const cutoff=pendingReferenceCutoffMs();
-
-  return uniqueLatestOrders().filter(order=>
-    createdTimestampValue(order)>cutoff
-  );
-}
-
-function processedBaselineAdjustments(){
-  const cutoff=pendingReferenceCutoffMs();
-
-  return uniqueLatestOrders().filter(order=>
-    processedTimestampValue(order)>cutoff &&
-    createdTimestampValue(order)<=cutoff
-  );
-}
 
 
 function engineTimestamp(order){
@@ -1257,91 +897,67 @@ function authoritativeCurrentStatusPerOrder(){
   const groups=new Map();
 
   allLifecycleLatestLines().forEach(item=>{
-    const key=engineOrderKey(item);
+    const orderKey=engineOrderKey(item);
 
-    if(!groups.has(key)){
-      groups.set(key,[]);
+    if(!groups.has(orderKey)){
+      groups.set(orderKey,[]);
     }
 
-    groups.get(key).push(item);
+    groups.get(orderKey).push(item);
   });
 
-  const result=[];
+  const unresolved=[];
 
   groups.forEach(items=>{
-    const claims=items.filter(item=>
-      ['cancel','return','exchange','inquiry']
-        .includes(statusKey(item))
-    );
+    const openClaims=items
+      .filter(item=>
+        ['cancel','return','exchange','inquiry']
+          .includes(statusKey(item))
+      )
+      .filter(item=>
+        item.activeState!==false &&
+        !oneStatusCompleted(item)
+      )
+      .sort((a,b)=>
+        authoritativeBusinessTime(b)-
+        authoritativeBusinessTime(a) ||
+        authoritativeStatusRank(b)-
+        authoritativeStatusRank(a)
+      );
 
-    const unresolvedClaims=claims.filter(item=>
-      item.activeState!==false &&
-      !oneStatusCompleted(item)
-    );
-
-    if(unresolvedClaims.length){
-      unresolvedClaims.sort((a,b)=>{
-        const time=
-          authoritativeBusinessTime(b)-
-          authoritativeBusinessTime(a);
-
-        if(time!==0){
-          return time;
-        }
-
-        return (
-          authoritativeStatusRank(b)-
-          authoritativeStatusRank(a)
-        );
-      });
-
-      result.push(unresolvedClaims[0]);
+    if(openClaims.length){
+      unresolved.push(openClaims[0]);
       return;
     }
 
-    const orderStates=items.filter(item=>
-      String(item?.eventType||'order').toLowerCase()==='order'
-    );
+    const orderStates=items
+      .filter(item=>
+        String(item?.eventType||'order').toLowerCase()==='order'
+      )
+      .sort((a,b)=>
+        authoritativeBusinessTime(b)-
+        authoritativeBusinessTime(a) ||
+        authoritativeStatusRank(b)-
+        authoritativeStatusRank(a)
+      );
 
     if(!orderStates.length){
       return;
     }
 
-    orderStates.sort((a,b)=>{
-      const time=
-        authoritativeBusinessTime(b)-
-        authoritativeBusinessTime(a);
-
-      if(time!==0){
-        return time;
-      }
-
-      return (
-        authoritativeStatusRank(b)-
-        authoritativeStatusRank(a)
-      );
-    });
-
     const current=orderStates[0];
     const currentStatus=statusKey(current);
 
-    if(current.activeState===false){
-      return;
-    }
-
     if(
-      ['delivering','delivered'].includes(currentStatus) ||
-      oneStatusCompleted(current)
+      current.activeState!==false &&
+      ['new','shipping_wait'].includes(currentStatus) &&
+      !oneStatusCompleted(current)
     ){
-      return;
-    }
-
-    if(['new','shipping_wait'].includes(currentStatus)){
-      result.push(current);
+      unresolved.push(current);
     }
   });
 
-  return result;
+  return unresolved;
 }
 
 
@@ -1739,10 +1355,10 @@ function engineUnresolvedCounts(){
   };
 
   authoritativeCurrentStatusPerOrder().forEach(item=>{
-    const status=statusKey(item);
+    const key=statusKey(item);
 
-    if(status in counts){
-      counts[status]+=1;
+    if(Object.prototype.hasOwnProperty.call(counts,key)){
+      counts[key]+=1;
     }
   });
 
@@ -1978,9 +1594,38 @@ function correctedMonthTotals(){
   };
 }
 
+
+function connectedMarketNames(){
+  return MARKETS
+    .filter(([key])=>Boolean(integrations[key]?.connected))
+    .map(([,name])=>name);
+}
+
+function disconnectedMarketNames(){
+  return MARKETS
+    .filter(([key])=>!Boolean(integrations[key]?.connected))
+    .map(([,name])=>name);
+}
+
+function renderCoverageNote(){
+  const target=document.getElementById('marketUpdated');
+  if(!target) return;
+
+  const excluded=disconnectedMarketNames();
+
+  if(excluded.length){
+    target.title=
+      `미연결 제외: ${excluded.join(', ')}`;
+  }else{
+    target.removeAttribute('title');
+  }
+}
+
+
 function renderIntegrations(){
   $('integrationGrid').innerHTML=MARKETS.map(([key,name])=>{const info=integrations[key]||{},ok=Boolean(info.connected);return`<div class="integration"><strong>${name}</strong><span class="connection ${ok?'ok':''}">${ok?'연결됨':'미연결'}</span><small>${relativeTime(info.lastRun)}</small></div>`}).join('');
 }
+renderCoverageNote();
 function renderMetrics(){
   const todayTotals=correctedTodayTotals();
   const monthTotals=correctedMonthTotals();
@@ -2034,7 +1679,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '주문번호별 배송완료 포함 최종 상태 판정 · 실제 미처리만 표시';
+      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리 상태만 표시';
   }
 
   $('statusUpdated').textContent=
@@ -2630,7 +2275,7 @@ function watchAgentHeartbeat(){
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<15*60*1000){
+      if(age<25*60*1000){
         indicator.textContent=
           `PC 수집기 수집 확인 · ${relativeTime(
             new Date(latest).toISOString()
@@ -2709,7 +2354,7 @@ function startCloudListeners(){
 
   unsubscribeOrders=db.collection('orders')
     .orderBy('createdAt','desc')
-    .limit(600)
+    .limit(1500)
     .onSnapshot(
     {includeMetadataChanges:true},
     snapshot=>{
@@ -2940,7 +2585,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.4',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v5.0.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

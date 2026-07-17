@@ -95,7 +95,7 @@ function markQuotaCooldown(error){
   quotaBlockedUntil=Date.now()+QUOTA_COOLDOWN_MS;
 
   console.error(
-    '[Firestore 한도 대기] 15분 동안 저장을 멈춥니다.'
+    '[무료 한도 보호] Firestore 저장을 15분 쉬고 자동 재시도합니다.'
   );
 
   return true;
@@ -1344,7 +1344,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-4.2.4',
+    version:'FINAL-5.0.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1468,7 +1468,7 @@ async function runFastSync(){
 
 async function run(source){
   if(inQuotaCooldown()){
-    console.log('[Firestore 한도 대기 중] 이번 주기는 건너뜁니다.');
+    console.log('[무료 한도 보호 중] 이번 수집은 건너뜁니다.');
     return;
   }
   if(running) return;
@@ -1607,6 +1607,8 @@ async function run(source){
   }
 }
 
+if(!acquireSingleAgentLock()){process.exit(1);}
+
 commandRef.onSnapshot(snap=>{
   if(!snap.exists) return;
 
@@ -1693,7 +1695,7 @@ setInterval(()=>{
 
 
 console.log(
-  `로컬 수집기 준비 완료 · ${intervalMinutes}분 자동수집 · `+
+  `로컬 수집기 준비 완료 · 신규 10분 · 전체상태 30분 · `+
   `텔레그램 테스트 즉시 사용 가능 · 생존신호 10분`
 );
 
@@ -1704,4 +1706,4 @@ run('startup').catch(error=>{
   );
 });
 
-if(!acquireSingleAgentLock()){process.exit(1);}
+
