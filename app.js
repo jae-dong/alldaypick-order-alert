@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v4.2.3';
+const APP_VERSION='FINAL v4.2.4';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1256,29 +1256,28 @@ function authoritativeBusinessTime(order){
 function authoritativeCurrentStatusPerOrder(){
   const groups=new Map();
 
-  allLifecycleLatestLines()
-    .filter(item=>item.activeState!==false)
-    .forEach(item=>{
-      const key=engineOrderKey(item);
+  allLifecycleLatestLines().forEach(item=>{
+    const key=engineOrderKey(item);
 
-      if(!groups.has(key)){
-        groups.set(key,[]);
-      }
+    if(!groups.has(key)){
+      groups.set(key,[]);
+    }
 
-      groups.get(key).push(item);
-    });
+    groups.get(key).push(item);
+  });
 
   const result=[];
 
   groups.forEach(items=>{
-    const unresolvedClaims=items.filter(item=>{
-      const status=statusKey(item);
+    const claims=items.filter(item=>
+      ['cancel','return','exchange','inquiry']
+        .includes(statusKey(item))
+    );
 
-      return (
-        ['cancel','return','exchange','inquiry'].includes(status) &&
-        !oneStatusCompleted(item)
-      );
-    });
+    const unresolvedClaims=claims.filter(item=>
+      item.activeState!==false &&
+      !oneStatusCompleted(item)
+    );
 
     if(unresolvedClaims.length){
       unresolvedClaims.sort((a,b)=>{
@@ -1326,10 +1325,18 @@ function authoritativeCurrentStatusPerOrder(){
     const current=orderStates[0];
     const currentStatus=statusKey(current);
 
+    if(current.activeState===false){
+      return;
+    }
+
     if(
-      ['new','shipping_wait'].includes(currentStatus) &&
-      !oneStatusCompleted(current)
+      ['delivering','delivered'].includes(currentStatus) ||
+      oneStatusCompleted(current)
     ){
+      return;
+    }
+
+    if(['new','shipping_wait'].includes(currentStatus)){
       result.push(current);
     }
   });
@@ -1452,10 +1459,6 @@ function oneStatusPriority(order){
 }
 
 function oneStatusCompleted(order){
-  if(engineCompleted(order)){
-    return true;
-  }
-
   const text=[
     order?.sourceStatus,
     order?.status,
@@ -1470,13 +1473,39 @@ function oneStatusCompleted(order){
   ].filter(Boolean).join(' ').toUpperCase();
 
   return [
-    'COMPLETE','COMPLETED','CLOSED','DONE',
-    'FINISH','FINISHED','WITHDRAW','WITHDRAWN',
-    'REJECT','REJECTED','DELIVERED','PURCHASE_CONFIRMED',
-    'ANSWERED','ANSWER_COMPLETE','REPLIED','RESOLVED',
-    'CANCEL_COMPLETE','RETURN_COMPLETE','EXCHANGE_COMPLETE',
-    '처리완료','취소완료','반품완료','교환완료',
-    '답변완료','배송완료','구매확정','철회','거부','종결'
+    'COMPLETE',
+    'COMPLETED',
+    'CLOSED',
+    'DONE',
+    'FINISH',
+    'FINISHED',
+    'WITHDRAW',
+    'WITHDRAWN',
+    'REJECT',
+    'REJECTED',
+    'DELIVERED',
+    'FINAL_DELIVERY',
+    'PURCHASE_CONFIRMED',
+    'PURCHASE_DECIDED',
+    'CANCEL_COMPLETE',
+    'RETURN_COMPLETE',
+    'EXCHANGE_COMPLETE',
+    'ANSWERED',
+    'ANSWER_COMPLETE',
+    'REPLIED',
+    'RESOLVED',
+    'CLAIM_COMPLETE',
+    'CLAIM_CLOSED',
+    '처리완료',
+    '배송완료',
+    '구매확정',
+    '취소완료',
+    '반품완료',
+    '교환완료',
+    '답변완료',
+    '철회',
+    '거부',
+    '종결'
   ].some(word=>text.includes(word));
 }
 
@@ -1970,17 +1999,31 @@ function renderMetrics(){
 }
 function renderStatus(){
   const counts=engineUnresolvedCounts();
-  const grid=$('statusGrid');
-  if(!grid) return;
+  const statusGrid=$('statusGrid');
 
-  grid.innerHTML=STATUS_ITEMS.map(([key,label])=>`
-    <button class="alert-card ${activeStatus===key?'active':''}" data-key="${key}">
-      <span>${label}</span><strong>${Number(counts[key]||0)}</strong>
-    </button>`).join('');
+  if(!statusGrid){
+    return;
+  }
 
-  grid.querySelectorAll('button').forEach(button=>{
+  statusGrid.innerHTML=STATUS_ITEMS.map(
+    ([key,label])=>`
+      <button
+        class="alert-card ${activeStatus===key?'active':''}"
+        data-key="${key}"
+      >
+        <span>${label}</span>
+        <strong>${Number(counts[key]||0)}</strong>
+      </button>
+    `
+  ).join('');
+
+  statusGrid.querySelectorAll('button').forEach(button=>{
     button.onclick=()=>{
-      activeStatus=activeStatus===button.dataset.key?'':button.dataset.key;
+      activeStatus=
+        activeStatus===button.dataset.key
+          ?''
+          :button.dataset.key;
+
       currentPage=1;
       showOrdersTab();
       render();
@@ -1988,9 +2031,18 @@ function renderStatus(){
   });
 
   const info=$('dedupeInfo');
-  if(info) info.textContent='주문번호별 현재 처리상태 하나만 표시 · 완료 시 자동 제외';
 
-  $('statusUpdated').textContent='최근 갱신 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  if(info){
+    info.textContent=
+      '주문번호별 배송완료 포함 최종 상태 판정 · 실제 미처리만 표시';
+  }
+
+  $('statusUpdated').textContent=
+    '최근 갱신 '+
+    new Date().toLocaleTimeString(
+      'ko-KR',
+      {hour:'2-digit',minute:'2-digit'}
+    );
 }
 function renderMarkets(){
   const today=todayMarketSummary();
@@ -2888,7 +2940,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.3',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.4',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
