@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v4.2.2';
+const APP_VERSION='FINAL v4.2.3';
 const BUILD_DATE='2026-07-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1191,48 +1191,155 @@ function allLifecycleLatestLines(){
   });
 }
 
-function currentStatusPerOrder(){
+
+function authoritativeStatusRank(order){
+  const key=statusKey(order);
+
+  const rank={
+    delivered:100,
+    delivering:90,
+    inquiry:80,
+    exchange:70,
+    return:60,
+    cancel:50,
+    shipping_wait:40,
+    new:30
+  };
+
+  return rank[key]||0;
+}
+
+function authoritativeBusinessTime(order){
+  const values=[
+    order?.claimRequestedAt,
+    order?.requestDate,
+    order?.requestAt,
+    order?.inquiryDate,
+    order?.inquiryAt,
+    order?.statusChangedAt,
+    order?.sourceUpdatedAt,
+    order?.lastChangedAt,
+    order?.datetime,
+    order?.orderDate,
+    order?.orderAt,
+    order?.orderedAt,
+    order?.paymentDate,
+    order?.paymentAt,
+    order?.updatedAt,
+    order?.syncedAt,
+    order?.createdAt
+  ];
+
+  for(const value of values){
+    if(!value){
+      continue;
+    }
+
+    if(typeof value?.toDate==='function'){
+      const time=value.toDate().getTime();
+
+      if(Number.isFinite(time)){
+        return time;
+      }
+    }
+
+    const time=new Date(value).getTime();
+
+    if(Number.isFinite(time)){
+      return time;
+    }
+  }
+
+  return 0;
+}
+
+function authoritativeCurrentStatusPerOrder(){
   const groups=new Map();
 
-  lifecycleLatestLines()
-    .filter(item=>{
+  allLifecycleLatestLines()
+    .filter(item=>item.activeState!==false)
+    .forEach(item=>{
+      const key=engineOrderKey(item);
+
+      if(!groups.has(key)){
+        groups.set(key,[]);
+      }
+
+      groups.get(key).push(item);
+    });
+
+  const result=[];
+
+  groups.forEach(items=>{
+    const unresolvedClaims=items.filter(item=>{
       const status=statusKey(item);
 
       return (
-        [
-          'new','shipping_wait','cancel',
-          'return','exchange','inquiry'
-        ].includes(status) &&
-        item.activeState!==false &&
+        ['cancel','return','exchange','inquiry'].includes(status) &&
         !oneStatusCompleted(item)
       );
-    })
-    .forEach(item=>{
-      const key=engineOrderKey(item);
-      const current=groups.get(key);
-
-      if(!current){
-        groups.set(key,item);
-        return;
-      }
-
-      const currentTime=engineTimestamp(current);
-      const nextTime=engineTimestamp(item);
-
-      if(nextTime>currentTime){
-        groups.set(key,item);
-        return;
-      }
-
-      if(
-        nextTime===currentTime &&
-        oneStatusPriority(item)>oneStatusPriority(current)
-      ){
-        groups.set(key,item);
-      }
     });
 
-  return [...groups.values()];
+    if(unresolvedClaims.length){
+      unresolvedClaims.sort((a,b)=>{
+        const time=
+          authoritativeBusinessTime(b)-
+          authoritativeBusinessTime(a);
+
+        if(time!==0){
+          return time;
+        }
+
+        return (
+          authoritativeStatusRank(b)-
+          authoritativeStatusRank(a)
+        );
+      });
+
+      result.push(unresolvedClaims[0]);
+      return;
+    }
+
+    const orderStates=items.filter(item=>
+      String(item?.eventType||'order').toLowerCase()==='order'
+    );
+
+    if(!orderStates.length){
+      return;
+    }
+
+    orderStates.sort((a,b)=>{
+      const time=
+        authoritativeBusinessTime(b)-
+        authoritativeBusinessTime(a);
+
+      if(time!==0){
+        return time;
+      }
+
+      return (
+        authoritativeStatusRank(b)-
+        authoritativeStatusRank(a)
+      );
+    });
+
+    const current=orderStates[0];
+    const currentStatus=statusKey(current);
+
+    if(
+      ['new','shipping_wait'].includes(currentStatus) &&
+      !oneStatusCompleted(current)
+    ){
+      result.push(current);
+    }
+  });
+
+  return result;
+}
+
+
+function currentStatusPerOrder(){
+  return authoritativeCurrentStatusPerOrder();
 }
 
 
@@ -1345,7 +1452,7 @@ function oneStatusPriority(order){
 }
 
 function oneStatusCompleted(order){
-  if(engineCompleted(order)||isProcessed(order)){
+  if(engineCompleted(order)){
     return true;
   }
 
@@ -1374,12 +1481,12 @@ function oneStatusCompleted(order){
 }
 
 function oneCurrentStatusPerOrder(){
-  return currentStatusPerOrder();
+  return authoritativeCurrentStatusPerOrder();
 }
 
 
 function lifecycleUnresolvedGroups(){
-  return oneCurrentStatusPerOrder();
+  return authoritativeCurrentStatusPerOrder();
 }
 
 
@@ -1589,7 +1696,7 @@ function engineMonthGroups(){
 }
 
 function engineUnresolvedItems(){
-  return oneCurrentStatusPerOrder();
+  return authoritativeCurrentStatusPerOrder();
 }
 
 function engineUnresolvedCounts(){
@@ -1602,7 +1709,7 @@ function engineUnresolvedCounts(){
     inquiry:0
   };
 
-  currentStatusPerOrder().forEach(item=>{
+  authoritativeCurrentStatusPerOrder().forEach(item=>{
     const status=statusKey(item);
 
     if(status in counts){
@@ -1628,7 +1735,7 @@ function engineUnresolvedByMarket(){
     };
   });
 
-  currentStatusPerOrder().forEach(item=>{
+  authoritativeCurrentStatusPerOrder().forEach(item=>{
     const market=item.market;
     const status=statusKey(item);
 
@@ -1728,7 +1835,7 @@ function todayMarketSummary(){
     result[group.market].sales+=Number(group.amount||0);
   });
 
-  currentStatusPerOrder()
+  authoritativeCurrentStatusPerOrder()
     .filter(item=>engineOrderDay(item)===todayKey())
     .forEach(item=>{
       const market=item.market;
@@ -1946,7 +2053,7 @@ function filteredOrders(){
   const market=$('marketFilter').value;
   const read=$('readFilter').value;
 
-  return currentStatusPerOrder().filter(order=>{
+  return authoritativeCurrentStatusPerOrder().filter(order=>{
     const status=statusKey(order);
 
     if(activeStatus&&status!==activeStatus){
@@ -1987,12 +2094,12 @@ function filteredOrders(){
     return true;
   }).sort((a,b)=>{
     const rank={
-      new:1,
-      shipping_wait:2,
-      cancel:3,
-      return:4,
-      exchange:5,
-      inquiry:6
+      cancel:1,
+      return:2,
+      exchange:3,
+      inquiry:4,
+      new:5,
+      shipping_wait:6
     };
 
     if(statusKey(a)!==statusKey(b)){
@@ -2002,7 +2109,10 @@ function filteredOrders(){
       );
     }
 
-    return engineTimestamp(b)-engineTimestamp(a);
+    return (
+      authoritativeBusinessTime(b)-
+      authoritativeBusinessTime(a)
+    );
   });
 }
 
@@ -2778,7 +2888,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.2',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v4.2.3',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
