@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title 올데이픽 주문 수집기 FINAL v7.0.0
+title 올데이픽 주문 수집기 FINAL v7.0.1
 cd /d "%~dp0backend"
 
 if exist ".agent-running.lock" del /F /Q ".agent-running.lock"

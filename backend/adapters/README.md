@@ -1,12 +1,12 @@
 # 쇼핑몰 API 어댑터
 
-이 폴더에 쇼핑몰별 주문 수집 코드를 순차적으로 추가합니다.
+현재 주문 수집은 `backend`의 쇼핑몰별 모듈에서 처리합니다.
 
-현재 v10은 다음만 수행합니다.
+- 쿠팡: `coupang.js`, `coupang-claims.js`
+- 스마트스토어: `smartstore.js`
+- 11번가: `elevenst.js`
+- 롯데온: `lotteon.js`
+- 통합 수집 및 텔레그램 알림: `local-agent.js`
 
-1. GitHub Actions가 10분마다 실행됩니다.
-2. 비밀키가 등록되었는지 확인합니다.
-3. Firestore `system/integrations`에 연결 상태와 최근 실행 시간을 기록합니다.
-4. 웹앱에서 연결 상태를 표시합니다.
-
-API 비밀키는 소스 코드나 Firestore에 저장하지 않습니다.
+API 비밀키는 `backend/.env.local`에만 저장하며 Git에는 올리지 않습니다.
+이 폴더는 향후 어댑터 분리용으로 유지합니다.
