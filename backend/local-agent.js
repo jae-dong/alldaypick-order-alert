@@ -1384,7 +1384,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.2.1',
+    version:'FINAL-7.3.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1533,17 +1533,28 @@ async function run(source){
 
   try{
     try{
-      const fast=await fastSync(reconcile?'reconcile':source);
+      const useFullStatusSync=[
+        'startup',
+        'immediate',
+        'reconcile'
+      ].includes(source);
+
+      const fast=useFullStatusSync
+        ?await fullCoupangStatusSync('reconcile')
+        :await fastSync(source);
+
       let slow=null;
 
-      try{
-        slow=await withTimeout(
-          '쿠팡 상태 순환조회',
-          slowSync(),
-          70000
-        );
-      }catch(error){
-        console.error('쿠팡 상태 순환조회 실패:',error.message);
+      if(!useFullStatusSync){
+        try{
+          slow=await withTimeout(
+            '쿠팡 상태 순환조회',
+            slowSync(),
+            70000
+          );
+        }catch(error){
+          console.error('쿠팡 상태 순환조회 실패:',error.message);
+        }
       }
 
       summary.coupang={fast,slow};
@@ -1585,7 +1596,7 @@ async function run(source){
 
     try{
       summary.claims=
-        reconcile||source==='immediate'
+        reconcile||source==='immediate'||source==='startup'
           ?await withTimeout(
               '쿠팡 CS 전체조회',
               syncAllClaimTypes(source),

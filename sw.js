@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.2.1-20260718';
+const CACHE='alldaypick-final-v7.3.0-20260719';
 const STATIC=[
   './',
   './index.html',

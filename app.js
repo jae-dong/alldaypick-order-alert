@@ -1,5 +1,5 @@
-const APP_VERSION='FINAL v7.2.1';
-const BUILD_DATE='2026-07-18';
+const APP_VERSION='FINAL v7.3.0';
+const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -448,7 +448,11 @@ function isCompletedClaim(order){
 }
 
 function isActiveOrderWork(order){
-  if(!isOrderEvent(order)||isProcessed(order)){
+  if(
+    !isOrderEvent(order) ||
+    isProcessed(order) ||
+    order?.activeState===false
+  ){
     return false;
   }
 
@@ -467,6 +471,28 @@ function isActiveClaimWork(order){
 function activeOrderLines(){
   return latestOrderLines()
     .filter(isActiveOrderWork);
+}
+
+function activeOrderGroups(){
+  const groups=new Map();
+
+  activeOrderLines().forEach(line=>{
+    const key=orderGroupKey(line);
+    const current=groups.get(key);
+
+    if(
+      !current ||
+      timestampValue(line)>timestampValue(current) ||
+      (
+        timestampValue(line)===timestampValue(current) &&
+        statusPriority(line)>statusPriority(current)
+      )
+    ){
+      groups.set(key,line);
+    }
+  });
+
+  return [...groups.values()];
 }
 
 function activeClaims(){
@@ -587,7 +613,7 @@ function monthFinancialGroups(){
 
 function unresolvedRows(){
   return [
-    ...activeOrderLines(),
+    ...activeOrderGroups(),
     ...activeClaims()
   ];
 }
@@ -1450,7 +1476,7 @@ function currentPendingItems(){
   // 반품·교환·취소·문의는 미처리 건만 별도로 계속 남고,
   // 처리완료/답변완료/철회 상태가 되면 사라집니다.
   return [
-    ...activeOrderLines(),
+    ...activeOrderGroups(),
     ...activeClaims()
   ];
 }
