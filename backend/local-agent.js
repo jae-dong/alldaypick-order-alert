@@ -303,8 +303,7 @@ function saveTelegramLedger(){
 
     telegramLedger.sent=Object.fromEntries(entries);
 
-    const temporary=
-      `${TELEGRAM_LEDGER_PATH}.tmp`;
+    const temporary=`${TELEGRAM_LEDGER_PATH}.tmp`;
 
     fs.writeFileSync(
       temporary,
@@ -315,10 +314,7 @@ function saveTelegramLedger(){
       }
     );
 
-    fs.renameSync(
-      temporary,
-      TELEGRAM_LEDGER_PATH
-    );
+    fs.renameSync(temporary,TELEGRAM_LEDGER_PATH);
   }catch(error){
     console.error(
       '텔레그램 중복방지 기록 저장 실패:',
@@ -775,15 +771,14 @@ async function withTimeout(label,promise,ms=45000){
 }
 
 async function fastSync(source='interval'){
-  const reconcile=source==='reconcile'||source==='startup';
+  const reconcile=source==='reconcile';
 
   const result=await withTimeout(
     '쿠팡 주문조회',
     pollCoupangStatuses(db,coupang(),{
       statuses:FAST,
-      days:source==='reconcile'?Math.max(1,new Date().getDate()):(source==='startup'?14:3),
-      maxPages:source==='reconcile'?15:(source==='startup'?6:3),
-      reconcile
+      days:reconcile?Math.max(1,new Date().getDate()):2,
+      maxPages:reconcile?15:2
     }),
     reconcile?180000:45000
   );
@@ -1368,7 +1363,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-6.0.1',
+    version:'FINAL-7.0.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1455,22 +1450,8 @@ async function runFastSync(){
 
   try{
     const fast=await fastSync();
-    let slow=null;
 
-    try{
-      slow=await withTimeout(
-        '쿠팡 배송상태 순환조회',
-        slowSync(),
-        70000
-      );
-    }catch(error){
-      console.error(
-        '쿠팡 배송상태 순환조회 실패:',
-        error instanceof Error?error.message:String(error)
-      );
-    }
-
-    await saveIntegration(fast,slow);
+    await saveIntegration(fast,null);
 
     await new Promise(r=>setTimeout(r,1200));
     await syncSmartstoreSafe('interval');
@@ -1486,11 +1467,8 @@ async function runFastSync(){
 
     console.log(
       `빠른수집 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
-      `발송대기 ${fast.counts?.INSTRUCT||0}`+
-      (slow
-        ?` · ${slow.slowStatus} ${slow.counts?.[slow.slowStatus]||0}`
-        :'')+
-      ` · 10분 주기`
+      `발송대기 ${fast.counts?.INSTRUCT||0} · `+
+      `${fastPollMinutes}분 주기`
     );
 
     if(fastLoopCount%fullSyncEvery===0){
@@ -1647,8 +1625,6 @@ async function run(source){
     await writeAgentHeartbeat('startup');
   }
 }
-
-
 
 if(!acquireSingleAgentLock()){process.exit(1);}
 

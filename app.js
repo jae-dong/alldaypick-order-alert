@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v6.0.1';
+const APP_VERSION='FINAL v7.0.0';
 const BUILD_DATE='2026-07-18';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -46,60 +46,91 @@ function hasShipmentEvidence(order){
   return Boolean(invoice||carrier||shippedAt);
 }
 
+
 function statusKey(o){
-  const ss=String(o.sourceStatus||'').toUpperCase();
-  const st=String(o.status||'').toLowerCase();
-  const ev=String(o.eventType||'order').toLowerCase();
+  const source=String(o?.sourceStatus||'').toUpperCase();
+  const status=String(o?.status||'').toLowerCase();
+  const eventType=String(o?.eventType||'order').toLowerCase();
 
   if(
-    st==='purchase_confirmed' ||
-    ss.includes('PURCHASE_DECIDED') ||
-    ss.includes('PURCHASE_CONFIRM')
-  ) return 'delivered';
+    status==='purchase_confirmed' ||
+    source.includes('PURCHASE_DECIDED') ||
+    source.includes('PURCHASE_CONFIRM')
+  ){
+    return 'delivered';
+  }
 
   if(
-    ev==='cancel' || st.includes('cancel') ||
-    ss.includes('CANCEL') || ss.includes('취소')
-  ) return 'cancel';
+    eventType==='cancel' ||
+    status.includes('cancel') ||
+    source.includes('CANCEL') ||
+    source.includes('취소')
+  ){
+    return 'cancel';
+  }
 
   if(
-    ev==='return' || st.includes('return') ||
-    ss.includes('RETURN') || ss.includes('반품')
-  ) return 'return';
+    eventType==='return' ||
+    status.includes('return') ||
+    source.includes('RETURN') ||
+    source.includes('반품')
+  ){
+    return 'return';
+  }
 
   if(
-    ev==='exchange' || st.includes('exchange') ||
-    ss.includes('EXCHANGE') || ss.includes('교환')
-  ) return 'exchange';
+    eventType==='exchange' ||
+    status.includes('exchange') ||
+    source.includes('EXCHANGE') ||
+    source.includes('교환')
+  ){
+    return 'exchange';
+  }
 
-  if(ev==='inquiry' || st.includes('inquiry')) return 'inquiry';
+  if(eventType==='inquiry'||status.includes('inquiry')){
+    return 'inquiry';
+  }
 
   if(
-    ss==='ACCEPT' || st==='new' || ss.includes('PAYED')
-  ) return 'new';
+    source==='ACCEPT' ||
+    status==='new' ||
+    source.includes('PAYED')
+  ){
+    return 'new';
+  }
 
   if(
-    ss==='INSTRUCT' || st==='shipping_wait' ||
-    ss.includes('PREPARE') || ss.includes('READY')
-  ) return 'shipping_wait';
+    source==='INSTRUCT' ||
+    status==='shipping_wait' ||
+    source.includes('PREPARE') ||
+    source.includes('READY')
+  ){
+    return 'shipping_wait';
+  }
 
-  if(ss==='DEPARTURE' || st==='departure'){
+  if(source==='DEPARTURE'||status==='departure'){
     return hasShipmentEvidence(o)
       ?'delivering'
       :'shipping_wait';
   }
 
   if(
-    ss==='DELIVERING' || st==='delivering' ||
-    ss.includes('SHIPPED')
-  ) return 'delivering';
+    source==='DELIVERING' ||
+    status==='delivering' ||
+    source.includes('SHIPPED')
+  ){
+    return 'delivering';
+  }
 
   if(
-    ss==='FINAL_DELIVERY' || st==='delivered' ||
-    ss.includes('DELIVERED')
-  ) return 'delivered';
+    source==='FINAL_DELIVERY' ||
+    status==='delivered' ||
+    source.includes('DELIVERED')
+  ){
+    return 'delivered';
+  }
 
-  return st||'';
+  return status||'';
 }
 function labelFor(o){return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문'}
 function isUnread(o){return o.readStatus!=='read'}
@@ -816,23 +847,16 @@ function engineLineKey(order){
 }
 
 function engineOrderKey(order){
-  const market=normalizedText(
-    order?.market||
-    order?.source
-  );
-
-  const orderNo=normalizedText(
-    order?.orderNo||
-    order?.orderId||
-    order?.marketOrderNo||
-    order?.sellerOrderNo||
-    order?.purchaseId||
-    order?.shipmentBoxId||
-    order?.deliveryNo||
-    order?.id
-  );
-
-  return `${market}|${orderNo}`;
+  return [
+    normalizedText(order?.market||order?.source),
+    normalizedText(
+      order?.orderNo||
+      order?.orderId||
+      order?.shipmentBoxId||
+      order?.deliveryNo||
+      order?.id
+    )
+  ].join('|');
 }
 
 
@@ -974,21 +998,18 @@ function authoritativeBusinessTime(order){
 
 function authoritativeCurrentStatusPerOrder(){
   const groups=new Map();
-  const now=Date.now();
-  const normalCutoff=now-(14*24*60*60*1000);
-  const claimCutoff=now-(45*24*60*60*1000);
 
   allLifecycleLatestLines().forEach(item=>{
-    const key=engineOrderKey(item);
+    const orderKey=engineOrderKey(item);
 
-    if(!groups.has(key)){
-      groups.set(key,[]);
+    if(!groups.has(orderKey)){
+      groups.set(orderKey,[]);
     }
 
-    groups.get(key).push(item);
+    groups.get(orderKey).push(item);
   });
 
-  const result=[];
+  const unresolved=[];
 
   groups.forEach(items=>{
     const openClaims=items
@@ -998,8 +1019,7 @@ function authoritativeCurrentStatusPerOrder(){
       )
       .filter(item=>
         item.activeState!==false &&
-        !oneStatusCompleted(item) &&
-        authoritativeBusinessTime(item)>=claimCutoff
+        !oneStatusCompleted(item)
       )
       .sort((a,b)=>
         authoritativeBusinessTime(b)-
@@ -1009,14 +1029,13 @@ function authoritativeCurrentStatusPerOrder(){
       );
 
     if(openClaims.length){
-      result.push(openClaims[0]);
+      unresolved.push(openClaims[0]);
       return;
     }
 
     const orderStates=items
       .filter(item=>
-        String(item?.eventType||'order')
-          .toLowerCase()==='order'
+        String(item?.eventType||'order').toLowerCase()==='order'
       )
       .sort((a,b)=>
         authoritativeBusinessTime(b)-
@@ -1034,15 +1053,14 @@ function authoritativeCurrentStatusPerOrder(){
 
     if(
       current.activeState!==false &&
-      authoritativeBusinessTime(current)>=normalCutoff &&
       ['new','shipping_wait'].includes(currentStatus) &&
       !oneStatusCompleted(current)
     ){
-      result.push(current);
+      unresolved.push(current);
     }
   });
 
-  return result;
+  return unresolved;
 }
 
 
@@ -1764,7 +1782,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리만 표시';
+      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리 상태만 표시';
   }
 
   $('statusUpdated').textContent=
@@ -2297,11 +2315,11 @@ function watchAgentHeartbeat(){
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<=15*60*1000){
+      if(age<=75*1000){
         indicator.textContent=
           `PC 수집기 정상 · ${Math.floor(age/1000)}초 전`;
         indicator.classList.add('ok');
-      }else if(age<=25*60*1000){
+      }else if(age<=180*1000){
         indicator.textContent=
           `PC 수집기 지연 · ${Math.floor(age/1000)}초 전`;
         indicator.classList.add('warning');
@@ -2670,7 +2688,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v6.0.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.0.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
