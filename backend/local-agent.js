@@ -244,18 +244,27 @@ let telegramBaselineMode=true;
 let telegramLedger=loadTelegramLedger();
 
 function loadTelegramLedger(){
+  const empty={
+    version:1,
+    initializedAt:'',
+    sent:{}
+  };
+
   try{
     if(!fs.existsSync(TELEGRAM_LEDGER_PATH)){
-      return {
-        version:1,
-        initializedAt:'',
-        sent:{}
-      };
+      return empty;
     }
 
-    const parsed=JSON.parse(
-      fs.readFileSync(TELEGRAM_LEDGER_PATH,'utf8')
-    );
+    const raw=fs
+      .readFileSync(TELEGRAM_LEDGER_PATH,'utf8')
+      .replace(/^\uFEFF/,'')
+      .trim();
+
+    if(!raw){
+      return empty;
+    }
+
+    const parsed=JSON.parse(raw);
 
     return {
       version:1,
@@ -267,35 +276,49 @@ function loadTelegramLedger(){
     };
   }catch(error){
     console.error(
-      '텔레그램 중복방지 기록 읽기 실패:',
+      '텔레그램 중복방지 기록 자동복구:',
       error instanceof Error?error.message:String(error)
     );
 
-    return {
-      version:1,
-      initializedAt:'',
-      sent:{}
-    };
+    try{
+      if(fs.existsSync(TELEGRAM_LEDGER_PATH)){
+        fs.renameSync(
+          TELEGRAM_LEDGER_PATH,
+          `${TELEGRAM_LEDGER_PATH}.corrupt-${Date.now()}`
+        );
+      }
+    }catch{}
+
+    return empty;
   }
 }
 
 function saveTelegramLedger(){
   try{
-    const entries=Object.entries(telegramLedger.sent||{})
+    const entries=Object.entries(
+      telegramLedger.sent||{}
+    )
       .sort((a,b)=>Number(b[1]||0)-Number(a[1]||0))
       .slice(0,TELEGRAM_LEDGER_MAX);
 
     telegramLedger.sent=Object.fromEntries(entries);
 
-    const temporary=`${TELEGRAM_LEDGER_PATH}.tmp`;
+    const temporary=
+      `${TELEGRAM_LEDGER_PATH}.tmp`;
 
     fs.writeFileSync(
       temporary,
       JSON.stringify(telegramLedger,null,2),
-      'utf8'
+      {
+        encoding:'utf8',
+        flag:'w'
+      }
     );
 
-    fs.renameSync(temporary,TELEGRAM_LEDGER_PATH);
+    fs.renameSync(
+      temporary,
+      TELEGRAM_LEDGER_PATH
+    );
   }catch(error){
     console.error(
       '텔레그램 중복방지 기록 저장 실패:',
@@ -752,14 +775,15 @@ async function withTimeout(label,promise,ms=45000){
 }
 
 async function fastSync(source='interval'){
-  const reconcile=source==='reconcile';
+  const reconcile=source==='reconcile'||source==='startup';
 
   const result=await withTimeout(
     '쿠팡 주문조회',
     pollCoupangStatuses(db,coupang(),{
       statuses:FAST,
-      days:reconcile?Math.max(1,new Date().getDate()):2,
-      maxPages:reconcile?15:2
+      days:source==='reconcile'?Math.max(1,new Date().getDate()):(source==='startup'?14:3),
+      maxPages:source==='reconcile'?15:(source==='startup'?6:3),
+      reconcile
     }),
     reconcile?180000:45000
   );
@@ -1344,7 +1368,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-5.0.0',
+    version:'FINAL-6.0.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1431,8 +1455,22 @@ async function runFastSync(){
 
   try{
     const fast=await fastSync();
+    let slow=null;
 
-    await saveIntegration(fast,null);
+    try{
+      slow=await withTimeout(
+        '쿠팡 배송상태 순환조회',
+        slowSync(),
+        70000
+      );
+    }catch(error){
+      console.error(
+        '쿠팡 배송상태 순환조회 실패:',
+        error instanceof Error?error.message:String(error)
+      );
+    }
+
+    await saveIntegration(fast,slow);
 
     await new Promise(r=>setTimeout(r,1200));
     await syncSmartstoreSafe('interval');
@@ -1448,8 +1486,11 @@ async function runFastSync(){
 
     console.log(
       `빠른수집 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
-      `발송대기 ${fast.counts?.INSTRUCT||0} · `+
-      `${fastPollMinutes}분 주기`
+      `발송대기 ${fast.counts?.INSTRUCT||0}`+
+      (slow
+        ?` · ${slow.slowStatus} ${slow.counts?.[slow.slowStatus]||0}`
+        :'')+
+      ` · 10분 주기`
     );
 
     if(fastLoopCount%fullSyncEvery===0){
@@ -1606,6 +1647,8 @@ async function run(source){
     await writeAgentHeartbeat('startup');
   }
 }
+
+
 
 if(!acquireSingleAgentLock()){process.exit(1);}
 

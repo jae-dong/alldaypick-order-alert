@@ -1,27 +1,50 @@
-﻿올데이픽 주문알림 v53 연결 유지 + 텔레그램 테스트
+﻿올데이픽 주문알림 FINAL v6.0.0 — 완전 정리본
 
-수정 내용
-- 수집기가 1분마다 Firebase에 생존 신호 기록
-- 새로고침 시 마지막 정상 쇼핑몰 연결 상태를 브라우저에 보존
-- 지금 수집을 누르지 않아도 연결 상태 유지 표시
-- 텔레그램 테스트 버튼 추가
-- 버튼 클릭 → Firebase 명령 → 로컬 수집기 → 텔레그램 실제 전송
-- 접힌 모바일 화면도 펼친 화면과 동일한 쇼핑몰별 표 사용
-- 모바일 전용 요약 카드는 숨기고 동일한 열과 숫자 유지
-- 화면 캐시 버전 강제 변경
+이 압축파일은 과거 버전, 백업폴더, apply/install 파일, node_modules,
+잠금파일, 개인정보 설정을 모두 제외한 새 프로젝트 폴더입니다.
 
-적용
-1. 압축 해제
-2. apply-v53.cmd, apply-v53.ps1, v53-files 폴더를 프로젝트 폴더에 복사
-3. PowerShell:
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\apply-v53.ps1"
-4. GitHub Desktop:
-   v53 연결유지 텔레그램테스트
-5. Commit to main → Push origin
-6. 검은 수집기 창 Ctrl+C
-7. backend에서 npm run agent
-8. 휴대폰 사이트 데이터 한 번 삭제 후 다시 접속
-9. 텔레그램 테스트 버튼 클릭
+폴더 구성
+- index.html
+- app.js
+- styles.css
+- sw.js
+- manifest.json
+- icon.svg
+- firestore.rules.txt
+- backend/
+- 1_기존설정_가져오기.cmd
+- 2_PC수집기_시작.cmd
 
-정상 로그
-텔레그램 테스트 메시지 전송 성공
+적용 방법
+1. 현재 검은 수집기 창을 Ctrl+C로 종료합니다.
+2. 현재 alldaypick-order-alert 폴더 이름을
+   alldaypick-order-alert-OLD 로 변경합니다.
+3. 이 압축을 GitHub 폴더에 풉니다.
+4. 새 폴더 이름을 alldaypick-order-alert 로 변경합니다.
+5. 새 폴더 안의 1_기존설정_가져오기.cmd를 실행합니다.
+6. 기존 프로젝트 경로를 입력합니다.
+   예: C:\Users\사용자\OneDrive\문서\GitHub\alldaypick-order-alert-OLD
+7. GitHub Desktop에서 새 폴더를 열고 변경사항을 Commit/Push합니다.
+8. 2_PC수집기_시작.cmd를 실행합니다.
+9. 휴대폰에서 사이트 데이터를 삭제하고 다시 접속합니다.
+
+정리된 내용
+- 과거 수십 개 버전폴더 및 백업폴더 제외
+- apply-v*.cmd/ps1, install-v*.cmd/ps1 제외
+- node_modules 제외
+- 오래된 잠금파일 제외
+- 텔레그램 JSON BOM 자동 복구
+- 수집기 버전/화면 버전 6.0.0 통일
+- 시작 시 최근 14일 쿠팡 신규·발송대기 상태 정밀 정리
+- 10분 수집마다 배송상태 1종 추가 확인
+- 배송지시(DEPARTURE)를 발송대기로 분류
+- 배송중·배송완료·구매확정은 처리알림에서 제외
+- 주문번호별 현재 미처리 상태 하나만 표시
+- G마켓·옥션은 연결되기 전까지 집계 제외
+- Firestore 무료 한도 보호 유지
+- 텔레그램 기존 주문 중복 알림 방지 유지
+
+중요
+- 새 압축에는 backend/.env.local을 포함하지 않았습니다.
+- 1_기존설정_가져오기.cmd가 기존 프로젝트에서 자동으로 복사합니다.
+- 기존 프로젝트는 확인이 끝날 때까지 OLD 폴더로 보관해 주세요.

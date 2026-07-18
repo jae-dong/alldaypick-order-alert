@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v5.0.0';
+const APP_VERSION='FINAL v6.0.0';
 const BUILD_DATE='2026-07-18';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -17,16 +17,88 @@ function orderDay(o){const d=new Date(dateValue(o));if(Number.isNaN(d.getTime())
 function todayKey(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date())}
 function monthKey(){return todayKey().slice(0,7)}
 function statusKey(o){
-  const ss=String(o.sourceStatus||'').toUpperCase(),st=String(o.status||'').toLowerCase(),ev=String(o.eventType||'order').toLowerCase();
-  if(st==='purchase_confirmed'||ss.includes('PURCHASE_DECIDED')||ss.includes('PURCHASE_CONFIRM'))return'delivered';
-  if(ev==='cancel'||st.includes('cancel')||ss.includes('CANCEL')||ss.includes('취소'))return'cancel';
-  if(ev==='return'||st.includes('return')||ss.includes('RETURN')||ss.includes('반품'))return'return';
-  if(ev==='exchange'||st.includes('exchange')||ss.includes('EXCHANGE')||ss.includes('교환'))return'exchange';
-  if(ev==='inquiry'||st.includes('inquiry'))return'inquiry';
-  if(ss==='ACCEPT'||st==='new'||ss.includes('PAYED'))return'new';
-  if(ss==='INSTRUCT'||st==='shipping_wait'||ss.includes('PREPARE')||ss.includes('READY'))return'shipping_wait';
-  if(ss==='DEPARTURE'||ss==='DELIVERING'||st==='departure'||st==='delivering'||ss.includes('SHIPPED'))return'delivering';
-  if(ss==='FINAL_DELIVERY'||st==='delivered'||ss.includes('DELIVERED'))return'delivered';
+  const ss=String(o.sourceStatus||'').toUpperCase();
+  const st=String(o.status||'').toLowerCase();
+  const ev=String(o.eventType||'order').toLowerCase();
+
+  if(
+    st==='purchase_confirmed' ||
+    ss.includes('PURCHASE_DECIDED') ||
+    ss.includes('PURCHASE_CONFIRM')
+  ){
+    return 'delivered';
+  }
+
+  if(
+    ev==='cancel' ||
+    st.includes('cancel') ||
+    ss.includes('CANCEL') ||
+    ss.includes('취소')
+  ){
+    return 'cancel';
+  }
+
+  if(
+    ev==='return' ||
+    st.includes('return') ||
+    ss.includes('RETURN') ||
+    ss.includes('반품')
+  ){
+    return 'return';
+  }
+
+  if(
+    ev==='exchange' ||
+    st.includes('exchange') ||
+    ss.includes('EXCHANGE') ||
+    ss.includes('교환')
+  ){
+    return 'exchange';
+  }
+
+  if(
+    ev==='inquiry' ||
+    st.includes('inquiry')
+  ){
+    return 'inquiry';
+  }
+
+  if(
+    ss==='ACCEPT' ||
+    st==='new' ||
+    ss.includes('PAYED')
+  ){
+    return 'new';
+  }
+
+  // 샵모아의 발송대기/확인 기준에 맞춰 배송지시도 포함합니다.
+  if(
+    ss==='INSTRUCT' ||
+    ss==='DEPARTURE' ||
+    st==='shipping_wait' ||
+    st==='departure' ||
+    ss.includes('PREPARE') ||
+    ss.includes('READY')
+  ){
+    return 'shipping_wait';
+  }
+
+  if(
+    ss==='DELIVERING' ||
+    st==='delivering' ||
+    ss.includes('SHIPPED')
+  ){
+    return 'delivering';
+  }
+
+  if(
+    ss==='FINAL_DELIVERY' ||
+    st==='delivered' ||
+    ss.includes('DELIVERED')
+  ){
+    return 'delivered';
+  }
+
   return st||'';
 }
 function labelFor(o){return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문'}
@@ -744,16 +816,23 @@ function engineLineKey(order){
 }
 
 function engineOrderKey(order){
-  return [
-    normalizedText(order?.market||order?.source),
-    normalizedText(
-      order?.orderNo||
-      order?.orderId||
-      order?.shipmentBoxId||
-      order?.deliveryNo||
-      order?.id
-    )
-  ].join('|');
+  const market=normalizedText(
+    order?.market||
+    order?.source
+  );
+
+  const orderNo=normalizedText(
+    order?.orderNo||
+    order?.orderId||
+    order?.marketOrderNo||
+    order?.sellerOrderNo||
+    order?.purchaseId||
+    order?.shipmentBoxId||
+    order?.deliveryNo||
+    order?.id
+  );
+
+  return `${market}|${orderNo}`;
 }
 
 
@@ -895,18 +974,21 @@ function authoritativeBusinessTime(order){
 
 function authoritativeCurrentStatusPerOrder(){
   const groups=new Map();
+  const now=Date.now();
+  const normalCutoff=now-(14*24*60*60*1000);
+  const claimCutoff=now-(45*24*60*60*1000);
 
   allLifecycleLatestLines().forEach(item=>{
-    const orderKey=engineOrderKey(item);
+    const key=engineOrderKey(item);
 
-    if(!groups.has(orderKey)){
-      groups.set(orderKey,[]);
+    if(!groups.has(key)){
+      groups.set(key,[]);
     }
 
-    groups.get(orderKey).push(item);
+    groups.get(key).push(item);
   });
 
-  const unresolved=[];
+  const result=[];
 
   groups.forEach(items=>{
     const openClaims=items
@@ -916,7 +998,8 @@ function authoritativeCurrentStatusPerOrder(){
       )
       .filter(item=>
         item.activeState!==false &&
-        !oneStatusCompleted(item)
+        !oneStatusCompleted(item) &&
+        authoritativeBusinessTime(item)>=claimCutoff
       )
       .sort((a,b)=>
         authoritativeBusinessTime(b)-
@@ -926,13 +1009,14 @@ function authoritativeCurrentStatusPerOrder(){
       );
 
     if(openClaims.length){
-      unresolved.push(openClaims[0]);
+      result.push(openClaims[0]);
       return;
     }
 
     const orderStates=items
       .filter(item=>
-        String(item?.eventType||'order').toLowerCase()==='order'
+        String(item?.eventType||'order')
+          .toLowerCase()==='order'
       )
       .sort((a,b)=>
         authoritativeBusinessTime(b)-
@@ -950,14 +1034,15 @@ function authoritativeCurrentStatusPerOrder(){
 
     if(
       current.activeState!==false &&
+      authoritativeBusinessTime(current)>=normalCutoff &&
       ['new','shipping_wait'].includes(currentStatus) &&
       !oneStatusCompleted(current)
     ){
-      unresolved.push(current);
+      result.push(current);
     }
   });
 
-  return unresolved;
+  return result;
 }
 
 
@@ -1679,7 +1764,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리 상태만 표시';
+      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리만 표시';
   }
 
   $('statusUpdated').textContent=
@@ -2212,11 +2297,11 @@ function watchAgentHeartbeat(){
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<=75*1000){
+      if(age<=15*60*1000){
         indicator.textContent=
           `PC 수집기 정상 · ${Math.floor(age/1000)}초 전`;
         indicator.classList.add('ok');
-      }else if(age<=180*1000){
+      }else if(age<=25*60*1000){
         indicator.textContent=
           `PC 수집기 지연 · ${Math.floor(age/1000)}초 전`;
         indicator.classList.add('warning');
@@ -2585,7 +2670,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v5.0.0',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v6.0.0',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
