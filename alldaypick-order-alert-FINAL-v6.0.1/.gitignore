@@ -1,0 +1,9 @@
+backend/.env.local
+backend/node_modules/
+backend/.agent-running.lock
+backend/.telegram-alert-ledger.json
+backend/.telegram-alert-ledger.json.tmp
+backend/.telegram-alert-ledger.json.corrupt-*
+*.log
+.DS_Store
+Thumbs.db

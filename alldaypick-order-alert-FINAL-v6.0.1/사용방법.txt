@@ -1,0 +1,13 @@
+﻿FINAL v6.0.1 DEPARTURE 발송대기 보정
+
+- DEPARTURE에 송장번호, 택배사, 출고시각이 있으면 배송중으로 처리합니다.
+- 출고 정보가 없는 DEPARTURE만 발송대기로 남깁니다.
+- 오늘 주문·매출과 다른 상태 집계는 v6.0.0 로직을 유지합니다.
+
+적용
+1. 검은 수집기 창에서 Ctrl+C
+2. 압축을 풀어 나온 폴더를 기존 alldaypick-order-alert 폴더 안에 넣기
+3. UPDATE_FINAL_6_0_1.cmd 실행
+4. GitHub Desktop에서 Commit/Push
+5. 2_PC수집기_시작.cmd 실행
+6. 휴대폰 사이트 데이터 삭제 후 재접속
