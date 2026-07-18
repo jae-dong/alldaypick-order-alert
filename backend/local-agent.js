@@ -894,6 +894,7 @@ async function sendClaimPush(
 
 
 async function syncAllClaimTypes(source='interval'){
+  const reconcile=source==='reconcile';
   const results=[];
 
   for(const type of CLAIM_TYPES){
@@ -919,6 +920,7 @@ async function syncAllClaimTypes(source='interval'){
 
 
 async function syncOneClaimType(source='interval'){
+  const reconcile=source==='reconcile';
   const type=CLAIM_TYPES[claimIndex%CLAIM_TYPES.length];
   claimIndex=(claimIndex+1)%CLAIM_TYPES.length;
 
@@ -1384,7 +1386,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.3.0',
+    version:'FINAL-7.3.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

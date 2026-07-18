@@ -34,27 +34,43 @@ async function request(config,path,params){
 
   for(let attempt=0;attempt<4;attempt++){
     const query=new URLSearchParams(params).toString();
-    const response=await fetch(`https://api-gateway.coupang.com${path}?${query}`,{
-      signal:AbortSignal.timeout(30000),
-method,
-      headers:{
-        'Content-Type':'application/json;charset=UTF-8',
-        Authorization:auth({
-          method,path,query,
-          accessKey:config.accessKey,
-          secretKey:config.secretKey
-        }),
-        'X-Requested-By':config.vendorId,
-        'X-MARKET':'KR'
+    let response;
+    try{
+      response=await fetch(`https://api-gateway.coupang.com${path}?${query}`,{
+        signal:AbortSignal.timeout(60000),
+        method,
+        headers:{
+          'Content-Type':'application/json;charset=UTF-8',
+          Authorization:auth({
+            method,path,query,
+            accessKey:config.accessKey,
+            secretKey:config.secretKey
+          }),
+          'X-Requested-By':config.vendorId,
+          'X-MARKET':'KR'
+        }
+      });
+    }catch(error){
+      const retryable=error?.name==='TimeoutError'||error?.name==='AbortError'||error?.code==='UND_ERR_CONNECT_TIMEOUT';
+      if(retryable&&attempt<3){
+        const wait=[5000,10000,20000,40000][attempt];
+        console.log(`쿠팡 API 응답 지연 · ${wait/1000}초 후 재시도`);
+        await sleep(wait);
+        continue;
       }
-    });
+      throw error;
+    }
 
     const text=await response.text();
 
-    if(response.status===429){
-      const wait=[10000,20000,40000,60000][attempt];
-      if(attempt===3) throw new Error('쿠팡 API 호출 제한(429)이 계속됩니다.');
-      console.log(`쿠팡 API 429 · ${wait/1000}초 후 재시도`);
+    if(response.status===429||response.status===502||response.status===503||response.status===504){
+      const wait=response.status===429
+        ?[10000,20000,40000,60000][attempt]
+        :[5000,10000,20000,40000][attempt];
+      if(attempt===3){
+        throw new Error(`쿠팡 API HTTP ${response.status}: 재시도 후에도 응답하지 않습니다.`);
+      }
+      console.log(`쿠팡 API HTTP ${response.status} · ${wait/1000}초 후 재시도`);
       await sleep(wait);
       continue;
     }
