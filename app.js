@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.1.1';
+const APP_VERSION='FINAL v7.2.1';
 const BUILD_DATE='2026-07-18';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1443,8 +1443,20 @@ function engineMonthGroups(){
   );
 }
 
+function currentPendingItems(){
+  // 주문 흐름과 클레임/문의 흐름은 서로 별개입니다.
+  // 주문은 최신 상태가 신규 → 발송대기 → 배송중/완료로 이동하면
+  // 앞 단계에서 자동으로 빠집니다.
+  // 반품·교환·취소·문의는 미처리 건만 별도로 계속 남고,
+  // 처리완료/답변완료/철회 상태가 되면 사라집니다.
+  return [
+    ...activeOrderLines(),
+    ...activeClaims()
+  ];
+}
+
 function engineUnresolvedItems(){
-  return authoritativeCurrentStatusPerOrder();
+  return currentPendingItems();
 }
 
 function engineUnresolvedCounts(){
@@ -1457,7 +1469,7 @@ function engineUnresolvedCounts(){
     inquiry:0
   };
 
-  authoritativeCurrentStatusPerOrder().forEach(item=>{
+  currentPendingItems().forEach(item=>{
     const key=statusKey(item);
 
     if(Object.prototype.hasOwnProperty.call(counts,key)){
@@ -1483,7 +1495,7 @@ function engineUnresolvedByMarket(){
     };
   });
 
-  authoritativeCurrentStatusPerOrder().forEach(item=>{
+  currentPendingItems().forEach(item=>{
     const market=item.market;
     const status=statusKey(item);
 
@@ -1583,16 +1595,16 @@ function todayMarketSummary(){
     result[group.market].sales+=Number(group.amount||0);
   });
 
-  authoritativeCurrentStatusPerOrder()
-    .filter(item=>engineOrderDay(item)===todayKey())
-    .forEach(item=>{
-      const market=item.market;
-      const status=statusKey(item);
+  // 상태 칸은 오늘 생성된 주문만이 아니라 현재 미처리 전체를 표시합니다.
+  // 따라서 어제 접수된 반품/교환/문의도 완료 전까지 계속 남습니다.
+  currentPendingItems().forEach(item=>{
+    const market=item.market;
+    const status=statusKey(item);
 
-      if(result[market]&&status in result[market]){
-        result[market][status]+=1;
-      }
-    });
+    if(result[market]&&status in result[market]){
+      result[market][status]+=1;
+    }
+  });
 
   return result;
 }
@@ -2166,7 +2178,7 @@ async function requestCollect(){
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v71';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v72';
 const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v71';
 
 function restoreCloudCache(){
@@ -2688,7 +2700,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.1.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.2.1',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

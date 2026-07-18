@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.1.1
+title ALLDAYPICK ORDER AGENT v7.2.1
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
