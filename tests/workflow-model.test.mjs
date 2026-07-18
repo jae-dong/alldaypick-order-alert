@@ -12,10 +12,13 @@ const order=workflowFields({source:'coupang',orderNo:'1',lineId:'2',eventType:'o
 assert.equal(order.workflowType,'order');
 assert.equal(order.orderKey,'coupang|1');
 assert.equal(order.lineKey,'coupang|1|2');
+assert.equal(Object.hasOwn(order,'claimKey'),false);
+assert.equal(Object.hasOwn(order,'claimLineKey'),false);
 const claim=workflowFields({source:'coupang',orderNo:'1',lineId:'2',eventType:'return',claimId:'3'});
 assert.equal(claim.workflowType,'claim');
 assert.equal(claim.claimKey,'coupang|return|3');
 assert.equal(claim.claimLineKey,'coupang|1|2');
+assert.equal(Object.hasOwn(claim,'lineKey'),false);
 console.log('workflow-model tests passed');
 assert.equal(isClaimTerminal({sourceStatus:'CANCEL_DONE'}),true);
 assert.equal(isClaimTerminal({sourceStatus:'RETURN_COMPLETE'}),true);

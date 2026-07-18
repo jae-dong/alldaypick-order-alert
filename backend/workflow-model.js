@@ -79,20 +79,20 @@ export function workflowFields({source,orderNo,lineId,eventType='order',claimId=
       ?'inquiry'
       :'claim';
 
-  return {
+  const fields={
     schemaVersion:2,
     workflowType,
-    orderKey:orderKey(source,orderNo),
-    lineKey:eventType==='order'
-      ?lineKey(source,orderNo,lineId)
-      :undefined,
-    claimKey:eventType==='order'
-      ?undefined
-      :claimKey(source,eventType,claimId),
-    claimLineKey:eventType==='order'
-      ?undefined
-      :lineKey(source,orderNo,lineId)
+    orderKey:orderKey(source,orderNo)
   };
+
+  if(eventType==='order'){
+    fields.lineKey=lineKey(source,orderNo,lineId);
+  }else{
+    fields.claimKey=claimKey(source,eventType,claimId);
+    fields.claimLineKey=lineKey(source,orderNo,lineId);
+  }
+
+  return fields;
 }
 
 export function activeClaimFields(document){

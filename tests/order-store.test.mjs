@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { upsertDocuments,reconcileOpenDocuments,migrateLegacyDocuments } from '../backend/order-store.js';
+import { upsertDocuments,reconcileOpenDocuments,migrateLegacyDocuments,sanitizeFirestoreValue } from '../backend/order-store.js';
 
 function mockDb(initial={}){
   const data=new Map(Object.entries(initial).map(([id,value])=>[id,{...value}]));
@@ -65,3 +65,23 @@ assert.equal(migrationDb.data.get('completedClaim').activeState,false);
 assert.equal(migrationDb.data.get('openClaim').activeState,true);
 
 console.log('order-store tests passed');
+
+
+const dirty={
+  id:'dirty1',
+  source:'coupang',
+  eventType:'order',
+  lineKey:'coupang|1|1',
+  claimKey:undefined,
+  nested:{keep:'yes',drop:undefined},
+  list:[1,undefined,{keep:true,drop:undefined}]
+};
+const clean=sanitizeFirestoreValue(dirty);
+assert.equal(Object.hasOwn(clean,'claimKey'),false);
+assert.deepEqual(clean.nested,{keep:'yes'});
+assert.deepEqual(clean.list,[1,{keep:true}]);
+await upsertDocuments(db,[dirty]);
+assert.equal(Object.hasOwn(db.data.get('dirty1'),'claimKey'),false);
+assert.deepEqual(db.data.get('dirty1').nested,{keep:'yes'});
+
+console.log('firestore undefined sanitizer tests passed');

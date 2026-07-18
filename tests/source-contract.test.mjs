@@ -26,6 +26,6 @@ assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconci
 
 const agent=read('local-agent.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=60\*1000/,'Agent heartbeat must run every minute');
-assert.match(agent,/version:'FINAL-7\.4\.0-REVIEWED'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.4\.1-FIXED'/,'Agent diagnostics version must match release');
 
 console.log('source-contract tests passed');

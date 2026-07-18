@@ -1,4 +1,4 @@
-올데이픽 주문알림 FINAL v7.4.0 REVIEWED
+올데이픽 주문알림 FINAL v7.4.1 REVIEWED
 
 [PC 수집기]
 1. 프로젝트 최상위 폴더의 START_AGENT.cmd를 실행합니다.

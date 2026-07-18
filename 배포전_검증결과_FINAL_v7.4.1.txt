@@ -1,0 +1,29 @@
+올데이픽 주문알림 FINAL v7.4.1 FIXED 검증 결과
+
+1. 오류 재현 원인 확인
+- Firestore 저장 문서에 claimKey 또는 lineKey가 undefined로 포함됨
+- Firestore Admin SDK가 해당 문서를 거부해 네 마켓 동기화가 모두 실패함
+
+2. 수정 검증
+- workflowFields에서 해당 문서에 필요한 키만 생성
+- 저장 직전 재귀형 undefined 제거 안전장치 추가
+- 주문/요청 문서 필드 분리 테스트 통과
+- 객체/배열 중첩 undefined 제거 테스트 통과
+
+3. 자동 검사
+- state-engine 테스트 통과
+- workflow-model 테스트 통과
+- order-store 테스트 통과
+- smartstore inquiry 테스트 통과
+- source contract 테스트 통과
+- 전체 JavaScript 문법 검사 통과
+- 병합 충돌 흔적 없음
+
+4. 배포 파일 안전성
+- backend/.env.local 미포함
+- node_modules 미포함
+- 에이전트 잠금/텔레그램 런타임 기록 미포함
+
+주의
+- 기존 PC의 backend/.env.local은 삭제하지 말고 그대로 유지해야 합니다.
+- 이 버전은 v7.4.0의 Firestore 저장 차단 오류를 수정한 버전입니다.

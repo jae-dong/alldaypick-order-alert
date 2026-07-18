@@ -3,6 +3,41 @@ import { isClaimTerminal } from './workflow-model.js';
 
 const DELETE=admin.firestore.FieldValue.delete();
 
+export function sanitizeFirestoreValue(value){
+  if(value===undefined){
+    return undefined;
+  }
+
+  if(value===null||typeof value!=='object'){
+    return value;
+  }
+
+  if(Array.isArray(value)){
+    return value
+      .map(sanitizeFirestoreValue)
+      .filter(item=>item!==undefined);
+  }
+
+  if(
+    value instanceof Date ||
+    typeof value?.toDate==='function' ||
+    value?.constructor?.name==='FieldValue' ||
+    value?.constructor?.name==='Timestamp' ||
+    value?.constructor?.name==='GeoPoint' ||
+    value?.constructor?.name==='DocumentReference'
+  ){
+    return value;
+  }
+
+  return Object.entries(value).reduce((clean,[key,item])=>{
+    const sanitized=sanitizeFirestoreValue(item);
+    if(sanitized!==undefined){
+      clean[key]=sanitized;
+    }
+    return clean;
+  },{});
+}
+
 function valueTime(value){
   if(!value) return 0;
   if(typeof value?.toDate==='function') return value.toDate().getTime();
@@ -28,7 +63,8 @@ export async function upsertDocuments(db,documents,{readUnreadOnCreate=true}={})
 
   for(const raw of documents){
     if(!raw?.id) continue;
-    const document={...raw};
+    const document=sanitizeFirestoreValue(raw);
+    if(!document?.id) continue;
     const terminal=document.eventType!=='order'&&isClaimTerminal(document);
     if(document.eventType!=='order') document.activeState=!terminal;
     if(document.eventType==='order'&&document.activeState==null) document.activeState=true;
