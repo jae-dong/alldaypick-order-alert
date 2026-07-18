@@ -1,4 +1,6 @@
 import admin from 'firebase-admin';
+import { workflowFields,isClaimTerminal } from './workflow-model.js';
+import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
 
@@ -357,6 +359,7 @@ function normalizeOrder(row) {
     source: 'elevenst',
     market: '11번가',
     eventType: 'order',
+    ...workflowFields({source:'elevenst',orderNo,lineId:itemKey,eventType:'order'}),
     orderNo,
     orderProductSequence,
     product,
@@ -371,6 +374,7 @@ function normalizeOrder(row) {
     status: 'new',
     statusLabel: '신규주문',
     sourceStatus: 'COMPLETE',
+    activeState:true,
     productNo: first(row, ['prdNo', 'productNo']),
     sellerProductCode: first(row, [
       'sellerPrdCd',
@@ -389,68 +393,13 @@ function normalizeOrder(row) {
   };
 }
 
-async function saveOrders(db, orders) {
-  let created = 0;
-  let existing = 0;
-  let statusChanged = 0;
-  const createdOrders = [];
-
-  for (const order of orders) {
-    const ref = db.collection('orders').doc(order.id);
-
-    const outcome = await db.runTransaction(async transaction => {
-      const snapshot = await transaction.get(ref);
-
-      if (!snapshot.exists) {
-        transaction.create(ref, {
-          ...order,
-          readStatus: 'unread',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return 'created';
-      }
-
-      const before = snapshot.data() || {};
-      const changed =
-        before.status !== order.status ||
-        before.sourceStatus !== order.sourceStatus ||
-        Number(before.qty || 0) !== Number(order.qty || 0) ||
-        String(before.invoiceNumber || '') !==
-          String(order.invoiceNumber || '');
-
-      transaction.set(
-        ref,
-        {
-          ...order,
-          createdAt:
-            before.createdAt ||
-            admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
-
-      return changed ? 'changed' : 'existing';
-    });
-
-    if (outcome === 'created') {
-      created += 1;
-      createdOrders.push(order);
-    } else if (outcome === 'changed') {
-      statusChanged += 1;
-    } else {
-      existing += 1;
-    }
-  }
-
+async function saveOrders(db,orders){
+  const saved=await upsertDocuments(db,orders);
   return {
-    found: orders.length,
-    created,
-    existing,
-    statusChanged,
-    createdOrders
+    ...saved,
+    createdOrders:saved.createdDocuments.filter(item=>item.eventType==='order'&&item.status==='new'),
+    createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
+    changedOrders:saved.changedDocuments
   };
 }
 
@@ -508,183 +457,114 @@ export async function checkElevenstConfiguration(db, config) {
 }
 
 
-function mapElevenStatus(row = {}) {
-  const value = [
-    first(row, ['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']),
-    first(row, ['claimType','claimStatus','claimNm','claimStatusNm'])
-  ].filter(Boolean).join(' ').toUpperCase();
-
-  if (value.includes('CANCEL') || value.includes('취소')) {
-    return { eventType:'cancel', status:'cancel_request', statusLabel:'주문취소' };
-  }
-  if (value.includes('EXCHANGE') || value.includes('교환')) {
-    return { eventType:'exchange', status:'exchange_request', statusLabel:'교환요청' };
-  }
-  if (value.includes('RETURN') || value.includes('반품')) {
-    return { eventType:'return', status:'return_request', statusLabel:'반품요청' };
-  }
-  if (
-    value.includes('PURCHASE_CONFIRMED') ||
-    value.includes('PURCHASE_DECIDED') ||
-    value.includes('구매확정')
-  ) {
-    return {
-      eventType:'order',
-      status:'purchase_confirmed',
-      statusLabel:'구매확정'
-    };
-  }
-
-  if (value.includes('DELIVERED') || value.includes('배송완료')) {
-    return {
-      eventType:'order',
-      status:'delivered',
-      statusLabel:'배송완료'
-    };
-  }
-  if (value.includes('DELIVERING') || value.includes('배송중') || value.includes('발송처리')) {
-    return { eventType:'order', status:'delivering', statusLabel:'배송중' };
-  }
-  if (value.includes('PACKAGING') || value.includes('발주') || value.includes('배송준비') || value.includes('발송대기')) {
-    return { eventType:'order', status:'shipping_wait', statusLabel:'발송대기' };
-  }
-  return { eventType:'order', status:'new', statusLabel:'신규주문' };
+function mapElevenOrderStatus(row={}){
+  const value=first(row,['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']).toUpperCase();
+  if(value.includes('PURCHASE_CONFIRMED')||value.includes('PURCHASE_DECIDED')||value.includes('구매확정')) return {status:'purchase_confirmed',statusLabel:'구매확정'};
+  if(value.includes('DELIVERED')||value.includes('배송완료')) return {status:'delivered',statusLabel:'배송완료'};
+  if(value.includes('DELIVERING')||value.includes('배송중')||value.includes('발송처리')) return {status:'delivering',statusLabel:'배송중'};
+  if(value.includes('PACKAGING')||value.includes('발주')||value.includes('배송준비')||value.includes('발송대기')||value.includes('ORDER_CONFIRM')) return {status:'shipping_wait',statusLabel:'발송대기'};
+  if(value.includes('CANCEL')||value.includes('취소')) return {status:'cancelled',statusLabel:'취소완료'};
+  return {status:'new',statusLabel:'신규주문'};
 }
 
-function collectRows(node, depth = 0) {
-  if (!node || depth > 10) return [];
-  if (Array.isArray(node)) return node.flatMap(v => collectRows(v, depth + 1));
-  if (typeof node !== 'object') return [];
-
-  const ordNo = first(node, ['ordNo','orderNo']);
-  if (ordNo) {
-    return [{
-      ...node,
-      ordNo,
-      ordPrdSeq:first(node,['ordPrdSeq','orderProductSequence','prdSeq'])
-    }];
-  }
-
-  return Object.values(node).flatMap(v => collectRows(v, depth + 1));
+function mapElevenClaim(row={}){
+  const value=[first(row,['claimType','claimNm','claimKind']),first(row,['claimStatus','claimStatusNm','claimProcStatus'])].filter(Boolean).join(' ').toUpperCase();
+  let eventType='';
+  if(value.includes('EXCHANGE')||value.includes('교환')) eventType='exchange';
+  else if(value.includes('RETURN')||value.includes('반품')) eventType='return';
+  else if(value.includes('CANCEL')||value.includes('취소')) eventType='cancel';
+  if(!eventType) return null;
+  return {eventType,sourceStatus:value,status:`${eventType}_request`,statusLabel:eventType==='cancel'?'주문취소':eventType==='return'?'반품요청':'교환요청'};
 }
 
-export async function syncElevenstStatuses(db, config) {
-  const snap = await db.collection('orders').where('source','==','elevenst').get();
-  const existing = snap.docs.map(doc => ({ id:doc.id, ...doc.data() }));
-  const orderNos = [...new Set(existing.map(o => String(o.orderNo || '').trim()).filter(Boolean))];
+function collectRows(node,depth=0){
+  if(!node||depth>10) return [];
+  if(Array.isArray(node)) return node.flatMap(value=>collectRows(value,depth+1));
+  if(typeof node!=='object') return [];
+  const ordNo=first(node,['ordNo','orderNo']);
+  if(ordNo) return [{...node,ordNo,ordPrdSeq:first(node,['ordPrdSeq','orderProductSequence','prdSeq'])}];
+  return Object.values(node).flatMap(value=>collectRows(value,depth+1));
+}
 
-  let checked = 0;
-  let changed = 0;
-  let failed = 0;
-  const changedOrders = [];
+export async function syncElevenstStatuses(db,config){
+  const snapshot=await db.collection('orders').where('source','==','elevenst').get();
+  const existing=snapshot.docs.map(doc=>({id:doc.id,...doc.data()}));
+  const normalExisting=existing.filter(item=>String(item.eventType||'order')==='order');
+  const orderNos=[...new Set(normalExisting.map(item=>String(item.orderNo||'').trim()).filter(Boolean))];
+  let checked=0,failed=0;
+  const documents=[];
 
-  for (let i = 0; i < orderNos.length; i += 20) {
-    const batch = orderNos.slice(i, i + 20);
+  for(let index=0;index<orderNos.length;index+=20){
+    const batch=orderNos.slice(index,index+20);
+    try{
+      const parsed=await requestXml(config,`/rest/claimservice/orderlistalladdr/${batch.map(encodeURIComponent).join(',')}`);
+      for(const row of collectRows(parsed)){
+        const ordNo=first(row,['ordNo','orderNo']);
+        const ordPrdSeq=first(row,['ordPrdSeq','orderProductSequence','prdSeq']);
+        const matches=normalExisting.filter(item=>String(item.orderNo||'')===ordNo&&(!ordPrdSeq||String(item.orderProductSequence||'')===ordPrdSeq));
+        for(const previous of matches){
+          checked+=1;
+          const mapped=mapElevenOrderStatus(row);
+          const lineId=String(ordPrdSeq||previous.orderProductSequence||previous.productNo||'item');
+          const sourceStatus=first(row,['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']);
+          documents.push({
+            ...previous,
+            id:previous.id,eventType:'order',
+            ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:'order'}),
+            status:mapped.status,statusLabel:mapped.statusLabel,sourceStatus,activeState:true,
+            invoiceNumber:first(row,['invoiceNo','trackingNumber','dlvNo'])||previous.invoiceNumber||'',
+            deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
+            sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
+          });
 
-    try {
-      const parsed = await requestXml(
-        config,
-        `/rest/claimservice/orderlistalladdr/${batch.map(encodeURIComponent).join(',')}`
-      );
-
-      const rows = collectRows(parsed);
-
-      for (const row of rows) {
-        const ordNo = first(row,['ordNo','orderNo']);
-        const ordPrdSeq = first(row,['ordPrdSeq','orderProductSequence','prdSeq']);
-        const mapped = mapElevenStatus(row);
-        const sourceStatus = first(row,['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']);
-        const invoiceNumber = first(row,[
-          'invoiceNo',
-          'trackingNumber',
-          'dlvNo'
-        ]);
-
-        const deliveryCompanyName = first(row,[
-          'dlvCpnNm',
-          'deliveryCompanyName',
-          'deliveryCompany'
-        ]);
-
-        const reason = first(row,[
-          'claimReason',
-          'claimRsn',
-          'reason',
-          'reasonText',
-          'ordCnDtsRsn',
-          'ordCnDtsRsnNm',
-          'cancelReason',
-          'returnReason',
-          'exchangeReason'
-        ]);
-
-        const reasonDetail = first(row,[
-          'claimReasonDetail',
-          'reasonDetail',
-          'reasonEtc',
-          'ordCnDtsRsnDetail',
-          'ordCnDtsRsnDtl'
-        ]);
-
-        const matches = existing.filter(o =>
-          String(o.orderNo || '') === String(ordNo) &&
-          (!ordPrdSeq || String(o.orderProductSequence || '') === String(ordPrdSeq))
-        );
-
-        for (const order of matches) {
-          checked += 1;
-          const isChanged =
-            order.status !== mapped.status ||
-            order.eventType !== mapped.eventType ||
-            String(order.sourceStatus || '') !== String(sourceStatus || '') ||
-            String(order.invoiceNumber || '') !== String(invoiceNumber || '');
-
-          const update = {
-            eventType:mapped.eventType,
-            status:mapped.status,
-            statusLabel:mapped.statusLabel,
-            sourceStatus,
-            invoiceNumber:invoiceNumber || order.invoiceNumber || '',
-            deliveryCompanyName:
-              deliveryCompanyName ||
-              order.deliveryCompanyName ||
-              '',
-            reason:reason || order.reason || '',
-            reasonDetail:reasonDetail || order.reasonDetail || '',
-            syncedAt:new Date().toISOString(),
-            updatedAt:admin.firestore.FieldValue.serverTimestamp()
-          };
-
-          await db.collection('orders').doc(order.id).set(
-            update,
-            { merge:true }
-          );
-
-          if (isChanged) {
-            changed += 1;
-
-            changedOrders.push({
-              ...order,
-              ...update,
-              previousStatus:order.status || '',
-              previousStatusLabel:order.statusLabel || '',
-              previousEventType:order.eventType || 'order'
-            });
+          const claim=mapElevenClaim(row);
+          if(claim){
+            const claimId=first(row,['claimNo','claimId','claimSeq','ordCnDtsSeq'])||`${ordNo}-${lineId}-${claim.eventType}`;
+            const claimDocument={
+              ...previous,
+              id:`elevenst-${claim.eventType}-${claimId}`,
+              eventType:claim.eventType,
+              ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:claim.eventType,claimId}),
+              claimId,status:claim.status,statusLabel:claim.statusLabel,sourceStatus:claim.sourceStatus,claimStatus:claim.sourceStatus,
+              reason:first(row,['claimReason','claimRsn','reason','reasonText','ordCnDtsRsn','ordCnDtsRsnNm','cancelReason','returnReason','exchangeReason']),
+              reasonDetail:first(row,['claimReasonDetail','reasonDetail','reasonEtc','ordCnDtsRsnDetail','ordCnDtsRsnDtl']),
+              claimRequestedAt:first(row,['claimDate','claimDt','requestDate'])||new Date().toISOString(),
+              sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
+            };
+            claimDocument.activeState=!isClaimTerminal(claimDocument);
+            if(!claimDocument.activeState){claimDocument.status=claim.eventType==='cancel'?'cancelled':claim.eventType==='return'?'returned':'exchanged';claimDocument.statusLabel='처리완료';}
+            documents.push(claimDocument);
           }
         }
       }
-    } catch (error) {
-      failed += batch.length;
-      console.error('11번가 상태조회 실패:', error instanceof Error ? error.message : String(error));
+    }catch(error){
+      failed+=batch.length;
+      console.error('11번가 상태조회 실패:',error instanceof Error?error.message:String(error));
     }
-
     await sleep(1200);
   }
 
+  const saved=await upsertDocuments(db,documents);
+  const claimReconciliation={};
+
+  if(failed===0){
+    for(const eventType of ['cancel','return','exchange']){
+      claimReconciliation[eventType]=await reconcileOpenDocuments(db,{
+        source:'elevenst',
+        eventType,
+        currentIds:documents
+          .filter(item=>item.eventType===eventType&&item.activeState!==false)
+          .map(item=>item.id),
+        complete:true,
+        reason:'11번가 현재 미처리 클레임 목록에서 제외됨'
+      });
+    }
+  }
+
   return {
-    checked,
-    changed,
-    failed,
-    changedOrders
+    checked,changed:saved.statusChanged,failed,
+    changedOrders:saved.changedDocuments,
+    createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
+    claimReconciliation
   };
 }

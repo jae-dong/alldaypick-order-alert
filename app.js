@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.3.1';
+const APP_VERSION='FINAL v7.4.0';
 const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1023,70 +1023,10 @@ function authoritativeBusinessTime(order){
 }
 
 function authoritativeCurrentStatusPerOrder(){
-  const groups=new Map();
-
-  allLifecycleLatestLines().forEach(item=>{
-    const orderKey=engineOrderKey(item);
-
-    if(!groups.has(orderKey)){
-      groups.set(orderKey,[]);
-    }
-
-    groups.get(orderKey).push(item);
-  });
-
-  const unresolved=[];
-
-  groups.forEach(items=>{
-    const openClaims=items
-      .filter(item=>
-        ['cancel','return','exchange','inquiry']
-          .includes(statusKey(item))
-      )
-      .filter(item=>
-        item.activeState!==false &&
-        !oneStatusCompleted(item)
-      )
-      .sort((a,b)=>
-        authoritativeBusinessTime(b)-
-        authoritativeBusinessTime(a) ||
-        authoritativeStatusRank(b)-
-        authoritativeStatusRank(a)
-      );
-
-    if(openClaims.length){
-      unresolved.push(openClaims[0]);
-      return;
-    }
-
-    const orderStates=items
-      .filter(item=>
-        String(item?.eventType||'order').toLowerCase()==='order'
-      )
-      .sort((a,b)=>
-        authoritativeBusinessTime(b)-
-        authoritativeBusinessTime(a) ||
-        authoritativeStatusRank(b)-
-        authoritativeStatusRank(a)
-      );
-
-    if(!orderStates.length){
-      return;
-    }
-
-    const current=orderStates[0];
-    const currentStatus=statusKey(current);
-
-    if(
-      current.activeState!==false &&
-      ['new','shipping_wait'].includes(currentStatus) &&
-      !oneStatusCompleted(current)
-    ){
-      unresolved.push(current);
-    }
-  });
-
-  return unresolved;
+  if(!window.OrderStateEngine){
+    return [];
+  }
+  return window.OrderStateEngine.pendingItems(orders,integrations);
 }
 
 
@@ -1461,24 +1401,19 @@ function engineTodayGroups(){
 }
 
 function engineMonthGroups(){
+  if(!window.OrderStateEngine){
+    return [];
+  }
   const month=monthKey();
-
-  return historicalNormalGroups().filter(
-    group=>
-      String(group.day||'').slice(0,7)===month
-  );
+  return window.OrderStateEngine.salesGroups(orders,integrations)
+    .filter(group=>String(group.day||'').slice(0,7)===month);
 }
 
 function currentPendingItems(){
-  // 주문 흐름과 클레임/문의 흐름은 서로 별개입니다.
-  // 주문은 최신 상태가 신규 → 발송대기 → 배송중/완료로 이동하면
-  // 앞 단계에서 자동으로 빠집니다.
-  // 반품·교환·취소·문의는 미처리 건만 별도로 계속 남고,
-  // 처리완료/답변완료/철회 상태가 되면 사라집니다.
-  return [
-    ...activeOrderGroups(),
-    ...activeClaims()
-  ];
+  if(!window.OrderStateEngine){
+    return [];
+  }
+  return window.OrderStateEngine.pendingItems(orders,integrations);
 }
 
 function engineUnresolvedItems(){
@@ -1549,51 +1484,12 @@ function todayOrderSourceLines(){
 }
 
 function todayOrderGroups(){
-  const groups=new Map();
-
-  todayOrderSourceLines().forEach(line=>{
-    const key=engineOrderKey(line);
-
-    if(!groups.has(key)){
-      groups.set(key,{
-        key,
-        market:line.market||line.source||'기타',
-        orderNo:line.orderNo||line.orderId||'',
-        day:engineOrderDay(line),
-        date:engineOrderDate(line),
-        lines:[],
-        qty:0,
-        lineAmount:0,
-        explicitTotal:0
-      });
-    }
-
-    const group=groups.get(key);
-    group.lines.push(line);
-    group.qty+=Number(line.qty||1);
-
-    const explicit=Number(
-      line.orderTotalAmount||
-      line.totalAmount||
-      line.paymentAmount
-    );
-
-    if(Number.isFinite(explicit)&&explicit>0){
-      group.explicitTotal=Math.max(
-        group.explicitTotal,
-        explicit
-      );
-    }else{
-      group.lineAmount+=engineAmount(line);
-    }
-  });
-
-  return [...groups.values()].map(group=>({
-    ...group,
-    amount:
-      Number(group.explicitTotal||0)||
-      Number(group.lineAmount||0)
-  }));
+  if(!window.OrderStateEngine){
+    return [];
+  }
+  const today=todayKey();
+  return window.OrderStateEngine.salesGroups(orders,integrations)
+    .filter(group=>group.day===today);
 }
 
 function todayMarketSummary(){
@@ -1765,8 +1661,8 @@ function renderCoverageNote(){
 
 function renderIntegrations(){
   $('integrationGrid').innerHTML=MARKETS.map(([key,name])=>{const info=integrations[key]||{},ok=Boolean(info.connected);return`<div class="integration"><strong>${name}</strong><span class="connection ${ok?'ok':''}">${ok?'연결됨':'미연결'}</span><small>${relativeTime(info.lastRun)}</small></div>`}).join('');
+  renderCoverageNote();
 }
-renderCoverageNote();
 function renderMetrics(){
   const todayTotals=correctedTodayTotals();
   const monthTotals=correctedMonthTotals();
@@ -2204,8 +2100,15 @@ async function requestCollect(){
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v72';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v71';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v740';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v740';
+
+for(const legacyKey of [
+  'alldaypick-orders-cache-v72',
+  'alldaypick-integrations-cache-v71'
+]){
+  try{localStorage.removeItem(legacyKey);}catch{}
+}
 
 function restoreCloudCache(){
   try{
@@ -2726,7 +2629,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.2.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.4.0-reviewed',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

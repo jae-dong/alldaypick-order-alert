@@ -17,10 +17,7 @@ import {
 } from './esm.js';
 
 import { pollCoupangStatuses } from './coupang.js';
-import { syncSmartstore } from './smartstore.js';
-
-const fastPollMinutes=Number(process.env.FAST_POLL_MINUTES||3);
-const fullSyncEvery=Number(process.env.FULL_SYNC_EVERY||4);
+import { syncSmartstore,syncSmartstoreInquiries } from './smartstore.js';
 import {
   elevenstConfigFromEnv,
   isElevenstConfigured,
@@ -32,9 +29,13 @@ import {
   syncReturns,
   syncExchanges
 } from './coupang-claims.js';
+import { syncCoupangInquiries } from './coupang-inquiries.js';
+import { migrateLegacyDocuments } from './order-store.js';
 
 dotenv.config({path:path.resolve('.env.local')});
 
+const fastPollMinutes=Number(process.env.FAST_POLL_MINUTES||10);
+const fullSyncEvery=Number(process.env.FULL_SYNC_EVERY||4);
 const FAST=['ACCEPT','INSTRUCT'];
 const SLOW=['DEPARTURE','DELIVERING','FINAL_DELIVERY','NONE_TRACKING'];
 
@@ -66,7 +67,7 @@ const db=admin.firestore();
 
 
 const QUOTA_COOLDOWN_MS=15*60*1000;
-const HEARTBEAT_INTERVAL_MS=10*60*1000;
+const HEARTBEAT_INTERVAL_MS=60*1000;
 let quotaBlockedUntil=0;
 let agentLockReleased=false;
 
@@ -231,7 +232,7 @@ let lastRequestId='';
 let slowIndex=0;
 let smartstoreRunning=false;
 let claimIndex=0;
-const CLAIM_TYPES=['cancel','return','exchange'];
+const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
 
 
 
@@ -800,7 +801,7 @@ async function fullCoupangStatusSync(source='interval'){
       maxPages:reconcile?15:5,
       reconcile
     }),
-    reconcile?240000:150000
+    reconcile?720000:360000
   );
 
   return {
@@ -894,7 +895,7 @@ async function sendClaimPush(
 
 
 async function syncAllClaimTypes(source='interval'){
-  const reconcile=source==='reconcile';
+  const reconcile=['reconcile','startup','immediate'].includes(source);
   const results=[];
 
   for(const type of CLAIM_TYPES){
@@ -904,8 +905,10 @@ async function syncAllClaimTypes(source='interval'){
       result=await syncCancellations(db,coupang(),reconcile);
     }else if(type==='return'){
       result=await syncReturns(db,coupang(),reconcile);
-    }else{
+    }else if(type==='exchange'){
       result=await syncExchanges(db,coupang(),reconcile);
+    }else{
+      result=await syncCoupangInquiries(db,coupang(),reconcile);
     }
 
     const push=await sendClaimPush(result.createdClaims||[],source);
@@ -920,7 +923,7 @@ async function syncAllClaimTypes(source='interval'){
 
 
 async function syncOneClaimType(source='interval'){
-  const reconcile=source==='reconcile';
+  const reconcile=['reconcile','startup','immediate'].includes(source);
   const type=CLAIM_TYPES[claimIndex%CLAIM_TYPES.length];
   claimIndex=(claimIndex+1)%CLAIM_TYPES.length;
 
@@ -930,8 +933,10 @@ async function syncOneClaimType(source='interval'){
     result=await syncCancellations(db,coupang(),reconcile);
   }else if(type==='return'){
     result=await syncReturns(db,coupang(),reconcile);
-  }else{
+  }else if(type==='exchange'){
     result=await syncExchanges(db,coupang(),reconcile);
+  }else{
+    result=await syncCoupangInquiries(db,coupang(),reconcile);
   }
 
   const push=await sendClaimPush(result.createdClaims||[],source);
@@ -1187,42 +1192,49 @@ async function syncSmartstoreSafe(source){
       return null;
     }
 
+    const reconcile=source==='reconcile'||source==='startup'||source==='immediate';
     const minutes=connectedMarketLookbackMinutes(source);
     const result=await withTimeout(
       '스마트스토어 주문조회',
-      syncSmartstore(db,smartstoreConfig(),minutes),
-      source==='reconcile'?180000:90000
+      syncSmartstore(db,smartstoreConfig(),minutes,{reconcile}),
+      reconcile?480000:180000
     );
 
-    const push=await sendMarketplacePush(
-      result.createdOrders||[],
-      '스마트스토어',
-      source
-    );
+    const inquiryResult=await withTimeout(
+      '스마트스토어 문의조회',
+      syncSmartstoreInquiries(db,smartstoreConfig(),{reconcile}),
+      300000
+    ).catch(error=>{
+      console.error('스마트스토어 문의조회 실패:',error.message);
+      return {found:0,created:0,statusChanged:0,createdClaims:[],complete:false,error:error.message};
+    });
+
+    const push=await sendMarketplacePush(result.createdOrders||[],'스마트스토어',source);
+    let inquirySent=0;
+    for(const inquiry of inquiryResult.createdClaims||[]){
+      const sentResult=await sendOrderTelegramAlert(inquiry,'스마트스토어',source);
+      inquirySent+=sentResult.sent||0;
+    }
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
-        name:'스마트스토어',
-        connected:true,
-        lastRun:new Date().toISOString(),
-        message:`정상 조회 · 발견 ${result.found} · 신규 ${result.created} · 상태변경 ${result.statusChanged}`,
+        name:'스마트스토어',connected:true,lastRun:new Date().toISOString(),
+        message:`정상 조회 · 주문문서 ${result.found} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}`,
         lastResult:{
-          found:result.found,
-          created:result.created,
-          existing:result.existing,
-          statusChanged:result.statusChanged,
-          push
+          found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
+          inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,complete:inquiryResult.complete!==false},
+          push,inquirySent
         }
       }
     },{merge:true});
 
     console.log(
-      `스마트스토어 동기화 완료: 발견 ${result.found}, `+
-      `신규 ${result.created}, 상태변경 ${result.statusChanged}, `+
+      `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
+      `상태변경 ${result.statusChanged}, 미답변문의 ${inquiryResult.found||0}, `+
       `조회구간 ${result.rangeCount||1}`
     );
 
-    return result;
+    return {...result,inquiries:inquiryResult};
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
     console.error('스마트스토어 동기화 실패:',message);
@@ -1380,17 +1392,52 @@ async function refreshEsmStatus(){
 
 
 
+let legacyMigrationDone=false;
+
+async function ensureLegacyMigration(){
+  if(legacyMigrationDone) return null;
+  const result=await migrateLegacyDocuments(db);
+  legacyMigrationDone=true;
+  console.log(
+    `기존 데이터 정리 완료: 검사 ${result.scanned}, 보정 ${result.patched}, `+
+    `혼합상태 제외 ${result.legacyClaimsDeactivated}`
+  );
+  return result;
+}
+
+async function writeDiagnostics(reason='sync'){
+  try{
+    const snapshot=await db.collection('orders').get();
+    const counts={};
+    snapshot.forEach(doc=>{
+      const data=doc.data()||{};
+      const market=String(data.market||data.source||'기타');
+      const event=String(data.eventType||'order');
+      const status=String(data.status||'unknown');
+      const active=data.activeState!==false;
+      const key=`${market}|${event}|${status}|${active?'active':'closed'}`;
+      counts[key]=(counts[key]||0)+1;
+    });
+    await db.collection('system').doc('diagnostics').set({
+      version:'FINAL-7.4.0-REVIEWED',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
+    },{merge:true});
+  }catch(error){
+    console.error('진단정보 저장 실패:',error instanceof Error?error.message:String(error));
+  }
+}
+
 async function writeAgentHeartbeat(reason='interval'){
   const now=new Date();
   const payload={
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.3.1',
+    version:'FINAL-7.4.0-REVIEWED',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
-    heartbeatIntervalSeconds:30,
+    heartbeatIntervalSeconds:60,
     lastSeen:admin.firestore.FieldValue.serverTimestamp(),
     lastSeenIso:now.toISOString(),
     lastSeenEpoch:now.getTime()
@@ -1517,6 +1564,11 @@ async function run(source){
 
   running=true;
 
+  if(['startup','reconcile','immediate'].includes(source)){
+    try{await ensureLegacyMigration();}
+    catch(error){console.error('기존 데이터 정리 실패:',error instanceof Error?error.message:String(error));}
+  }
+
   const reconcile=source==='reconcile';
   const label=reconcile?'이번달 정밀 동기화':source;
 
@@ -1602,14 +1654,14 @@ async function run(source){
           ?await withTimeout(
               '쿠팡 CS 전체조회',
               syncAllClaimTypes(source),
-              180000
+              600000
             )
           :source==='interval'
             ?[
                 await withTimeout(
                   '쿠팡 CS 순환조회',
                   syncOneClaimType(source),
-                  45000
+                  180000
                 )
               ]
             :[];
@@ -1629,6 +1681,10 @@ async function run(source){
     }
 
     console.log(`${label} 완료`);
+
+    if(['startup','reconcile','immediate'].includes(source)){
+      await writeDiagnostics(source);
+    }
 
     if(source==='startup'){
       telegramBaselineMode=false;
@@ -1656,7 +1712,7 @@ async function run(source){
     }
   }finally{
     running=false;
-    await writeAgentHeartbeat('startup');
+    await writeAgentHeartbeat(`sync-${source}`);
   }
 }
 
@@ -1749,7 +1805,7 @@ setInterval(()=>{
 
 console.log(
   `로컬 수집기 준비 완료 · 신규 10분 · 전체상태 30분 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 10분`
+  `텔레그램 테스트 즉시 사용 가능 · 생존신호 1분`
 );
 
 run('startup').catch(error=>{

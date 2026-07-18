@@ -1,4 +1,6 @@
 import admin from 'firebase-admin';
+import { workflowFields,isClaimTerminal } from './workflow-model.js';
+import { upsertDocuments } from './order-store.js';
 
 const API_BASE = 'https://openapi.lotteon.com';
 const ORDER_PATH =
@@ -337,12 +339,18 @@ function normalizeOrder(row, sellerId) {
     ) ||
     unitPrice * qty;
 
-  return {
-    id: `lotteon-${orderNo}-${idPart}`,
+  const claimId=first(row,['claimNo','claimId','returnNo','exchangeNo','cancelNo'])||`${orderNo}-${idPart}-${mapped.eventType}`;
+  const documentId=mapped.eventType==='order'
+    ?`lotteon-${orderNo}-${idPart}`
+    :`lotteon-${mapped.eventType}-${claimId}`;
+
+  const document={
+    id: documentId,
     source: 'lotteon',
     market: '롯데온',
     sellerId,
     eventType: mapped.eventType,
+    ...workflowFields({source:'lotteon',orderNo,lineId:idPart,eventType:mapped.eventType,claimId}),
     status: mapped.status,
     statusLabel: mapped.statusLabel,
     sourceStatus: first(row, [
@@ -438,8 +446,22 @@ function normalizeOrder(row, sellerId) {
       'reasonDetail',
       'reasonMemo'
     ]),
+    claimId:mapped.eventType==='order'?'':claimId,
+    claimStatus:mapped.eventType==='order'?'':first(row,['claimStsCd','claimStsNm','procStsCd','procStsNm']),
+    activeState:true,
+    sourceUpdatedAt:first(row,['modDttm','updDttm','ifDttm'])||new Date().toISOString(),
     syncedAt: new Date().toISOString()
   };
+
+  if(mapped.eventType!=='order'){
+    document.activeState=!isClaimTerminal(document);
+    if(!document.activeState){
+      document.status=mapped.eventType==='cancel'?'cancelled':mapped.eventType==='return'?'returned':'exchanged';
+      document.statusLabel='처리완료';
+    }
+  }
+
+  return document;
 }
 
 export function lotteonConfigFromEnv(env = process.env) {
@@ -622,87 +644,13 @@ async function queryOrderInstructions(
   );
 }
 
-async function saveOrders(db, orders) {
-  let created = 0;
-  let existing = 0;
-  let statusChanged = 0;
-  const createdOrders = [];
-  const changedOrders = [];
-
-  for (const order of orders) {
-    const ref = db.collection('orders').doc(order.id);
-
-    const outcome = await db.runTransaction(
-      async transaction => {
-        const snapshot = await transaction.get(ref);
-
-        if (!snapshot.exists) {
-          transaction.create(ref, {
-            ...order,
-            readStatus: 'unread',
-            createdAt:
-              admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt:
-              admin.firestore.FieldValue.serverTimestamp()
-          });
-
-          return 'created';
-        }
-
-        const before = snapshot.data() || {};
-
-        const changed =
-          before.status !== order.status ||
-          before.eventType !== order.eventType ||
-          String(before.sourceStatus || '') !==
-            String(order.sourceStatus || '') ||
-          String(before.invoiceNumber || '') !==
-            String(order.invoiceNumber || '');
-
-        transaction.set(
-          ref,
-          {
-            ...order,
-            createdAt:
-              before.createdAt ||
-              admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt:
-              admin.firestore.FieldValue.serverTimestamp()
-          },
-          { merge: true }
-        );
-
-        return {
-          type: changed ? 'changed' : 'existing',
-          before
-        };
-      }
-    );
-
-    if (outcome === 'created') {
-      created += 1;
-      createdOrders.push(order);
-    } else if (outcome?.type === 'changed') {
-      statusChanged += 1;
-
-      changedOrders.push({
-        ...order,
-        previousStatus: outcome.before?.status || '',
-        previousStatusLabel: outcome.before?.statusLabel || '',
-        previousEventType: outcome.before?.eventType || 'order'
-      });
-    } else {
-      existing += 1;
-    }
-  }
-
+async function saveOrders(db,orders){
+  const saved=await upsertDocuments(db,orders);
   return {
-    found: orders.length,
-    created,
-    existing,
-    statusChanged,
-    createdOrders,
-    changedOrders
+    ...saved,
+    createdOrders:saved.createdDocuments.filter(item=>item.eventType==='order'&&item.status==='new'),
+    createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
+    changedOrders:saved.changedDocuments
   };
 }
 

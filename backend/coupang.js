@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import admin from 'firebase-admin';
+import { workflowFields } from './workflow-model.js';
+import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
 
 const MAP={
   ACCEPT:['new','신규주문'],
@@ -9,19 +10,16 @@ const MAP={
   FINAL_DELIVERY:['delivered','배송완료'],
   NONE_TRACKING:['none_tracking','직접배송']
 };
-
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 function signedDate(){
   return new Date().toISOString().split('.')[0]
     .replaceAll(':','').replaceAll('-','').slice(2)+'Z';
 }
-
 function kstDate(date){
-  const d=new Date(date.getTime()+9*60*60*1000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}+09:00`;
+  const shifted=new Date(date.getTime()+9*60*60*1000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth()+1).padStart(2,'0')}-${String(shifted.getUTCDate()).padStart(2,'0')}+09:00`;
 }
-
 function auth({method,path,query,accessKey,secretKey}){
   const datetime=signedDate();
   const signature=crypto.createHmac('sha256',secretKey)
@@ -31,27 +29,34 @@ function auth({method,path,query,accessKey,secretKey}){
 
 async function request(config,path,params){
   const method='GET';
-
-  for(let attempt=0;attempt<4;attempt++){
+  let lastError;
+  for(let attempt=0;attempt<4;attempt+=1){
     const query=new URLSearchParams(params).toString();
-    let response;
     try{
-      response=await fetch(`https://api-gateway.coupang.com${path}?${query}`,{
-        signal:AbortSignal.timeout(60000),
-        method,
+      const response=await fetch(`https://api-gateway.coupang.com${path}?${query}`,{
+        signal:AbortSignal.timeout(60000),method,
         headers:{
           'Content-Type':'application/json;charset=UTF-8',
-          Authorization:auth({
-            method,path,query,
-            accessKey:config.accessKey,
-            secretKey:config.secretKey
-          }),
-          'X-Requested-By':config.vendorId,
-          'X-MARKET':'KR'
+          Authorization:auth({method,path,query,accessKey:config.accessKey,secretKey:config.secretKey}),
+          'X-Requested-By':config.vendorId,'X-MARKET':'KR','X-EXTENDED-TIMEOUT':'60000'
         }
       });
+      const text=await response.text();
+      if([429,502,503,504].includes(response.status)){
+        const waits=response.status===429?[10000,20000,40000,60000]:[5000,10000,20000,40000];
+        if(attempt===3) throw new Error(`쿠팡 API HTTP ${response.status}: 재시도 후에도 응답하지 않습니다.`);
+        console.log(`쿠팡 API HTTP ${response.status} · ${waits[attempt]/1000}초 후 재시도`);
+        await sleep(waits[attempt]);
+        continue;
+      }
+      let payload;
+      try{payload=JSON.parse(text);}catch{throw new Error(`쿠팡 응답 변환 실패(HTTP ${response.status})`);}
+      if(!response.ok) throw new Error(`쿠팡 API HTTP ${response.status}: ${payload?.message||text}`);
+      if(payload?.code!=null&&Number(payload.code)!==200) throw new Error(`쿠팡 API 오류 ${payload.code}: ${payload.message||'알 수 없는 오류'}`);
+      return payload;
     }catch(error){
-      const retryable=error?.name==='TimeoutError'||error?.name==='AbortError'||error?.code==='UND_ERR_CONNECT_TIMEOUT';
+      lastError=error;
+      const retryable=['TimeoutError','AbortError'].includes(error?.name)||String(error?.message||'').includes('timeout');
       if(retryable&&attempt<3){
         const wait=[5000,10000,20000,40000][attempt];
         console.log(`쿠팡 API 응답 지연 · ${wait/1000}초 후 재시도`);
@@ -60,83 +65,46 @@ async function request(config,path,params){
       }
       throw error;
     }
-
-    const text=await response.text();
-
-    if(response.status===429||response.status===502||response.status===503||response.status===504){
-      const wait=response.status===429
-        ?[10000,20000,40000,60000][attempt]
-        :[5000,10000,20000,40000][attempt];
-      if(attempt===3){
-        throw new Error(`쿠팡 API HTTP ${response.status}: 재시도 후에도 응답하지 않습니다.`);
-      }
-      console.log(`쿠팡 API HTTP ${response.status} · ${wait/1000}초 후 재시도`);
-      await sleep(wait);
-      continue;
-    }
-
-    let payload;
-    try{ payload=JSON.parse(text); }
-    catch{ throw new Error(`쿠팡 응답 변환 실패(HTTP ${response.status})`); }
-
-    if(!response.ok){
-      throw new Error(`쿠팡 API HTTP ${response.status}: ${payload?.message||text}`);
-    }
-    if(payload?.code!=null&&Number(payload.code)!==200){
-      throw new Error(`쿠팡 API 오류 ${payload.code}: ${payload.message||'알 수 없는 오류'}`);
-    }
-    return payload;
   }
+  throw lastError||new Error('쿠팡 API 요청 실패');
 }
 
-function money(v){
-  if(v==null) return 0;
-  if(typeof v==='number') return v;
-  return Number(v.units||0)+Number(v.nanos||0)/1e9;
+function money(value){
+  if(value==null) return 0;
+  if(typeof value==='number') return value;
+  return Number(value.units||0)+Number(value.nanos||0)/1e9;
 }
 
 function normalize(sheets,requestedStatus){
   const out=[];
-
   for(const sheet of sheets){
-    const sourceStatus=String(sheet.status||requestedStatus||'ACCEPT');
+    const sourceStatus=String(sheet.status||requestedStatus||'ACCEPT').toUpperCase();
     const [status,statusLabel]=MAP[sourceStatus]||[sourceStatus.toLowerCase(),sourceStatus];
     const items=Array.isArray(sheet.orderItems)?sheet.orderItems:[];
-
     for(const item of items){
-      const qty=Math.max(
-        0,
-        Number(item.shippingCount||0)-
-        Number(item.cancelCount||0)-
-        Number(item.holdCountForCancel||0)
-      );
+      const qty=Math.max(0,Number(item.shippingCount||0)-Number(item.cancelCount||0)-Number(item.holdCountForCancel||0));
       if(qty<=0) continue;
-
-      const orderNo=String(sheet.orderId);
-      const vendorItemId=String(item.vendorItemId||item.sellerProductId||'item');
-      const id=`coupang-${orderNo}-${vendorItemId}`;
-
+      const orderNo=String(sheet.orderId||'');
+      const lineId=String(item.vendorItemId||item.sellerProductId||item.orderItemId||'item');
+      if(!orderNo) continue;
       out.push({
-        id,
-        source:'coupang',
-        market:'쿠팡',
-        eventType:'order',
-        orderNo,
-        shipmentBoxId:String(sheet.shipmentBoxId||''),
-        product:item.vendorItemName||
-          [item.sellerProductName,item.sellerProductItemName].filter(Boolean).join(' ')||
-          '쿠팡 상품',
-        qty,
-        buyer:sheet.receiver?.name||sheet.orderer?.name||'',
+        id:`coupang-${orderNo}-${lineId}`,
+        source:'coupang',market:'쿠팡',eventType:'order',
+        ...workflowFields({source:'coupang',orderNo,lineId,eventType:'order'}),
+        orderNo,shipmentBoxId:String(sheet.shipmentBoxId||''),vendorItemId:lineId,
+        product:item.vendorItemName||[item.sellerProductName,item.sellerProductItemName].filter(Boolean).join(' ')||'쿠팡 상품',
+        option:item.sellerProductItemName||'',qty,buyer:sheet.receiver?.name||sheet.orderer?.name||'',
+        phone:sheet.receiver?.safeNumber||sheet.receiver?.receiverNumber||'',
+        address:[sheet.receiver?.addr1,sheet.receiver?.addr2].filter(Boolean).join(' '),
+        deliveryMemo:sheet.deliveryMessage||'',
         amount:Math.round(money(item.orderPrice)),
+        orderTotalAmount:Math.round(money(sheet.orderPrice||sheet.totalPrice||0)),
         datetime:sheet.orderedAt||sheet.paidAt||new Date().toISOString(),
-        status,
-        statusLabel,
-        sourceStatus,
-        vendorItemId,
+        orderDate:sheet.orderedAt||'',paymentDate:sheet.paidAt||'',
+        status,statusLabel,sourceStatus,activeState:true,
         invoiceNumber:item.invoiceNumber||sheet.invoiceNumber||'',
         deliveryCompanyName:item.deliveryCompanyName||sheet.deliveryCompanyName||'',
-        activeState:true,
+        sourceUpdatedAt:sheet.modifiedAt||sheet.updatedAt||new Date().toISOString(),
         syncedAt:new Date().toISOString()
       });
     }
@@ -147,154 +115,63 @@ function normalize(sheets,requestedStatus){
 async function fetchStatus(config,path,from,to,status,maxPages){
   const orders=[];
   let nextToken='';
-
-  for(let page=0;page<maxPages;page++){
-    const params={
-      createdAtFrom:kstDate(from),
-      createdAtTo:kstDate(to),
-      maxPerPage:'50',
-      status
-    };
+  let complete=false;
+  for(let page=0;page<maxPages;page+=1){
+    const params={createdAtFrom:kstDate(from),createdAtTo:kstDate(to),maxPerPage:'50',status};
     if(nextToken) params.nextToken=nextToken;
-
     const payload=await request(config,path,params);
     const sheets=Array.isArray(payload.data)?payload.data:[];
     orders.push(...normalize(sheets,status));
-
     nextToken=payload.nextToken||payload.pagination?.nextToken||'';
-    if(!nextToken||sheets.length===0) break;
-    await sleep(1500);
+    if(!nextToken||sheets.length===0){complete=true;break;}
+    await sleep(1200);
   }
-  return orders;
+  return {orders,complete,nextToken};
 }
 
-
-async function reconcileCurrentStatus(db,status,currentOrders,from,complete){
-  if(!complete){
-    return {deactivated:0,skipped:true};
-  }
-
-  const currentIds=new Set(currentOrders.map(order=>order.id));
-  const snapshot=await db.collection('orders').where('source','==','coupang').get();
-  const fromTime=from.getTime();
-  const stale=[];
-
-  snapshot.forEach(doc=>{
-    const data=doc.data()||{};
-    if(data.eventType!=='order') return;
-    if(String(data.sourceStatus||'')!==status) return;
-    if(data.activeState===false) return;
-    const ordered=new Date(data.datetime||0).getTime();
-    if(!Number.isFinite(ordered)||ordered<fromTime) return;
-    if(currentIds.has(doc.id)) return;
-    stale.push(doc.ref);
-  });
-
-  for(let i=0;i<stale.length;i+=400){
-    const batch=db.batch();
-    stale.slice(i,i+400).forEach(ref=>batch.set(ref,{
-      activeState:false,
-      status:'resolved',
-      statusLabel:'처리완료',
-      resolvedReason:'현재 API 상태에서 제외됨',
-      resolvedAt:admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt:admin.firestore.FieldValue.serverTimestamp()
-    },{merge:true}));
-    await batch.commit();
-  }
-
-  return {deactivated:stale.length,skipped:false};
-}
-
-async function save(db,orders){
-  let created=0,existing=0,statusChanged=0;
-  const createdOrders=[];
-
-  for(const order of orders){
-    const ref=db.collection('orders').doc(order.id);
-    const result=await db.runTransaction(async tx=>{
-      const snap=await tx.get(ref);
-
-      if(!snap.exists){
-        tx.create(ref,{
-          ...order,
-          createdAt:admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt:admin.firestore.FieldValue.serverTimestamp()
-        });
-        return 'created';
-      }
-
-      const before=snap.data()||{};
-      const changed=
-        before.sourceStatus!==order.sourceStatus||
-        before.status!==order.status||
-        Number(before.qty||0)!==Number(order.qty||0)||
-        String(before.invoiceNumber||'')!==String(order.invoiceNumber||'');
-
-      if(!changed){
-        return 'existing';
-      }
-
-      tx.set(ref,{
-        ...order,
-        createdAt:
-          before.createdAt||
-          admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt:
-          admin.firestore.FieldValue.serverTimestamp()
-      },{merge:true});
-
-      return 'changed';
-    });
-
-    if(result==='created'){ created++; createdOrders.push(order); }
-    else if(result==='changed') statusChanged++;
-    else existing++;
-  }
-
-  return {found:orders.length,created,existing,statusChanged,createdOrders};
-}
-
-export async function pollCoupangStatuses(
-  db,
-  config,
-  {statuses,days,maxPages=2,reconcile=false}
-){
+export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,reconcile=false}){
   const now=new Date();
-  const from=new Date(now.getTime()-days*86400000);
+  const from=new Date(now.getTime()-Math.max(1,Number(days||1))*86400000);
   const path=`/v2/providers/openapi/apis/api/v5/vendors/${encodeURIComponent(config.vendorId)}/ordersheets`;
-
   const all=[];
   const counts={};
+  const completeness={};
 
-  for(let i=0;i<statuses.length;i++){
-    if(i>0) await sleep(1800);
-    const status=statuses[i];
-    const orders=await fetchStatus(config,path,from,now,status,maxPages);
-    counts[status]=orders.length;
-    all.push(...orders);
+  for(let index=0;index<statuses.length;index+=1){
+    if(index) await sleep(1500);
+    const sourceStatus=statuses[index];
+    const fetched=await fetchStatus(config,path,from,now,sourceStatus,maxPages);
+    counts[sourceStatus]=fetched.orders.length;
+    completeness[sourceStatus]=fetched.complete;
+    all.push(...fetched.orders);
 
     if(reconcile){
-      const complete=orders.length<(maxPages*50);
-      const reconciled=await reconcileCurrentStatus(
-        db,status,orders,from,complete
-      );
-      counts[`${status}_DEACTIVATED`]=
-        reconciled.deactivated||0;
-    }else{
-      counts[`${status}_DEACTIVATED`]=0;
+      const result=await reconcileOpenDocuments(db,{
+        source:'coupang',eventType:'order',
+        currentIds:fetched.orders.map(item=>item.id),from,complete:fetched.complete,
+        reason:`쿠팡 ${sourceStatus} 현재 상태에서 제외됨`,sourceStatus
+      });
+      counts[`${sourceStatus}_DEACTIVATED`]=result.deactivated||0;
+      counts[`${sourceStatus}_RECONCILE_SKIPPED`]=result.skipped?1:0;
     }
   }
 
-  const unique=[...new Map(all.map(o=>[o.id,o])).values()];
-  const result=await save(db,unique);
-
+  const unique=[...new Map(all.map(item=>[item.id,item])).values()];
+  const saved=await upsertDocuments(db,unique);
   return {
-    ...result,
-    counts,
-    statuses,
-    days,
-    checkedFrom:from.toISOString(),
-    checkedTo:now.toISOString()
+    ...saved,createdOrders:saved.createdDocuments,changedOrders:saved.changedDocuments,
+    counts,completeness,statuses,days,
+    checkedFrom:from.toISOString(),checkedTo:now.toISOString()
   };
+}
+
+// Backward-compatible entry point for the optional cloud poller.
+export async function pollCoupang(db,config,minutes=30){
+  const days=Math.max(1,Math.ceil(Number(minutes||30)/1440)+1);
+  return pollCoupangStatuses(db,config,{
+    statuses:['ACCEPT','INSTRUCT'],
+    days,
+    maxPages:5,
+    reconcile:false
+  });
 }

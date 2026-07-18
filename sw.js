@@ -1,8 +1,9 @@
-const CACHE='alldaypick-final-v7.3.1-20260719';
+const CACHE='alldaypick-final-v7.4.0-20260719';
 const STATIC=[
   './',
   './index.html',
   './styles.css',
+  './state-engine.js',
   './app.js',
   './manifest.json',
   './icon.svg'

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.2.1
+title ALLDAYPICK ORDER AGENT v7.4.0 REVIEWED
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -8,7 +8,7 @@ set "BACKEND=%ROOT%backend"
 if not exist "%BACKEND%\package.json" (
   echo.
   echo [ERROR] backend\package.json was not found.
-  echo Extract the entire ZIP file and run this file inside the project folder.
+  echo Extract the entire ZIP and run this file from the project root folder.
   echo Current folder: %ROOT%
   echo.
   pause
@@ -22,12 +22,20 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if exist ".agent-running.lock" del /F /Q ".agent-running.lock" >nul 2>nul
+if exist ".agent-running.lock" (
+  echo.
+  echo [ERROR] Another order agent may already be running.
+  echo Close the old black window first, or run STOP_AGENT.cmd once.
+  echo.
+  popd
+  pause
+  exit /b 1
+)
 
 if not exist ".env.local" (
   echo.
   echo [ERROR] backend\.env.local is missing.
-  echo Restore your existing settings file and try again.
+  echo Restore the settings file before starting the agent.
   echo.
   popd
   pause
@@ -46,7 +54,7 @@ if errorlevel 1 (
 
 if not exist "node_modules\" (
   echo Installing required packages...
-  call npm install
+  call npm install --no-audit --no-fund
   if errorlevel 1 (
     echo.
     echo [ERROR] npm install failed.
@@ -57,7 +65,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent...
+echo Starting ALLDAYPICK order agent v7.4.0 REVIEWED...
 echo Keep this window open.
 echo.
 call npm run agent
