@@ -42,6 +42,9 @@ assert.equal(answered.status,'answered');
 assert.deepEqual(H.inquiryPageMeta({contents:[],page:1,totalPages:3,last:false}),{
   totalPages:3,currentPage:1,last:false
 });
-assert.ok(H.inquiryRanges(90,30).length>=3);
+const ranges=H.inquiryRanges(90,29);
+assert.ok(ranges.length>=4);
+assert.ok(ranges.every(range=>range.to-range.from<=29*86400000));
+assert.match(H.inquiryIso(new Date('2026-07-19T00:00:00.123Z')),/2026-07-19T00:00:00Z/);
 
 console.log('smartstore inquiry tests passed');

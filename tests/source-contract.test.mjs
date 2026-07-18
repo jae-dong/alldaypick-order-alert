@@ -10,8 +10,9 @@ assert.doesNotMatch(smartstore,/params\.set\('moreFrom'/,'moreFrom is a response
 assert.match(smartstore,/\/v1\/pay-order\/seller\/product-orders\/query/,'Naver detail endpoint must be present');
 assert.match(smartstore,/\/v1\/contents\/qnas/,'Naver product inquiry endpoint must be present');
 assert.match(smartstore,/\/v1\/pay-user\/inquiries/,'Naver customer inquiry endpoint must be present');
-assert.match(smartstore,/page:String\(page\),size:String\(size\),answered:'false'/,'Naver inquiry paging must start with explicit page and size');
-assert.match(smartstore,/fromDate:iso\(range\.from\),toDate:iso\(range\.to\)/,'Naver product inquiries must include the required date range');
+assert.match(smartstore,/page:String\(page\)[\s\S]*size:String\(size\)/,'Naver product inquiry paging must use explicit page and size');
+assert.match(smartstore,/fromDate:inquiryIso\(range\.from\)[\s\S]*toDate:inquiryIso\(range\.to\)/,'Naver product inquiries must include the required date range');
+assert.match(smartstore,/api\(token,'\/v1\/pay-user\/inquiries'\)/,'Naver customer inquiries must be requested without undocumented query parameters');
 assert.match(smartstore,/row\.inquiryNo/,'Naver customer inquiry IDs must use inquiryNo');
 assert.match(smartstore,/row\.inquiryRegistrationDateTime/,'Naver customer inquiry timestamps must use the documented field');
 
@@ -26,6 +27,6 @@ assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconci
 
 const agent=read('local-agent.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=60\*1000/,'Agent heartbeat must run every minute');
-assert.match(agent,/version:'FINAL-7\.4\.1-FIXED'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.4\.2-INQUIRY-FIX'/,'Agent diagnostics version must match release');
 
 console.log('source-contract tests passed');

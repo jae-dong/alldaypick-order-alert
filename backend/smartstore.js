@@ -5,14 +5,26 @@ import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function iso(date){return date.toISOString();}
+function inquiryIso(date){return date.toISOString().replace(/\.\d{3}Z$/,'Z');}
 function signature(clientId,clientSecret,timestamp){
   const hashed=bcrypt.hashSync(`${clientId}_${timestamp}`,clientSecret);
   return Buffer.from(hashed,'utf8').toString('base64');
 }
+function invalidInputText(body){
+  const inputs=Array.isArray(body?.invalidInputs)?body.invalidInputs:[];
+  return inputs
+    .map(item=>[item?.name,item?.type,item?.message].filter(Boolean).join(' / '))
+    .filter(Boolean)
+    .join('; ');
+}
 async function jsonResponse(response,label){
   const text=await response.text();let body;
   try{body=JSON.parse(text);}catch{throw new Error(`${label} 응답 변환 실패(HTTP ${response.status})`);}
-  if(!response.ok) throw new Error(`${label} HTTP ${response.status}: ${body?.message||body?.code||text}`);
+  if(!response.ok){
+    const invalid=invalidInputText(body);
+    const detail=[body?.message||body?.code||text,invalid].filter(Boolean).join(' · ');
+    throw new Error(`${label} HTTP ${response.status}: ${detail}`);
+  }
   return body;
 }
 async function accessToken(config){
@@ -25,8 +37,20 @@ async function accessToken(config){
   return token;
 }
 async function api(token,path,options={}){
-  const response=await fetch(`${API_BASE}${path}`,{signal:AbortSignal.timeout(45000),...options,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',...(options.headers||{})}});
-  return jsonResponse(response,'스마트스토어 API');
+  const method=String(options.method||'GET').toUpperCase();
+  const headers={
+    Accept:'application/json',
+    Authorization:`Bearer ${token}`,
+    ...(options.body||!['GET','HEAD'].includes(method)?{'Content-Type':'application/json'}:{}),
+    ...(options.headers||{})
+  };
+  const response=await fetch(`${API_BASE}${path}`,{
+    signal:AbortSignal.timeout(45000),
+    ...options,
+    method,
+    headers
+  });
+  return jsonResponse(response,`스마트스토어 API ${path.split('?')[0]}`);
 }
 function rows(body){
   if(Array.isArray(body)) return body;
@@ -276,8 +300,10 @@ function inquiryPageMeta(body){
     last:last===true
   };
 }
-function inquiryRanges(days,maxDays=30){
-  const now=new Date();
+function inquiryRanges(days,maxDays=29){
+  // 문의 API는 날짜 범위를 엄격하게 검증하므로 30일 미만으로 분할합니다.
+  // PC 시계와 서버 시계의 수초 차이로 종료 시각이 미래로 판정되는 것도 막습니다.
+  const now=new Date(Date.now()-10000);
   const start=new Date(now.getTime()-Math.max(1,days)*86400000);
   const ranges=[];
   let cursor=start;
@@ -320,21 +346,37 @@ async function fetchInquiryPages(token,path,paramsForPage,{size=100,maxPages=30}
   return {items,complete};
 }
 function badRequest(error){
-  return /HTTP 400|BAD_REQUEST|잘못된 요청/i.test(String(error?.message||''));
+  return /HTTP 400|BAD_REQUEST|잘못된 요청|명세에 맞지 않는 입력/i.test(String(error?.message||''));
+}
+async function fetchProductInquiryRange(token,range){
+  const common=(page,size)=>({
+    page:String(page),
+    size:String(size),
+    fromDate:inquiryIso(range.from),
+    toDate:inquiryIso(range.to)
+  });
+  const profiles=[
+    (page,size)=>({...common(page,size),answered:'false'}),
+    common
+  ];
+
+  let lastError;
+  for(const profile of profiles){
+    try{
+      return await fetchInquiryPages(token,'/v1/contents/qnas',profile);
+    }catch(error){
+      lastError=error;
+      if(!badRequest(error)) throw error;
+    }
+  }
+  throw lastError||new Error('스마트스토어 상품문의 조회 실패');
 }
 async function fetchProductInquiries(token,days){
   const all=[];
   let complete=true;
 
-  for(const range of inquiryRanges(days,30)){
-    const result=await fetchInquiryPages(
-      token,
-      '/v1/contents/qnas',
-      (page,size)=>({
-        page:String(page),size:String(size),answered:'false',
-        fromDate:iso(range.from),toDate:iso(range.to)
-      })
-    );
+  for(const range of inquiryRanges(days,29)){
+    const result=await fetchProductInquiryRange(token,range);
     all.push(...result.items);
     complete=complete&&result.complete;
     await sleep(300);
@@ -342,30 +384,15 @@ async function fetchProductInquiries(token,days){
 
   return {items:all,complete};
 }
-async function fetchCustomerInquiries(token,from,to){
-  const profiles=[
-    (page,size)=>({
-      page:String(page),size:String(size),answered:'false',
-      fromDate:iso(from),toDate:iso(to)
-    }),
-    (page,size)=>({
-      page:String(page),size:String(size),answered:'false',
-      inquiryTimeFrom:iso(from),inquiryTimeTo:iso(to)
-    }),
-    (page,size)=>({page:String(page),size:String(size),answered:'false'}),
-    (page,size)=>({page:String(page),size:String(size)})
-  ];
-
-  let lastError;
-  for(const profile of profiles){
-    try{
-      return await fetchInquiryPages(token,'/v1/pay-user/inquiries',profile);
-    }catch(error){
-      lastError=error;
-      if(!badRequest(error)) throw error;
-    }
+async function fetchCustomerInquiries(token){
+  // 현재 공식 명세의 고객 문의 조회는 별도 검색 파라미터가 없습니다.
+  // 알 수 없는 page/size/date 파라미터를 붙이면 HTTP 400이 발생할 수 있습니다.
+  const body=await api(token,'/v1/pay-user/inquiries');
+  const extracted=inquiryArray(body);
+  if(!extracted.recognized){
+    throw new Error('/v1/pay-user/inquiries 응답 목록 형식을 확인할 수 없습니다.');
   }
-  throw lastError||new Error('스마트스토어 고객문의 조회 실패');
+  return {items:extracted.items,complete:true};
 }
 export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   const token=await accessToken(config);
@@ -387,7 +414,7 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   }
 
   try{
-    const customer=await fetchCustomerInquiries(token,from,to);
+    const customer=await fetchCustomerInquiries(token);
     complete=complete&&customer.complete;
     documents.push(
       ...customer.items.map(row=>inquiryDoc(row,'customer')).filter(Boolean)
@@ -419,7 +446,8 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
 export const smartstoreTestHelpers={
   inquiryDoc,
   inquiryPageMeta,
-  inquiryRanges
+  inquiryRanges,
+  inquiryIso
 };
 
 export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){

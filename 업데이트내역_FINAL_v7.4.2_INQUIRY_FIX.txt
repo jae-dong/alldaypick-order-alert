@@ -1,0 +1,13 @@
+올데이픽 주문알림 FINAL v7.4.2 INQUIRY FIX
+
+1. v7.4.1에서 확인된 Firestore undefined 저장 오류 수정 유지
+2. 스마트스토어 상품문의 HTTP 400 수정
+   - 공식 필수 파라미터(page, size, fromDate, toDate) 사용
+   - 30일 미만 구간으로 분할
+   - answered 조건이 거부될 경우 전체 조회 후 앱에서 미답변만 판정
+3. 스마트스토어 고객문의 HTTP 400 수정
+   - 공식 명세대로 /v1/pay-user/inquiries를 불필요한 검색 파라미터 없이 호출
+4. GET 요청에서 불필요한 Content-Type 제거, Accept 헤더 명시
+5. API 오류 시 invalidInputs 필드까지 검은 창에 표시
+6. 기존 주문 상태 이동, 중복 방지, 미완료 요청 유지 로직 보존
+7. G마켓·옥션 미연결 및 집계 제외 유지
