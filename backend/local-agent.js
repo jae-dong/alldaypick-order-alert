@@ -943,6 +943,42 @@ async function syncOneClaimType(source='interval'){
 
 
 
+function connectedMarketLookbackMinutes(source){
+  if(source==='reconcile'){
+    return monthStartMinutes();
+  }
+
+  // 주문 누락 방지: PC 수집기가 중간에 꺼졌거나 API 응답이 늦어도
+  // 연결된 마켓은 한국시간 오늘 00:00부터 매번 겹쳐 다시 조회한다.
+  const now=new Date();
+  const kstParts=new Intl.DateTimeFormat(
+    'sv-SE',
+    {
+      timeZone:'Asia/Seoul',
+      year:'numeric',
+      month:'2-digit',
+      day:'2-digit',
+      hour:'2-digit',
+      minute:'2-digit',
+      second:'2-digit',
+      hour12:false
+    }
+  ).formatToParts(now);
+
+  const values=Object.fromEntries(
+    kstParts.map(part=>[part.type,part.value])
+  );
+  const startOfTodayKst=new Date(
+    `${values.year}-${values.month}-${values.day}T00:00:00+09:00`
+  );
+  const elapsed=Math.ceil(
+    (now.getTime()-startOfTodayKst.getTime())/60000
+  );
+
+  // 자정 직후에도 전날 늦게 들어온 주문을 놓치지 않도록 2시간 여유를 둔다.
+  return Math.min(26*60,Math.max(180,elapsed+120));
+}
+
 function smartstoreConfig(){
   return {
     clientId:process.env.NAVER_CLIENT_ID||'',
@@ -1053,12 +1089,7 @@ async function syncElevenstSafe(source){
       return null;
     }
 
-    const minutes=
-      source==='reconcile'
-        ?monthStartMinutes()
-        :source==='startup'||source==='immediate'
-          ?6*60
-          :30;
+    const minutes=connectedMarketLookbackMinutes(source);
 
     const result=await withTimeout(
       '11번가 주문조회',
@@ -1154,12 +1185,7 @@ async function syncSmartstoreSafe(source){
       return null;
     }
 
-    const minutes=
-      source==='reconcile'
-        ?monthStartMinutes()
-        :source==='startup'||source==='immediate'
-          ?6*60
-          :30;
+    const minutes=connectedMarketLookbackMinutes(source);
     const result=await withTimeout(
       '스마트스토어 주문조회',
       syncSmartstore(db,smartstoreConfig(),minutes),
@@ -1278,12 +1304,7 @@ async function syncLotteonSafe(source){
       return null;
     }
 
-    const minutes=
-      source==='reconcile'
-        ?monthStartMinutes()
-        :source==='startup'||source==='immediate'
-          ?6*60
-          :30;
+    const minutes=connectedMarketLookbackMinutes(source);
 
     const auth=await withTimeout(
       '롯데온 인증',

@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.0.1';
+const APP_VERSION='FINAL v7.1.1';
 const BUILD_DATE='2026-07-18';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -2166,8 +2166,8 @@ async function requestCollect(){
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v58';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v58';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v71';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v71';
 
 function restoreCloudCache(){
   try{
@@ -2688,7 +2688,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.0.1',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.1.1',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

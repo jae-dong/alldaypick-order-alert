@@ -1,0 +1,8 @@
+올데이픽 주문알림 FINAL v7.1.1
+
+- PC 수집기 실행 경로 자동 고정
+- backend/package.json 존재 여부 사전 검사
+- 한글 CMD 인코딩 오류 방지를 위해 실행 명령을 ASCII로 구성
+- START_AGENT.cmd / STOP_AGENT.cmd 영문 실행파일 추가
+- 기존 주문 누락 복구 및 4개 연결 마켓 집계 로직 유지
+- G마켓/옥션 미연결 및 집계 제외 유지
