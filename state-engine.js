@@ -66,22 +66,47 @@
       item?.sourceStatus,item?.status,item?.statusLabel,item?.claimStatus,
       item?.processingStatus,item?.resultStatus,item?.receiptStatus,
       item?.exchangeStatus,item?.inquiryStatus,item?.partnerCounselingStatus,
-      item?.csPartnerCounselingStatus
+      item?.csPartnerCounselingStatus,
+      item?.placeOrderStatus,item?.lastChangedType,
+      item?.deliveryStatus,item?.deliveryStatusName
     ].filter(Boolean).join(' ').toUpperCase();
   }
   function status(item){
     const event=eventType(item);
     if(CLAIM_TYPES.has(event))return event;
+
     const raw=sourceText(item);
     const current=text(item?.status).toLowerCase();
-    if(current==='new'||raw.includes('ACCEPT')||raw.includes('PAYED'))return 'new';
-    if(current==='shipping_wait'||raw.includes('INSTRUCT')||raw.includes('PREPARE')||raw.includes('READY')||raw.includes('PLACE_ORDER'))return 'shipping_wait';
+    const placeOrderStatus=text(item?.placeOrderStatus).toUpperCase();
+    const hasPlaceOrder=Boolean(
+      item?.placeOrderDate||
+      placeOrderStatus==='OK'||
+      raw.includes('PLACE_ORDER')||
+      raw.includes('ORDER_CONFIRM')
+    );
+
+    // The market's current source status wins over an older normalized status.
+    if(raw.includes('PURCHASE_DECIDED')||raw.includes('PURCHASE_CONFIRM'))return 'purchase_confirmed';
+    if(raw.includes('FINAL_DELIVERY')||raw.includes('DELIVERED')||raw.includes('배송완료'))return 'delivered';
+    if(
+      raw.includes('DELIVERING')||raw.includes('SHIPPED')||
+      raw.includes('DISPATCHED')||raw.includes('DEPARTURE')||
+      raw.includes('배송중')||raw.includes('발송처리')
+    )return 'delivering';
+    if(raw.includes('CANCELED')||raw.includes('CANCELLED')||raw.includes('취소완료'))return 'cancelled';
+    if(raw.includes('RETURNED')||raw.includes('RETURN_DONE')||raw.includes('반품완료'))return 'returned';
+    if(
+      hasPlaceOrder||raw.includes('INSTRUCT')||raw.includes('PRODUCT_PREPARE')||
+      raw.includes('PREPARE_DELIVERY')||raw.includes('DISPATCH_WAITING')||
+      raw.includes('PACKAGING')||raw.includes('READY_FOR_SHIPPING')||
+      raw.includes('배송준비')||raw.includes('발송대기')||raw.includes('발주확인')
+    )return 'shipping_wait';
+    if(raw.includes('ACCEPT')||raw.includes('PAYED')||raw.includes('PAYMENT_WAITING')||raw.includes('ORDER_RECEIVED'))return 'new';
+
     if(current==='departure')return (item?.invoiceNumber||item?.trackingNumber)?'delivering':'shipping_wait';
-    if(current==='delivering'||raw.includes('DELIVERING')||raw.includes('SHIPPED')||raw.includes('DEPARTURE'))return 'delivering';
-    if(current==='purchase_confirmed'||raw.includes('PURCHASE_DECIDED')||raw.includes('PURCHASE_CONFIRM'))return 'purchase_confirmed';
-    if(current==='delivered'||raw.includes('FINAL_DELIVERY')||raw.includes('DELIVERED'))return 'delivered';
-    if(current==='cancelled'||current==='canceled'||raw.includes('CANCELED')||raw.includes('CANCELLED'))return 'cancelled';
-    if(current==='returned'||raw.includes('RETURNED'))return 'returned';
+    if(['new','shipping_wait','delivering','delivered','purchase_confirmed','cancelled','canceled','returned'].includes(current)){
+      return current==='canceled'?'cancelled':current;
+    }
     return current||'unknown';
   }
   function terminalClaim(item){
@@ -100,12 +125,14 @@
       'EXCHANGE_DONE','EXCHANGE_COMPLETE','EXCHANGE_COMPLETED',
       'CLAIM_DONE','CLAIM_COMPLETE','CLAIM_COMPLETED',
       'ANSWER_DONE','ANSWER_COMPLETE','ANSWER_COMPLETED',
-      'REQUEST_CANCELLED','REQUEST_CANCELED'
+      'REQUEST_CANCELLED','REQUEST_CANCELED',
+      'CANCEL_REJECT','RETURN_REJECT','EXCHANGE_REJECT',
+      'ADMIN_CANCEL_DONE','ADMIN_CANCEL_REJECT'
     ];
     if(structured.some(word=>tokens.has(word)))return true;
     return [
       '처리완료','취소완료','반품완료','교환완료','답변완료',
-      '철회','거부','종결','완료처리'
+      '철회','거부','종결','완료처리','요청철회','반품철회','교환철회'
     ].some(word=>raw.includes(word));
   }
   function included(item,integrations){
@@ -169,9 +196,44 @@
       };
     });
   }
+  function workUnitKey(item){
+    const source=normalized(market(item)||item?.source);
+    if(source==='쿠팡'||normalized(item?.source)==='coupang'){
+      return `coupang|${normalized(item?.shipmentBoxId||orderNo(item))}`;
+    }
+    if(source==='스마트스토어'||normalized(item?.source)==='smartstore'){
+      return `smartstore|${normalized(item?.productOrderId||lineKey(item))}`;
+    }
+    if(source==='11번가'||normalized(item?.source)==='elevenst'){
+      return `elevenst|${normalized(orderNo(item))}|${normalized(item?.orderProductSequence||item?.ordPrdSeq||'item')}`;
+    }
+    if(source==='롯데온'||normalized(item?.source)==='lotteon'){
+      return `lotteon|${normalized(item?.orderItemId||item?.orderProductSequence||lineKey(item))}`;
+    }
+    return lineKey(item);
+  }
+  function pendingOrderUnits(items,integrations){
+    const groups=new Map();
+    for(const line of latestOrderLines(items,integrations)){
+      const key=workUnitKey(line);
+      const current=groups.get(key);
+      if(!current){
+        groups.set(key,{...line,status:status(line),workUnitKey:key,lines:[line]});
+        continue;
+      }
+      current.lines.push(line);
+      const nextRank=statusRank(status(line));
+      const currentRank=statusRank(status(current));
+      if(nextRank>currentRank||(nextRank===currentRank&&timestamp(line)>timestamp(current))){
+        groups.set(key,{...line,status:status(line),workUnitKey:key,lines:current.lines});
+      }
+    }
+    return [...groups.values()].filter(unit=>
+      unit.activeState!==false&&PENDING_ORDER_STATUSES.has(status(unit))
+    );
+  }
   function pendingOrders(items,integrations){
-    return groupOrders(latestOrderLines(items,integrations))
-      .filter(group=>group.activeState!==false&&PENDING_ORDER_STATUSES.has(status(group)));
+    return pendingOrderUnits(items,integrations);
   }
   function openClaims(items,integrations){
     return latestClaims(items,integrations).filter(item=>!terminalClaim(item));
@@ -201,7 +263,7 @@
 
   root.OrderStateEngine={
     status,eventType,terminalClaim,latestOrderLines,latestClaims,
-    pendingOrders,openClaims,pendingItems,counts,salesGroups,groupOrders,
+    pendingOrders,pendingOrderUnits,openClaims,pendingItems,counts,salesGroups,groupOrders,workUnitKey,
     orderKey,lineKey,claimKey,timestamp,market,included
   };
 })(typeof window!=='undefined'?window:globalThis);

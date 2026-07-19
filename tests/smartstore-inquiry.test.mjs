@@ -63,3 +63,22 @@ assert.equal(typoCompatible.pgae,'2');
 assert.equal(H.inquiryDateOnly(new Date('2026-07-18T16:00:00Z')),'2026-07-19');
 
 console.log('smartstore inquiry tests passed');
+
+const confirmedStatus=H.orderStatus({productOrderStatus:'PAYED',placeOrderStatus:'OK',placeOrderDate:'2026-07-19T10:00:00+09:00'});
+assert.deepEqual(confirmedStatus,['shipping_wait','발송대기']);
+const unconfirmedStatus=H.orderStatus({productOrderStatus:'PAYED',placeOrderStatus:'NOT_YET'});
+assert.deepEqual(unconfirmedStatus,['new','신규주문']);
+
+const currentClaimDocs=H.normalizeDetail({
+  order:{orderId:'N-CLAIM',paymentDate:'2026-07-19T01:00:00+09:00'},
+  productOrder:{
+    productOrderId:'P-CLAIM',productOrderStatus:'PAYED',placeOrderStatus:'OK',
+    productName:'상품',quantity:1,totalPaymentAmount:10000
+  },
+  currentClaim:{
+    return:{claimId:'R-CURRENT',claimStatus:'RETURN_REJECT',claimRequestDate:'2026-07-19T02:00:00+09:00'}
+  },
+  return:{claimId:'R-LEGACY',claimStatus:'RETURN_REQUEST'}
+});
+assert.equal(currentClaimDocs.filter(item=>item.eventType==='return').length,1,'currentClaim must prevent deprecated duplicate claims');
+assert.equal(currentClaimDocs.find(item=>item.eventType==='return').activeState,false,'RETURN_REJECT must be terminal');

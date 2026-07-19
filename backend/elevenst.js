@@ -457,63 +457,191 @@ export async function checkElevenstConfiguration(db, config) {
 }
 
 
-function mapElevenOrderStatus(row={}){
-  const value=first(row,['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']).toUpperCase();
-  if(value.includes('PURCHASE_CONFIRMED')||value.includes('PURCHASE_DECIDED')||value.includes('구매확정')) return {status:'purchase_confirmed',statusLabel:'구매확정'};
-  if(value.includes('DELIVERED')||value.includes('배송완료')) return {status:'delivered',statusLabel:'배송완료'};
-  if(value.includes('DELIVERING')||value.includes('배송중')||value.includes('발송처리')) return {status:'delivering',statusLabel:'배송중'};
-  if(value.includes('PACKAGING')||value.includes('발주')||value.includes('배송준비')||value.includes('발송대기')||value.includes('ORDER_CONFIRM')) return {status:'shipping_wait',statusLabel:'발송대기'};
-  if(value.includes('CANCEL')||value.includes('취소')) return {status:'cancelled',statusLabel:'취소완료'};
-  return {status:'new',statusLabel:'신규주문'};
+function statusText(row={}){
+  return [
+    first(row,['ordPrdStat','ordStat','orderStatus','status']),
+    first(row,['ordPrdStatNm','ordStatNm','orderStatusName','statusName']),
+    first(row,['dlvStat','deliveryStatus','deliveryState','procStat']),
+    first(row,['dlvStatNm','deliveryStatusName','deliveryStateName','procStatNm'])
+  ].filter(Boolean).join(' ').toUpperCase();
+}
+
+function mapElevenOrderStatus(row={},previous={}){
+  const value=statusText(row);
+  const invoice=first(row,[
+    'invoiceNo','trackingNumber','dlvNo','waybillNo','송장번호'
+  ]);
+
+  if(value.includes('PURCHASE_CONFIRMED')||value.includes('PURCHASE_DECIDED')||value.includes('구매확정')){
+    return {status:'purchase_confirmed',statusLabel:'구매확정',sourceStatus:value||'PURCHASE_CONFIRMED'};
+  }
+  if(value.includes('DELIVERED')||value.includes('FINAL_DELIVERY')||value.includes('배송완료')){
+    return {status:'delivered',statusLabel:'배송완료',sourceStatus:value||'DELIVERED'};
+  }
+  if(
+    value.includes('DELIVERING')||value.includes('DEPARTURE')||
+    value.includes('SHIPPED')||value.includes('배송중')||
+    value.includes('발송처리')||invoice
+  ){
+    return {status:'delivering',statusLabel:'배송중',sourceStatus:value||'INVOICE_REGISTERED'};
+  }
+  if(value.includes('CANCEL')||value.includes('취소')){
+    return {status:'cancelled',statusLabel:'취소완료',sourceStatus:value||'CANCELLED'};
+  }
+  if(
+    value.includes('PACKAGING')||value.includes('ORDER_CONFIRM')||
+    value.includes('PREPARE')||value.includes('READY')||
+    value.includes('발주')||value.includes('배송준비')||
+    value.includes('발송대기')||value==='COMPLETE'||
+    value.includes('ORDER_COMPLETE')
+  ){
+    return {status:'shipping_wait',statusLabel:'발송대기',sourceStatus:value||'ORDER_CONFIRMED'};
+  }
+  if(
+    value.includes('PAYMENT')||value.includes('PAYED')||
+    value.includes('ACCEPT')||value.includes('NEW')||
+    value.includes('결제완료')
+  ){
+    return {status:'new',statusLabel:'신규주문',sourceStatus:value||'PAYMENT_COMPLETE'};
+  }
+
+  // orderlistalladdr is a post-order-confirmation status endpoint. If it returns
+  // the order but omits a textual status, the order is confirmed, not new.
+  return {
+    status:'shipping_wait',
+    statusLabel:'발송대기',
+    sourceStatus:value||'ORDER_CONFIRMED',
+    inferred:true,
+    previousStatus:String(previous?.status||'')
+  };
 }
 
 function mapElevenClaim(row={}){
-  const value=[first(row,['claimType','claimNm','claimKind']),first(row,['claimStatus','claimStatusNm','claimProcStatus'])].filter(Boolean).join(' ').toUpperCase();
+  const value=[
+    first(row,['claimType','claimNm','claimKind']),
+    first(row,['claimStatus','claimStatusNm','claimProcStatus'])
+  ].filter(Boolean).join(' ').toUpperCase();
   let eventType='';
   if(value.includes('EXCHANGE')||value.includes('교환')) eventType='exchange';
   else if(value.includes('RETURN')||value.includes('반품')) eventType='return';
   else if(value.includes('CANCEL')||value.includes('취소')) eventType='cancel';
   if(!eventType) return null;
-  return {eventType,sourceStatus:value,status:`${eventType}_request`,statusLabel:eventType==='cancel'?'주문취소':eventType==='return'?'반품요청':'교환요청'};
+  return {
+    eventType,sourceStatus:value,status:`${eventType}_request`,
+    statusLabel:eventType==='cancel'?'주문취소':eventType==='return'?'반품요청':'교환요청'
+  };
 }
 
-function collectRows(node,depth=0){
-  if(!node||depth>10) return [];
-  if(Array.isArray(node)) return node.flatMap(value=>collectRows(value,depth+1));
+function ownScalarFields(node){
+  const fields={};
+  if(!node||typeof node!=='object'||Array.isArray(node)) return fields;
+  for(const [key,value] of Object.entries(node)){
+    if(value==null||typeof value==='string'||typeof value==='number'||typeof value==='boolean'){
+      fields[key]=value;
+    }else if(typeof value==='object'&&!Array.isArray(value)&&value['#text']!=null){
+      fields[key]=value;
+    }
+  }
+  return fields;
+}
+
+function collectRows(node,depth=0,inherited={}){
+  if(!node||depth>12) return [];
+  if(Array.isArray(node)){
+    return node.flatMap(value=>collectRows(value,depth+1,inherited));
+  }
   if(typeof node!=='object') return [];
-  const ordNo=first(node,['ordNo','orderNo']);
-  if(ordNo) return [{...node,ordNo,ordPrdSeq:first(node,['ordPrdSeq','orderProductSequence','prdSeq'])}];
-  return Object.values(node).flatMap(value=>collectRows(value,depth+1));
+
+  const context={...inherited,...ownScalarFields(node)};
+  const childRows=[];
+  for(const value of Object.values(node)){
+    if(value&&typeof value==='object'){
+      childRows.push(...collectRows(value,depth+1,context));
+    }
+  }
+  if(childRows.length) return childRows;
+
+  const ordNo=first(context,['ordNo','orderNo']);
+  if(!ordNo) return [];
+  const ordPrdSeq=first(context,['ordPrdSeq','orderProductSequence','prdSeq']);
+  const recordSignal=Boolean(
+    ordPrdSeq||statusText(context)||
+    first(context,['invoiceNo','trackingNumber','dlvNo','waybillNo'])||
+    first(context,['claimType','claimNm','claimKind','claimStatus','claimStatusNm','claimProcStatus'])
+  );
+  if(!recordSignal) return [];
+  return [{...context,ordNo,ordPrdSeq}];
+}
+
+async function fetchStatusRows(config,batch){
+  const requested=new Set(batch.map(String));
+  const parsed=await requestXml(
+    config,
+    `/rest/claimservice/orderlistalladdr/${batch.map(encodeURIComponent).join(',')}`
+  );
+  let rows=collectRows(parsed).filter(row=>requested.has(first(row,['ordNo','orderNo'])));
+
+  // Some 11st gateways accept only one order number on this route.
+  if(batch.length>1&&rows.length===0){
+    rows=[];
+    for(const orderNo of batch){
+      const single=await requestXml(
+        config,
+        `/rest/claimservice/orderlistalladdr/${encodeURIComponent(orderNo)}`
+      );
+      rows.push(...collectRows(single).filter(row=>first(row,['ordNo','orderNo'])===String(orderNo)));
+      await sleep(350);
+    }
+  }
+
+  const unique=new Map();
+  for(const row of rows){
+    const key=[
+      first(row,['ordNo','orderNo']),
+      first(row,['ordPrdSeq','orderProductSequence','prdSeq']),
+      statusText(row),
+      first(row,['invoiceNo','trackingNumber','dlvNo'])
+    ].join('|');
+    unique.set(key,row);
+  }
+  return [...unique.values()];
 }
 
 export async function syncElevenstStatuses(db,config){
   const cached=await getCachedDocuments(db,{source:'elevenst',activeOnly:true});
   const existing=cached.documents;
   const normalExisting=existing.filter(item=>String(item.eventType||'order')==='order');
-  const orderNos=[...new Set(normalExisting.map(item=>String(item.orderNo||'').trim()).filter(Boolean))];
-  let checked=0,failed=0;
+  // Open claims may belong to an order that has already left the normal shipping
+  // workflow, so include every active document's order number in status refresh.
+  const orderNos=[...new Set(existing.map(item=>String(item.orderNo||'').trim()).filter(Boolean))];
+  let checked=0,failed=0,recognizedRows=0;
   const documents=[];
 
-  for(let index=0;index<orderNos.length;index+=20){
-    const batch=orderNos.slice(index,index+20);
+  for(let index=0;index<orderNos.length;index+=10){
+    const batch=orderNos.slice(index,index+10);
     try{
-      const parsed=await requestXml(config,`/rest/claimservice/orderlistalladdr/${batch.map(encodeURIComponent).join(',')}`);
-      for(const row of collectRows(parsed)){
+      const rows=await fetchStatusRows(config,batch);
+      recognizedRows+=rows.length;
+      for(const row of rows){
         const ordNo=first(row,['ordNo','orderNo']);
         const ordPrdSeq=first(row,['ordPrdSeq','orderProductSequence','prdSeq']);
-        const matches=normalExisting.filter(item=>String(item.orderNo||'')===ordNo&&(!ordPrdSeq||String(item.orderProductSequence||'')===ordPrdSeq));
+        const matches=normalExisting.filter(item=>
+          String(item.orderNo||'')===ordNo&&
+          (!ordPrdSeq||String(item.orderProductSequence||'')===ordPrdSeq)
+        );
         for(const previous of matches){
           checked+=1;
-          const mapped=mapElevenOrderStatus(row);
+          const mapped=mapElevenOrderStatus(row,previous);
           const lineId=String(ordPrdSeq||previous.orderProductSequence||previous.productNo||'item');
-          const sourceStatus=first(row,['ordPrdStat','ordStat','orderStatus','status','ordPrdStatNm','ordStatNm']);
           documents.push({
             ...previous,
             id:previous.id,eventType:'order',
             ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:'order'}),
-            status:mapped.status,statusLabel:mapped.statusLabel,sourceStatus,activeState:true,
-            invoiceNumber:first(row,['invoiceNo','trackingNumber','dlvNo'])||previous.invoiceNumber||'',
+            status:mapped.status,statusLabel:mapped.statusLabel,
+            sourceStatus:mapped.sourceStatus,activeState:true,
+            invoiceNumber:first(row,['invoiceNo','trackingNumber','dlvNo','waybillNo'])||previous.invoiceNumber||'',
             deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
+            statusInferred:Boolean(mapped.inferred),
             sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
           });
 
@@ -525,14 +653,18 @@ export async function syncElevenstStatuses(db,config){
               id:`elevenst-${claim.eventType}-${claimId}`,
               eventType:claim.eventType,
               ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:claim.eventType,claimId}),
-              claimId,status:claim.status,statusLabel:claim.statusLabel,sourceStatus:claim.sourceStatus,claimStatus:claim.sourceStatus,
+              claimId,status:claim.status,statusLabel:claim.statusLabel,
+              sourceStatus:claim.sourceStatus,claimStatus:claim.sourceStatus,
               reason:first(row,['claimReason','claimRsn','reason','reasonText','ordCnDtsRsn','ordCnDtsRsnNm','cancelReason','returnReason','exchangeReason']),
               reasonDetail:first(row,['claimReasonDetail','reasonDetail','reasonEtc','ordCnDtsRsnDetail','ordCnDtsRsnDtl']),
               claimRequestedAt:first(row,['claimDate','claimDt','requestDate'])||new Date().toISOString(),
               sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
             };
             claimDocument.activeState=!isClaimTerminal(claimDocument);
-            if(!claimDocument.activeState){claimDocument.status=claim.eventType==='cancel'?'cancelled':claim.eventType==='return'?'returned':'exchanged';claimDocument.statusLabel='처리완료';}
+            if(!claimDocument.activeState){
+              claimDocument.status=claim.eventType==='cancel'?'cancelled':claim.eventType==='return'?'returned':'exchanged';
+              claimDocument.statusLabel='처리완료';
+            }
             documents.push(claimDocument);
           }
         }
@@ -544,35 +676,52 @@ export async function syncElevenstStatuses(db,config){
     await sleep(1200);
   }
 
-  const saved=await upsertDocuments(db,documents);
-  const claimReconciliation={};
-  const claimQuota={cloudReads:0,cloudWrites:0};
+  const unique=[...new Map(documents.map(item=>[item.id,item])).values()];
+  const saved=await upsertDocuments(db,unique);
+  const reconciliation={};
+  const reconciliationQuota={cloudReads:0,cloudWrites:0};
+  const responseComplete=failed===0&&(orderNos.length===0||recognizedRows>0);
 
-  if(failed===0){
+  if(responseComplete){
+    reconciliation.order=await reconcileOpenDocuments(db,{
+      source:'elevenst',eventType:'order',
+      currentIds:unique
+        .filter(item=>item.eventType==='order'&&['new','shipping_wait'].includes(item.status))
+        .map(item=>item.id),
+      complete:true,
+      reason:'11번가 현재 신규/발송대기 목록에서 제외됨'
+    });
+    reconciliationQuota.cloudReads+=Number(reconciliation.order.quota?.cloudReads||0);
+    reconciliationQuota.cloudWrites+=Number(reconciliation.order.quota?.cloudWrites||0);
+
     for(const eventType of ['cancel','return','exchange']){
-      claimReconciliation[eventType]=await reconcileOpenDocuments(db,{
-        source:'elevenst',
-        eventType,
-        currentIds:documents
+      reconciliation[eventType]=await reconcileOpenDocuments(db,{
+        source:'elevenst',eventType,
+        currentIds:unique
           .filter(item=>item.eventType===eventType&&item.activeState!==false)
           .map(item=>item.id),
         complete:true,
         reason:'11번가 현재 미처리 클레임 목록에서 제외됨'
       });
-      claimQuota.cloudReads+=Number(claimReconciliation[eventType].quota?.cloudReads||0);
-      claimQuota.cloudWrites+=Number(claimReconciliation[eventType].quota?.cloudWrites||0);
+      reconciliationQuota.cloudReads+=Number(reconciliation[eventType].quota?.cloudReads||0);
+      reconciliationQuota.cloudWrites+=Number(reconciliation[eventType].quota?.cloudWrites||0);
     }
   }
 
   return {
-    checked,changed:saved.statusChanged,failed,
+    checked,changed:saved.statusChanged,failed,recognizedRows,
+    deactivatedOrders:reconciliation.order?.deactivated||0,
     changedOrders:saved.changedDocuments,
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
     quota:{
-      cloudReads:Number(saved.quota?.cloudReads||0)+claimQuota.cloudReads,
-      cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,
+      cloudReads:Number(saved.quota?.cloudReads||0)+reconciliationQuota.cloudReads,
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+reconciliationQuota.cloudWrites,
       cacheHits:Number(saved.quota?.cacheHits||0)
     },
-    claimReconciliation
+    reconciliation
   };
 }
+
+export const elevenstTestHelpers={
+  mapElevenOrderStatus,collectRows,statusText
+};

@@ -61,3 +61,37 @@ assert.equal(E.counts(multiLineClaim,integrations).return,1);
 console.log('state-engine tests passed');
 assert.equal(E.terminalClaim({eventType:'cancel',sourceStatus:'CANCEL_DONE'}),true);
 assert.equal(E.terminalClaim({eventType:'return',sourceStatus:'RETURN_REQUEST'}),false);
+
+// Pending workflow counters use each market's operational unit, while sales keep orderNo grouping.
+const coupangBoxes=[
+  {source:'coupang',market:'쿠팡',orderNo:'C100',shipmentBoxId:'B1',vendorItemId:'I1',lineKey:'coupang|C100|I1',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:00:00+09:00'},
+  {source:'coupang',market:'쿠팡',orderNo:'C100',shipmentBoxId:'B2',vendorItemId:'I2',lineKey:'coupang|C100|I2',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:00:01+09:00'}
+];
+assert.equal(E.pendingOrders(coupangBoxes,integrations).length,2,'two shipment boxes must be two dispatch tasks');
+assert.equal(E.salesGroups(coupangBoxes,integrations).length,1,'the same order number must remain one sales order');
+
+// Naver PAYED becomes shipping-wait after seller confirmation.
+const naverConfirmed=[{
+  source:'smartstore',market:'스마트스토어',orderNo:'N200',productOrderId:'P200',
+  lineKey:'smartstore|N200|P200',eventType:'order',status:'new',sourceStatus:'PAYED',
+  placeOrderStatus:'OK',placeOrderDate:'2026-07-19T03:10:00+09:00',activeState:true
+}];
+assert.equal(E.counts(naverConfirmed,integrations).shipping_wait,1);
+assert.equal(E.counts(naverConfirmed,integrations).new,0);
+
+// Rejected/withdrawn claims must not remain in unresolved counters.
+assert.equal(E.terminalClaim({eventType:'return',sourceStatus:'RETURN_REJECT'}),true);
+assert.equal(E.terminalClaim({eventType:'exchange',sourceStatus:'EXCHANGE_REJECT'}),true);
+
+// Regression fixture for the 2026-07-19 connected-market comparison.
+const regression=[];
+for(let i=0;i<11;i++) regression.push({source:'coupang',market:'쿠팡',orderNo:`CN${i}`,shipmentBoxId:`CBN${i}`,vendorItemId:`CNI${i}`,lineKey:`coupang|CN${i}|CNI${i}`,eventType:'order',status:'new',sourceStatus:'ACCEPT',activeState:true,sourceUpdatedAt:`2026-07-19T04:${String(i).padStart(2,'0')}:00+09:00`});
+for(let i=0;i<32;i++) regression.push({source:'coupang',market:'쿠팡',orderNo:`CW${Math.floor(i/2)}`,shipmentBoxId:`CBW${i}`,vendorItemId:`CWI${i}`,lineKey:`coupang|CW${Math.floor(i/2)}|CWI${i}`,eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:`2026-07-19T05:${String(i%60).padStart(2,'0')}:00+09:00`});
+for(let i=0;i<2;i++) regression.push({source:'smartstore',market:'스마트스토어',orderNo:`NN${i}`,productOrderId:`NPN${i}`,lineKey:`smartstore|NN${i}|NPN${i}`,eventType:'order',status:'new',sourceStatus:'PAYED',placeOrderStatus:'NOT_YET',activeState:true});
+for(let i=0;i<10;i++) regression.push({source:'smartstore',market:'스마트스토어',orderNo:`NW${i}`,productOrderId:`NPW${i}`,lineKey:`smartstore|NW${i}|NPW${i}`,eventType:'order',status:'new',sourceStatus:'PAYED',placeOrderStatus:'OK',placeOrderDate:'2026-07-19T05:30:00+09:00',activeState:true});
+regression.push({source:'elevenst',market:'11번가',orderNo:'E1',orderProductSequence:'1',lineKey:'elevenst|E1|1',eventType:'order',status:'shipping_wait',sourceStatus:'ORDER_CONFIRMED',activeState:true});
+regression.push({source:'coupang',market:'쿠팡',eventType:'return',claimId:'CR1',claimKey:'coupang|return|CR1',sourceStatus:'UC',activeState:true});
+regression.push({source:'smartstore',market:'스마트스토어',eventType:'return',claimId:'NR1',claimKey:'smartstore|return|NR1',sourceStatus:'RETURN_REQUEST',activeState:true});
+regression.push({source:'smartstore',market:'스마트스토어',eventType:'exchange',claimId:'NE1',claimKey:'smartstore|exchange|NE1',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
+for(let i=0;i<3;i++) regression.push({source:i===0?'coupang':'smartstore',market:i===0?'쿠팡':'스마트스토어',eventType:'inquiry',claimId:`Q${i}`,claimKey:`${i===0?'coupang':'smartstore'}|inquiry|Q${i}`,sourceStatus:'NOANSWER',activeState:true});
+assert.equal(JSON.stringify(E.counts(regression,integrations)),JSON.stringify({new:13,shipping_wait:43,cancel:0,return:2,exchange:1,inquiry:3}));

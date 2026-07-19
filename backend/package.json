@@ -1,11 +1,11 @@
 {
   "name": "alldaypick-order-alert",
-  "version": "7.5.2",
+  "version": "7.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "agent": "node local-agent.js",
-    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs"
+    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/elevenst-status.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

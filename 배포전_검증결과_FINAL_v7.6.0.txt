@@ -1,0 +1,16 @@
+올데이픽 주문알림 FINAL v7.6.0 배포 전 검증
+
+통과 항목
+- 전체 JavaScript 문법 검사
+- 기존 상태 이동 테스트
+- 쿠팡 주문번호 1개 / shipmentBox 2개: 매출 1건, 발송 작업 2건 테스트
+- 스마트스토어 PAYED + placeOrderStatus OK: 신규 0, 발송대기 1 테스트
+- 스마트스토어 currentClaim 중복 방지 테스트
+- RETURN_REJECT / EXCHANGE_REJECT / CANCEL_REJECT 완료 제거 테스트
+- 11번가 중첩 XML 주문상태·송장 추출 테스트
+- 2026-07-19 비교 기준 회귀 테스트: 신규 13 / 발송대기 43 / 반품 2 / 교환 1 / 문의 3
+- Firestore 무료한도 캐시 테스트
+- 문의 API 및 쿠팡 조회기간 계약 테스트
+- ZIP 비밀설정 제외 확인
+
+실계정 API 결과는 배포 후 첫 정밀 동기화에서 확인합니다.

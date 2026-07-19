@@ -1,0 +1,8 @@
+1. 실행 중인 검은 수집기 창을 닫습니다.
+2. 이 압축 안의 alldaypick-order-alert 폴더를 열어 내용 전체를 복사합니다.
+3. 문서\GitHub\alldaypick-order-alert 폴더 안에 붙여넣고 모두 덮어씁니다.
+4. 기존 backend\.env.local과 backend\firebase-service-account.json은 그대로 남습니다.
+5. GitHub Desktop에서 Commit to main 후 Push origin을 누릅니다.
+6. 웹 상단 FINAL v7.6.0 표시를 확인합니다.
+7. 최종 폴더의 START_AGENT.cmd를 실행하고 검은 창을 계속 켜둡니다.
+8. 첫 시작 동기화가 끝난 뒤 웹을 새로고침하여 숫자를 확인합니다.

@@ -1,10 +1,12 @@
-올데이픽 주문알림 FINAL v7.5.2
+올데이픽 주문알림 FINAL v7.6.0 바로 실행
 
-1. 이 ZIP을 "문서\GitHub" 폴더에 압축 해제합니다.
-2. 최종 위치는 "문서\GitHub\alldaypick-order-alert"입니다.
-3. 폴더 안 START_AGENT.cmd를 실행합니다.
-4. 검은 창은 주문 수집 중 계속 켜둡니다.
-5. GitHub Desktop에서 기존 저장소가 끊겨 있으면 Locate를 누르고 이 폴더를 선택합니다.
-6. GitHub Desktop에는 .env.local과 Firebase 인증 JSON이 나타나면 안 됩니다.
+1. 기존 검은 수집기 창을 닫습니다.
+2. 프로젝트 최상위 폴더의 STOP_AGENT.cmd를 한 번 실행합니다.
+3. 같은 폴더의 START_AGENT.cmd를 실행합니다.
+4. 검은 창은 주문 수집을 위해 계속 켜둡니다.
+5. 시작 로그에 @7.6.0과 네 마켓 동기화 결과가 표시되는지 확인합니다.
 
-주의: backend\.env.local 및 backend\firebase-service-account.json은 비밀 설정 파일입니다.
+중요
+- G마켓과 옥션은 아직 미연결이며 집계에서 제외됩니다.
+- backend\.env.local과 backend\firebase-service-account.json은 삭제하면 안 됩니다.
+- 지금 수집 버튼은 여러 번 연속으로 누르지 마세요.

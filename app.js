@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.5.2';
+const APP_VERSION='FINAL v7.6.0';
 const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -54,14 +54,6 @@ function statusKey(o){
   const eventType=String(o?.eventType||'order').toLowerCase();
 
   if(
-    status==='purchase_confirmed' ||
-    source.includes('PURCHASE_DECIDED') ||
-    source.includes('PURCHASE_CONFIRM')
-  ){
-    return 'delivered';
-  }
-
-  if(
     eventType==='cancel' ||
     status.includes('cancel') ||
     source.includes('CANCEL') ||
@@ -92,43 +84,65 @@ function statusKey(o){
     return 'inquiry';
   }
 
+  // The current source state must win over a stale normalized status that may
+  // still be stored on an older document.
   if(
-    source==='ACCEPT' ||
-    status==='new' ||
-    source.includes('PAYED')
+    status==='purchase_confirmed' ||
+    source.includes('PURCHASE_DECIDED') ||
+    source.includes('PURCHASE_CONFIRM')
   ){
-    return 'new';
+    return 'delivered';
   }
 
   if(
-    source==='INSTRUCT' ||
-    status==='shipping_wait' ||
-    source.includes('PREPARE') ||
-    source.includes('READY')
+    source.includes('FINAL_DELIVERY') ||
+    source.includes('DELIVERED') ||
+    status==='delivered'
   ){
-    return 'shipping_wait';
+    return 'delivered';
   }
 
-  if(source==='DEPARTURE'||status==='departure'){
-    return hasShipmentEvidence(o)
+  if(
+    source.includes('DELIVERING') ||
+    source.includes('SHIPPED') ||
+    source.includes('DISPATCHED') ||
+    source.includes('DEPARTURE') ||
+    status==='delivering' ||
+    status==='departure'
+  ){
+    return hasShipmentEvidence(o)||!source.includes('DEPARTURE')
       ?'delivering'
       :'shipping_wait';
   }
 
+  const placeOrderStatus=String(o?.placeOrderStatus||'').toUpperCase();
+  const hasPlaceOrder=Boolean(
+    o?.placeOrderDate||
+    placeOrderStatus==='OK'||
+    source.includes('PLACE_ORDER')||
+    source.includes('ORDER_CONFIRM')
+  );
+
   if(
-    source==='DELIVERING' ||
-    status==='delivering' ||
-    source.includes('SHIPPED')
+    hasPlaceOrder||
+    source.includes('INSTRUCT') ||
+    status==='shipping_wait' ||
+    source.includes('PREPARE') ||
+    source.includes('READY') ||
+    source.includes('PACKAGING') ||
+    source.includes('발송대기') ||
+    source.includes('발주확인')
   ){
-    return 'delivering';
+    return 'shipping_wait';
   }
 
   if(
-    source==='FINAL_DELIVERY' ||
-    status==='delivered' ||
-    source.includes('DELIVERED')
+    source.includes('ACCEPT') ||
+    source.includes('PAYED') ||
+    source.includes('PAYMENT_WAITING') ||
+    status==='new'
   ){
-    return 'delivered';
+    return 'new';
   }
 
   return status||'';
@@ -162,6 +176,7 @@ function isClaimCompleted(o){
     'COMPLETE','COMPLETED','CLOSED','DONE',
     'FINISH','FINISHED','WITHDRAW','REJECTED',
     'CANCEL_COMPLETE','RETURN_COMPLETE','EXCHANGE_COMPLETE',
+    'CANCEL_REJECT','RETURN_REJECT','EXCHANGE_REJECT',
     '처리완료','취소완료','반품완료','교환완료',
     '답변완료','철회','종결'
   ].some(word=>text.includes(word));
@@ -440,7 +455,7 @@ function isCompletedClaim(order){
     'CANCELLED_COMPLETE',
     '처리완료','취소완료','반품완료',
     '교환완료','답변완료',
-    '철회','거부','종결'
+    '철회','거부','종결','요청철회','반품철회','교환철회'
   ];
 
   return completedWords.some(word=>
@@ -2101,10 +2116,12 @@ async function requestCollect(){
 function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v740';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v740';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v760';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v760';
 
 for(const legacyKey of [
+  'alldaypick-orders-cache-v740',
+  'alldaypick-integrations-cache-v740',
   'alldaypick-orders-cache-v72',
   'alldaypick-integrations-cache-v71'
 ]){
@@ -2665,7 +2682,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.5.2-api-range-fix',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.0-state-flow-fix',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

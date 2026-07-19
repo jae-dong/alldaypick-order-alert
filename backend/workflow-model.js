@@ -59,7 +59,9 @@ export function isClaimTerminal(value){
     'EXCHANGE_DONE','EXCHANGE_COMPLETE','EXCHANGE_COMPLETED',
     'CLAIM_DONE','CLAIM_COMPLETE','CLAIM_COMPLETED',
     'ANSWER_DONE','ANSWER_COMPLETE','ANSWER_COMPLETED',
-    'REQUEST_CANCELLED','REQUEST_CANCELED'
+    'REQUEST_CANCELLED','REQUEST_CANCELED',
+    'CANCEL_REJECT','RETURN_REJECT','EXCHANGE_REJECT',
+    'ADMIN_CANCEL_DONE','ADMIN_CANCEL_REJECT'
   ];
 
   if(structuredTerminal.some(token=>tokens.includes(token))){
@@ -68,7 +70,7 @@ export function isClaimTerminal(value){
 
   return [
     '처리완료','취소완료','반품완료','교환완료','답변완료',
-    '철회','거부','종결','완료처리'
+    '철회','거부','종결','완료처리','요청철회','반품철회','교환철회'
   ].some(token=>text.includes(token));
 }
 

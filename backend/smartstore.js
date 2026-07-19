@@ -59,14 +59,24 @@ function rows(body){
 }
 function detailRows(body){return rows(body);}
 function upper(...values){return values.filter(Boolean).join(' ').toUpperCase();}
-function orderStatus(productOrder={}){
-  const raw=upper(productOrder.productOrderStatus,productOrder.status);
-  if(raw.includes('PURCHASE_DECIDED')) return ['purchase_confirmed','구매확정'];
-  if(raw.includes('DELIVERED')) return ['delivered','배송완료'];
-  if(raw.includes('DELIVERING')||raw.includes('DISPATCHED')) return ['delivering','배송중'];
-  if(raw.includes('PLACE_ORDER')||raw.includes('DISPATCH_WAITING')||raw.includes('PRODUCT_PREPARE')) return ['shipping_wait','발송대기'];
-  if(raw.includes('CANCEL')||raw.includes('RETURN')||raw.includes('EXCHANGE')) return ['cancelled','처리완료'];
-  if(raw.includes('PAYED')||raw.includes('PAYMENT_WAITING')||raw.includes('NEW')) return ['new','신규주문'];
+function orderStatus(productOrder={},row={}){
+  const productStatus=upper(productOrder.productOrderStatus,productOrder.status);
+  const placeOrderStatus=upper(productOrder.placeOrderStatus,row.placeOrderStatus);
+  const lastChangedType=upper(productOrder.lastChangedType,row.lastChangedType);
+  const hasPlaceOrder=Boolean(
+    productOrder.placeOrderDate||row.placeOrderDate||
+    placeOrderStatus.includes('OK')||
+    lastChangedType.includes('PLACE_ORDER')
+  );
+
+  if(productStatus.includes('PURCHASE_DECIDED')) return ['purchase_confirmed','구매확정'];
+  if(productStatus.includes('DELIVERED')) return ['delivered','배송완료'];
+  if(productStatus.includes('DELIVERING')||lastChangedType.includes('DISPATCHED')) return ['delivering','배송중'];
+  if(productStatus.includes('CANCEL')||productStatus.includes('RETURN')||productStatus.includes('EXCHANGE')) return ['cancelled','처리완료'];
+  // Naver keeps productOrderStatus as PAYED after seller confirmation.
+  // placeOrderStatus=OK/placeOrderDate is the authoritative confirmation signal.
+  if(hasPlaceOrder||productStatus.includes('DISPATCH_WAITING')||productStatus.includes('PRODUCT_PREPARE')) return ['shipping_wait','발송대기'];
+  if(productStatus.includes('PAYED')||productStatus.includes('PAYMENT_WAITING')||productStatus.includes('NEW')) return ['new','신규주문'];
   return [String(productOrder.productOrderStatus||productOrder.status||'unknown').toLowerCase(),'주문'];
 }
 function claimTypeOf(productOrder={},claim={}){
@@ -83,7 +93,7 @@ function normalizeDetail(row){
   if(!productOrderId) return [];
 
   const orderNo=String(order.orderId||productOrder.orderId||row.orderId||productOrderId);
-  const [status,statusLabel]=orderStatus(productOrder);
+  const [status,statusLabel]=orderStatus(productOrder,row);
   const product=productOrder.productName||productOrder.productOrderName||productOrder.itemName||'스마트스토어 상품';
   const base={
     source:'smartstore',market:'스마트스토어',orderNo,productOrderId,product,
@@ -98,7 +108,10 @@ function normalizeDetail(row){
     orderDate:order.orderDate||productOrder.orderDate||'',paymentDate:order.paymentDate||productOrder.paymentDate||'',
     invoiceNumber:productOrder.trackingNumber||productOrder.invoiceNumber||'',
     deliveryCompanyName:productOrder.deliveryCompany||productOrder.deliveryMethod||'',
-    sourceUpdatedAt:productOrder.lastChangedDate||productOrder.claimStatusDate||new Date().toISOString(),syncedAt:new Date().toISOString()
+    placeOrderStatus:productOrder.placeOrderStatus||row.placeOrderStatus||'',
+    placeOrderDate:productOrder.placeOrderDate||row.placeOrderDate||'',
+    lastChangedType:productOrder.lastChangedType||row.lastChangedType||'',
+    sourceUpdatedAt:productOrder.lastChangedDate||row.lastChangedDate||productOrder.claimStatusDate||new Date().toISOString(),syncedAt:new Date().toISOString()
   };
 
   const output=[{
@@ -107,7 +120,16 @@ function normalizeDetail(row){
     status,statusLabel,sourceStatus:productOrder.productOrderStatus||productOrder.status||'',activeState:true
   }];
 
-  const claimCandidates=[
+  const currentClaim=row.currentClaim||productOrder.currentClaim||{};
+  const currentCandidates=[
+    {type:'cancel',value:currentClaim.cancel},
+    {type:'return',value:currentClaim.return},
+    {type:'exchange',value:currentClaim.exchange}
+  ].filter(candidate=>candidate.value&&typeof candidate.value==='object');
+
+  // currentClaim is authoritative. Deprecated claim objects are used only when
+  // currentClaim is absent, preventing the same request from being counted twice.
+  const claimCandidates=currentCandidates.length?currentCandidates:[
     {type:'cancel',value:row.cancel||row.cancelInfo||productOrder.cancel},
     {type:'return',value:row.return||row.returnInfo||row.returnClaim||productOrder.return},
     {type:'exchange',value:row.exchange||row.exchangeInfo||productOrder.exchange},
@@ -141,7 +163,11 @@ function normalizeDetail(row){
       claimRequestedAt:claim.requestDate||claim.claimRequestDate||claim.requestedAt||productOrder.claimRequestDate||base.sourceUpdatedAt,
       reason:claim.claimReason||claim.reason||claim.reasonCode||productOrder.claimReason||'',
       reasonDetail:claim.claimDetailedReason||claim.reasonDetail||claim.reasonMemo||'',
-      modifiedAt:claim.lastChangedDate||claim.claimStatusDate||claim.updatedAt||base.sourceUpdatedAt
+      modifiedAt:claim.lastChangedDate||claim.claimStatusDate||claim.updatedAt||base.sourceUpdatedAt,
+      processingStatus:claim.processingStatus||claim.processStatus||'',
+      resultStatus:claim.resultStatus||'',
+      receiptStatus:claim.receiptStatus||'',
+      exchangeStatus:claim.exchangeStatus||''
     };
     claimDocument.activeState=!isClaimTerminal(claimDocument);
     if(!claimDocument.activeState){
@@ -486,7 +512,7 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
 }
 
 export const smartstoreTestHelpers={
-  inquiryDoc,
+  inquiryDoc,orderStatus,normalizeDetail,
   inquiryPageMeta,
   inquiryRanges,
   inquiryIso,
@@ -511,7 +537,9 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   }
 
   if(reconcile){
-    const cached=await getCachedDocuments(db,{source:'smartstore',eventType:'order',activeOnly:true});
+    // Include both open orders and open claims. A return/exchange can remain open
+    // after the normal order has already left the shipping workflow.
+    const cached=await getCachedDocuments(db,{source:'smartstore',activeOnly:true});
     cached.documents.forEach(data=>{
       if(data.productOrderId) idSet.add(String(data.productOrderId));
     });

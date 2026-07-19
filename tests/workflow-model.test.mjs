@@ -25,3 +25,6 @@ assert.equal(isClaimTerminal({sourceStatus:'RETURN_COMPLETE'}),true);
 assert.equal(isClaimTerminal({sourceStatus:'EXCHANGE_COMPLETED'}),true);
 assert.equal(isClaimTerminal({sourceStatus:'CANCEL_REQUEST'}),false);
 assert.equal(isClaimTerminal({sourceStatus:'RETURN_REQUEST'}),false);
+assert.equal(isClaimTerminal({sourceStatus:'RETURN_REJECT'}),true);
+assert.equal(isClaimTerminal({sourceStatus:'EXCHANGE_REJECT'}),true);
+assert.equal(isClaimTerminal({sourceStatus:'CANCEL_REJECT'}),true);

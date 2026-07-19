@@ -1,15 +1,10 @@
-올데이픽 주문알림 FINAL v7.5.0 FREE TIER 사용방법
+올데이픽 주문알림 FINAL v7.6.0 사용방법
 
-1. GitHub Desktop에서 Repository > Show in Explorer를 눌러 실제 연결 폴더를 엽니다.
-2. 새 버전의 내용물만 그 폴더에 덮어씁니다.
-3. backend/.env.local과 .git 폴더는 삭제하지 않습니다.
-4. GitHub Desktop에서 Commit to main > Push origin을 누릅니다.
-5. 웹 화면이 FINAL v7.5.0으로 바뀐 것을 확인합니다.
-6. 기존 검은 수집기 창을 닫고 STOP_AGENT.cmd를 한 번 실행합니다.
-7. 최종 GitHub 연결 폴더의 START_AGENT.cmd를 실행합니다.
-8. 검은 창은 계속 켜둡니다.
-
-무료 한도 운영 주의
-- FAST_POLL_MINUTES=10, POLL_INTERVAL_MINUTES=30을 유지하세요.
-- RUN_LEGACY_MIGRATION=0, ENABLE_DIAGNOSTICS=0을 유지하세요.
-- 휴대폰에서 캐시를 반복 삭제하거나 페이지를 계속 새로고침하지 마세요.
+- PC가 켜져 있는 동안 START_AGENT.cmd 검은 창을 계속 켜둡니다.
+- 자동 주문 수집은 설정된 주기에 실행됩니다.
+- 긴급 확인이 필요할 때만 웹의 지금 수집을 한 번 누릅니다.
+- 신규주문이 확인되면 신규에서 빠지고 발송대기에 표시됩니다.
+- 배송이 시작되면 발송대기에서 빠집니다.
+- 미완료 취소·반품·교환·문의는 처리될 때까지 남습니다.
+- 완료·철회·거부·답변완료 건은 미처리 목록에서 제외됩니다.
+- G마켓과 옥션은 연결 전까지 모든 주문·매출·처리 건수에서 제외됩니다.
