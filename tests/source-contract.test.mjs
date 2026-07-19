@@ -32,7 +32,7 @@ assert.doesNotMatch(elevenst,/collection\('orders'\).*where\('source'.*get\(\)/s
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.5\.0-FREE-TIER'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.5\.1-DIRECT-PATH'/,'Agent diagnostics version must match release');
 
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');

@@ -9,6 +9,7 @@ import {
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import {
@@ -33,7 +34,8 @@ import { syncCoupangInquiries } from './coupang-inquiries.js';
 import { migrateLegacyDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 
-dotenv.config({path:path.resolve('.env.local')});
+const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
 
 const fastPollMinutes=Number(process.env.FAST_POLL_MINUTES||10);
 const fullSyncEvery=Number(process.env.FULL_SYNC_EVERY||4);
@@ -42,12 +44,24 @@ const SLOW=['DEPARTURE','DELIVERING','FINAL_DELIVERY','NONE_TRACKING'];
 
 function serviceAccount(){
   if(process.env.FIREBASE_SERVICE_ACCOUNT_FILE){
-    return JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE,'utf8'));
+    const configured=String(process.env.FIREBASE_SERVICE_ACCOUNT_FILE).trim().replace(/^['"]|['"]$/g,'');
+    const candidates=path.isAbsolute(configured)
+      ? [configured]
+      : [path.resolve(BACKEND_DIR,configured),path.resolve(process.cwd(),configured)];
+    const fallback=path.join(BACKEND_DIR,'firebase-service-account.json');
+    if(!candidates.includes(fallback)) candidates.push(fallback);
+    const found=candidates.find(candidate=>fs.existsSync(candidate));
+    if(!found){
+      throw new Error(`Firebase 인증파일을 찾을 수 없습니다: ${candidates.join(' | ')}`);
+    }
+    return JSON.parse(fs.readFileSync(found,'utf8'));
   }
   if(process.env.FIREBASE_SERVICE_ACCOUNT_JSON){
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   }
-  throw new Error('Firebase 서비스 계정 정보가 없습니다.');
+  const fallback=path.join(BACKEND_DIR,'firebase-service-account.json');
+  if(fs.existsSync(fallback)) return JSON.parse(fs.readFileSync(fallback,'utf8'));
+  throw new Error('Firebase 서비스 계정 정보가 없습니다. backend\firebase-service-account.json을 확인하세요.');
 }
 
 function coupang(){
@@ -68,8 +82,8 @@ const db=admin.firestore();
 
 
 const HEARTBEAT_INTERVAL_MS=5*60*1000;
-const QUOTA_STATE_PATH=path.resolve('.firestore-quota-cooldown.json');
-const SYSTEM_WRITE_CACHE_PATH=path.resolve('.firestore-system-write-cache.json');
+const QUOTA_STATE_PATH=path.join(BACKEND_DIR,'.firestore-quota-cooldown.json');
+const SYSTEM_WRITE_CACHE_PATH=path.join(BACKEND_DIR,'.firestore-system-write-cache.json');
 let quotaBlockedUntil=0;
 let quotaResumeTimer=null;
 let quotaSkipLoggedAt=0;
@@ -336,7 +350,7 @@ const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
 
 
 
-const TELEGRAM_LEDGER_PATH=path.resolve('.telegram-alert-ledger.json');
+const TELEGRAM_LEDGER_PATH=path.join(BACKEND_DIR,'.telegram-alert-ledger.json');
 const AGENT_STARTED_AT=Date.now();
 const TELEGRAM_NEW_EVENT_GRACE_MS=10*60*1000;
 const TELEGRAM_LEDGER_MAX=5000;
@@ -1538,7 +1552,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.5.0-FREE-TIER',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.5.1-DIRECT-PATH',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1558,7 +1572,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.5.0-FREE-TIER',
+    version:'FINAL-7.5.1-DIRECT-PATH',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

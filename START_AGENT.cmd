@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.5.0 FREE TIER
+title ALLDAYPICK ORDER AGENT v7.5.1 FREE TIER
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -26,6 +26,16 @@ if exist ".agent-running.lock" (
   echo.
   echo [ERROR] Another order agent may already be running.
   echo Close the old black window first, or run STOP_AGENT.cmd once.
+  echo.
+  popd
+  pause
+  exit /b 1
+)
+
+if not exist "firebase-service-account.json" (
+  echo.
+  echo [ERROR] backend\firebase-service-account.json is missing.
+  echo Keep the downloaded Firebase JSON in the backend folder with this exact name.
   echo.
   popd
   pause
@@ -65,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.5.0 FREE TIER...
+echo Starting ALLDAYPICK order agent v7.5.1 FREE TIER...
 echo Keep this window open.
 echo.
 call npm run agent

@@ -1,0 +1,10 @@
+올데이픽 주문알림 FINAL v7.5.1
+
+1. 이 ZIP을 "문서\GitHub" 폴더에 압축 해제합니다.
+2. 최종 위치는 "문서\GitHub\alldaypick-order-alert"입니다.
+3. 폴더 안 START_AGENT.cmd를 실행합니다.
+4. 검은 창은 주문 수집 중 계속 켜둡니다.
+5. GitHub Desktop에서 기존 저장소가 끊겨 있으면 Locate를 누르고 이 폴더를 선택합니다.
+6. GitHub Desktop에는 .env.local과 Firebase 인증 JSON이 나타나면 안 됩니다.
+
+주의: backend\.env.local 및 backend\firebase-service-account.json은 비밀 설정 파일입니다.
