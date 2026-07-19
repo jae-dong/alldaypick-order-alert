@@ -1,6 +1,6 @@
-@echo off
+﻿@echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.6.1 FINAL
+title ALLDAYPICK ORDER AGENT v7.6.3 TELEGRAM TIME
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -75,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.6.1 FINAL...
+echo Starting ALLDAYPICK order agent v7.6.3 TELEGRAM TIME...
 echo Keep this window open.
 echo.
 call npm run agent

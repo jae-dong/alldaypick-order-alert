@@ -20,6 +20,13 @@ button{cursor:pointer}
 .actions{display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end}
 .action-stack{display:grid;gap:3px}
 .action-note{font-size:10px;color:var(--muted);max-width:145px}
+.collect-stack{min-width:118px}
+.collect-note{min-height:14px;max-width:165px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.collect-progress{height:4px;border-radius:999px;background:#e5e7eb;overflow:hidden;opacity:.45}
+.collect-progress i{display:block;width:0;height:100%;border-radius:inherit;background:#111827;transition:width .35s ease}
+.collect-progress.active{opacity:1}
+.collect-progress.done i{background:#10b981}
+.collect-progress.error i{background:#ef4444}
 .btn{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:10px 13px;font-weight:900}
 .btn.primary{background:#111827;border-color:#111827;color:#fff}
 .btn.telegram{background:#229ed9;border-color:#229ed9;color:#fff}
@@ -108,6 +115,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   .action-stack{min-width:0}
   .btn{padding:10px 7px;font-size:11px;min-height:42px}
   .action-note{display:none}
+  .collect-stack .collect-note{display:block;font-size:9px;max-width:none;text-align:center}
+  .collect-stack{min-width:0}
+  .collect-progress{height:4px}
   .integration-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
   .integration{min-height:59px;padding:7px}
   .integration strong{font-size:11px;margin-bottom:5px}

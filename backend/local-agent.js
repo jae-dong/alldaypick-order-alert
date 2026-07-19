@@ -33,6 +33,7 @@ import {
 import { syncCoupangInquiries } from './coupang-inquiries.js';
 import { migrateLegacyDocuments,getCachedDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
+import { telegramOrderBody } from './telegram-format.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -422,6 +423,35 @@ let slowIndex=0;
 let smartstoreRunning=false;
 let claimIndex=0;
 const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
+
+function isManualCollectSource(source){
+  return source==='immediate'||source==='reconcile';
+}
+
+async function updateCollectProgress(source,percent,step){
+  if(!isManualCollectSource(source)) return;
+
+  const progressPercent=Math.max(0,Math.min(100,Math.round(Number(percent)||0)));
+  const payload={
+    status:progressPercent>=100?'success':'running',
+    action:source==='reconcile'?'reconcile':'collect',
+    progressPercent,
+    remainingPercent:Math.max(0,100-progressPercent),
+    progressStep:String(step||''),
+    progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt:admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  try{
+    await commandRef.set(payload,{merge:true});
+  }catch(error){
+    if(markQuotaCooldown(error)) throw error;
+    console.warn(
+      '수집 진행률 저장 실패:',
+      error instanceof Error?error.message:String(error)
+    );
+  }
+}
 
 
 
@@ -819,23 +849,6 @@ function telegramStatusIcon(status,eventType){
 
   return icons[status]||'📌';
 }
-
-function telegramOrderBody(order){
-  const lines=[
-    `📦 ${String(order.product||'상품명 없음').replace(/\s+/g,' ').trim()}`,
-    order.option?`⚙️ 옵션: ${order.option}`:'',
-    `🔢 수량: ${Number(order.qty||1)}개`,
-    `💰 금액: ${Number(order.amount||0).toLocaleString('ko-KR')}원`,
-    order.buyer?`👤 구매자: ${order.buyer}`:'',
-    order.orderNo?`🧾 주문번호: ${order.orderNo}`:'',
-    order.reason?`📝 사유: ${order.reason}`:'',
-    order.reasonDetail?`📝 상세: ${order.reasonDetail}`:''
-  ].filter(Boolean);
-
-  return lines.join('\n');
-}
-
-
 
 function telegramAlertType(order){
   const eventType=String(order?.eventType||'order');
@@ -1663,7 +1676,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.6.1',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.6.3',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1683,7 +1696,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.6.1',
+    version:'FINAL-7.6.3',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1853,7 +1866,11 @@ async function run(source){
       await commandRef.set({
         status:'running',
         action:reconcile?'reconcile':'collect',
+        progressPercent:3,
+        remainingPercent:97,
+        progressStep:'수집 준비 완료',
         startedAt:admin.firestore.FieldValue.serverTimestamp(),
+        progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
         updatedAt:admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
     }catch(error){
@@ -1911,22 +1928,28 @@ async function run(source){
       console.error('쿠팡 실패:',message);
     }
 
+    await updateCollectProgress(source,22,'쿠팡 주문 확인 완료');
+
     const smartstoreResult=await syncSmartstoreSafe(source);
     summary.smartstore=smartstoreResult;
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+    await updateCollectProgress(source,42,'스마트스토어 확인 완료');
 
     await new Promise(resolve=>setTimeout(resolve,800));
     const elevenstResult=await syncElevenstSafe(source);
     summary.elevenst=elevenstResult;
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+    await updateCollectProgress(source,57,'11번가 확인 완료');
 
     await new Promise(resolve=>setTimeout(resolve,800));
     const lotteonResult=await syncLotteonSafe(source);
     summary.lotteon=lotteonResult;
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+    await updateCollectProgress(source,70,'롯데온 확인 완료');
 
     await refreshEsmStatus();
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+    await updateCollectProgress(source,78,'취소·반품·교환·문의 확인 중');
 
     try{
       summary.claims=
@@ -1951,12 +1974,18 @@ async function run(source){
       summary.claims=[];
     }
 
+    await updateCollectProgress(source,95,'최종 결과 정리 중');
+
     if(source==='immediate'||reconcile){
       await commandRef.set({
         status:'success',
         action:reconcile?'reconcile':'collect',
+        progressPercent:100,
+        remainingPercent:0,
+        progressStep:'수집 완료',
         result:summary,
         completedAt:admin.firestore.FieldValue.serverTimestamp(),
+        progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
         updatedAt:admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
     }
@@ -1991,8 +2020,10 @@ async function run(source){
     if(source==='immediate'||reconcile){
       await commandRef.set({
         status:'error',
+        progressStep:'오류 발생',
         error:message,
         completedAt:admin.firestore.FieldValue.serverTimestamp(),
+        progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
         updatedAt:admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
     }

@@ -1,4 +1,4 @@
-FINAL v7.6.1 배포 전 검증 결과
+FINAL v7.6.3 배포 전 검증 결과
 
 통과 항목
 - 전체 JavaScript/MJS 문법 검사

@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.6.1-20260719';
+const CACHE='alldaypick-final-v7.6.3-20260719-telegram-order-time';
 const STATIC=[
   './',
   './index.html',

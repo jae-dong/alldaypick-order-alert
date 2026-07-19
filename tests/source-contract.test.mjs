@@ -38,7 +38,7 @@ assert.doesNotMatch(elevenst,/collection\('orders'\).*where\('source'.*get\(\)/s
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.6\.1'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.6\.3'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');

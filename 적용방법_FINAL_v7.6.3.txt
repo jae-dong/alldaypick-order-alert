@@ -1,0 +1,10 @@
+FINAL v7.6.3 적용 방법
+
+1. 현재 검은 수집기 창을 닫습니다.
+2. ZIP 안쪽 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+3. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
+4. GitHub Desktop Summary에 FINAL v7.6.3 텔레그램 주문일시 표시를 입력합니다.
+5. Commit to main, Push origin 순서로 진행합니다.
+6. 웹 상단 FINAL v7.6.3을 확인합니다.
+7. 최종 폴더의 START_AGENT.cmd를 실행합니다.
+8. 새 주문이 발생하면 텔레그램 메시지의 주문일시 줄을 확인합니다.

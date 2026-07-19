@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.6.1';
+const APP_VERSION='FINAL v7.6.3';
 const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -2077,6 +2077,54 @@ function openDetail(id){
   $('detailDialog').showModal();
 }
 
+function clampCollectPercent(value){
+  const number=Number(value);
+  if(!Number.isFinite(number)) return 0;
+  return Math.max(0,Math.min(100,Math.round(number)));
+}
+
+function renderCollectProgress(data={}){
+  const status=String(data.status||'idle');
+  const running=status==='requested'||status==='running';
+  const success=status==='success';
+  const failed=status==='error';
+  const percent=success?100:clampCollectPercent(data.progressPercent);
+  const remaining=Math.max(0,100-percent);
+  const step=String(data.progressStep||'').trim();
+  const button=$('collectNowBtn');
+  const note=$('collectStatus');
+  const track=$('collectProgress');
+  const bar=$('collectProgressBar');
+
+  if(!button||!note||!track||!bar) return;
+
+  track.classList.toggle('active',running);
+  track.classList.toggle('done',success);
+  track.classList.toggle('error',failed);
+  bar.style.width=`${percent}%`;
+  track.setAttribute('aria-valuenow',String(percent));
+  track.setAttribute('aria-label',`주문 수집 진행률 ${percent}%`);
+
+  if(running){
+    button.disabled=true;
+    button.textContent=`수집 ${percent}%`;
+    note.textContent=`${percent}% 완료 · ${remaining}% 남음${step?` · ${step}`:''}`;
+    return;
+  }
+
+  button.disabled=false;
+  button.textContent='지금 수집';
+
+  if(success){
+    note.textContent='수집 완료 · 100%';
+  }else if(failed){
+    note.textContent=`수집 오류 · PC 확인${step?` · ${step}`:''}`;
+  }else{
+    note.textContent='자동 확인 중';
+    bar.style.width='0%';
+  }
+}
+
 async function requestCollect(){
   if(!db||!currentUser){
     toast('클라우드 자동 연결을 다시 시도합니다.');
@@ -2084,8 +2132,11 @@ async function requestCollect(){
     return;
   }
 
-  const status=$('collectStatus');
-  status.textContent='이번달 정밀 동기화 요청 중';
+  renderCollectProgress({
+    status:'requested',
+    progressPercent:0,
+    progressStep:'PC 수집기 응답 대기'
+  });
 
   try{
     await db.collection('system')
@@ -2102,18 +2153,37 @@ async function requestCollect(){
         requestedAt:
           firebase.firestore.FieldValue.serverTimestamp(),
         status:'requested',
+        progressPercent:0,
+        remainingPercent:100,
+        progressStep:'PC 수집기 응답 대기',
+        progressUpdatedAt:
+          firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt:
           firebase.firestore.FieldValue.serverTimestamp()
       },{merge:true});
-
-    status.textContent='이번달 전체 마켓 동기화 요청 완료';
   }catch(error){
-    status.textContent=
-      '요청 실패 · '+readableCloudError(error);
+    renderCollectProgress({
+      status:'error',
+      progressStep:readableCloudError(error)
+    });
     initCloud(true);
   }
 }
-function watchCollect(){if(collectUnsub)collectUnsub();collectUnsub=db.collection('system').doc('commands').collection('requests').doc('coupang').onSnapshot(doc=>{if(!doc.exists)return;const d=doc.data()||{};$('collectStatus').textContent=d.status==='success'?'수집 완료':d.status==='error'?'수집 오류 · PC 확인':d.status==='running'||d.status==='requested'?'수집 중':'자동 확인 중'})}
+
+function watchCollect(){
+  if(collectUnsub) collectUnsub();
+  collectUnsub=db.collection('system')
+    .doc('commands')
+    .collection('requests')
+    .doc('coupang')
+    .onSnapshot(doc=>{
+      if(!doc.exists){
+        renderCollectProgress();
+        return;
+      }
+      renderCollectProgress(doc.data()||{});
+    },()=>renderCollectProgress({status:'error',progressStep:'클라우드 연결 확인'}));
+}
 
 
 const ORDER_CACHE_KEY='alldaypick-orders-cache-v760';
@@ -2682,7 +2752,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.1-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.3-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
