@@ -18,7 +18,7 @@ import {
 } from './esm.js';
 
 import { pollCoupangStatuses } from './coupang.js';
-import { syncSmartstore,syncSmartstoreInquiries } from './smartstore.js';
+import { syncSmartstore,syncSmartstoreInquiries,retireLegacySmartstoreInquiryCache } from './smartstore.js';
 import {
   elevenstConfigFromEnv,
   isElevenstConfigured,
@@ -1314,7 +1314,8 @@ async function syncElevenstSafe(source){
 
     const statusResult=await syncElevenstStatuses(
       db,
-      config
+      config,
+      {repair:['startup','immediate','reconcile'].includes(source)}
     );
 
     const push=await sendMarketplacePush(
@@ -1407,6 +1408,13 @@ async function syncSmartstoreSafe(source){
       syncSmartstore(db,smartstoreConfig(),minutes,{reconcile}),
       reconcile?480000:180000
     );
+
+    if(['startup','immediate','reconcile'].includes(source)){
+      const retired=await retireLegacySmartstoreInquiryCache(db);
+      if(Number(retired.deactivated||0)>0){
+        console.log(`스마트스토어 이전 문의 캐시 정리: ${retired.deactivated}건 · 다음 정상 조회 시 미답변 건 자동 복구`);
+      }
+    }
 
     let inquiryResult;
     if(smartstoreInquiryDue()){
@@ -1676,7 +1684,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.6.3',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.6.4',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1696,7 +1704,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.6.3',
+    version:'FINAL-7.6.4',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

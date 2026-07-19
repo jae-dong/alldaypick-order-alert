@@ -6,6 +6,8 @@ assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatus:'SUCCESS'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'REJECT'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'CANCEL'}),false);
+assert.equal(H.exchangeActiveState({exchangeStatus:'EXCHANGE_COMPLETED'}),false);
+assert.equal(H.exchangeActiveState({exchangeStatus:'SUCCESSFUL'}),false);
 
 const docs=H.exchangeDocuments([
   {exchangeId:1,orderId:10,exchangeStatus:'SUCCESS',exchangeItemDtoV1s:[{orderItemId:100,quantity:1}]},
@@ -14,3 +16,5 @@ const docs=H.exchangeDocuments([
 assert.equal(docs.find(item=>item.exchangeId==='1').activeState,false);
 assert.equal(docs.find(item=>item.exchangeId==='2').activeState,true);
 console.log('coupang exchange tests passed');
+
+assert.ok(H.rangeWindows(90,6).length>=15,'startup exchange repair must support a 90-day split range');

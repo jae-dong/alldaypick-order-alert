@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.6.3';
+const APP_VERSION='FINAL v7.6.4';
 const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -2186,10 +2186,12 @@ function watchCollect(){
 }
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v760';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v760';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v764';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v764';
 
 for(const legacyKey of [
+  'alldaypick-orders-cache-v760',
+  'alldaypick-integrations-cache-v760',
   'alldaypick-orders-cache-v740',
   'alldaypick-integrations-cache-v740',
   'alldaypick-orders-cache-v72',
@@ -2752,7 +2754,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.3-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.4-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

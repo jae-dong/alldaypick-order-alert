@@ -103,8 +103,11 @@ function returnDocuments(rows,{eventType,activeOverride=null}){
 
 function exchangeActiveState(row={}){
   const status=String(row.exchangeStatus||row.status||'').trim().toUpperCase();
-  if(['SUCCESS','REJECT','CANCEL'].includes(status)) return false;
-  if(['RECEIPT','PROGRESS'].includes(status)) return true;
+  if(
+    ['SUCCESS','REJECT','CANCEL'].includes(status)||
+    /(SUCCESS|COMPLETE|COMPLETED|DONE|REJECT|CANCEL|WITHDRAW)/.test(status)
+  ) return false;
+  if(['RECEIPT','PROGRESS','REQUESTED','PROCESSING'].includes(status)) return true;
   return !isClaimTerminal({
     eventType:'exchange',
     sourceStatus:status,
@@ -240,9 +243,11 @@ export async function syncReturns(db,config,reconcile=false){
 }
 
 export async function syncExchanges(db,config,reconcile=false){
-  const fetched=await fetchExchangeRows(config,31,10);
+  // 시작/수동 정밀수집에서는 과거 잘못 남은 완료 교환까지 정리할 수 있도록
+  // 90일을 확인하고, 평상시 순환 수집은 API 부담을 줄여 31일만 확인합니다.
+  const fetched=await fetchExchangeRows(config,reconcile?90:31,10);
   const documents=exchangeDocuments(fetched.rows);
   return saveAndReconcile(db,'exchange',documents,{from:fetched.from,complete:fetched.complete,reconcile});
 }
 
-export const coupangClaimsTestHelpers={exchangeActiveState,exchangeDocuments};
+export const coupangClaimsTestHelpers={exchangeActiveState,exchangeDocuments,rangeWindows};

@@ -32,13 +32,13 @@ assert.match(elevenst,/String\(item\.eventType\|\|'order'\)==='order'/,'11st ord
 assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconciled after a complete refresh');
 
 assert.doesNotMatch(smartstore,/collection\('orders'\).*where\('source'.*get\(\)/s,'Smartstore sync must not scan Firestore orders');
-assert.doesNotMatch(elevenst,/collection\('orders'\).*where\('source'.*get\(\)/s,'11st sync must not scan Firestore orders');
+assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11st startup repair must use a bounded source query');
 
 
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.6\.3'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.6\.4'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -46,6 +46,9 @@ assert.match(agent,/SMARTSTORE_INQUIRY_429_COOLDOWN_MS/,'Smartstore inquiries mu
 assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorrectly deactivated pending records');
 assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
 assert.match(coupangClaims,/\['SUCCESS','REJECT','CANCEL'\]/,'Coupang terminal exchange statuses must be explicitly closed');
+assert.match(coupangClaims,/reconcile\?90:31/,'Startup exchange repair must scan a wider history');
+assert.match(smartstore,/retireLegacySmartstoreInquiryCache/,'Legacy Smartstore inquiry cache must be retired once and restored by a later successful query');
+assert.doesNotMatch(elevenst,/trackingNumber','dlvNo/,'11st dlvNo must not be treated as an invoice number');
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');

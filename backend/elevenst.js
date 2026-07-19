@@ -469,7 +469,7 @@ function statusText(row={}){
 function mapElevenOrderStatus(row={},previous={}){
   const value=statusText(row);
   const invoice=first(row,[
-    'invoiceNo','trackingNumber','dlvNo','waybillNo','송장번호'
+    'invoiceNo','trackingNumber','waybillNo','waybillNo','송장번호'
   ]);
 
   if(value.includes('PURCHASE_CONFIRMED')||value.includes('PURCHASE_DECIDED')||value.includes('구매확정')){
@@ -505,14 +505,28 @@ function mapElevenOrderStatus(row={},previous={}){
     return {status:'new',statusLabel:'신규주문',sourceStatus:value||'PAYMENT_COMPLETE'};
   }
 
-  // orderlistalladdr is a post-order-confirmation status endpoint. If it returns
-  // the order but omits a textual status, the order is confirmed, not new.
+  // 11번가 배송지/클레임 응답은 상태 문구가 비어 있거나 배송관리번호(dlvNo)만
+  // 내려오는 경우가 있습니다. dlvNo는 송장번호가 아니므로 배송중으로 판정하지 않습니다.
+  // 방금 COMPLETE 주문조회로 들어온 신규는 명확한 발주확인 신호가 없으면 신규를 유지하고,
+  // 과거 잘못 종료된 주문은 현재 상태 확인 대상으로 다시 살릴 수 있도록 발송대기로 복구합니다.
+  const previousStatus=String(previous?.status||'');
+  const previousSource=String(previous?.sourceStatus||'').toUpperCase();
+  if(
+    previousStatus==='new'&&
+    ['COMPLETE','PAYMENT_COMPLETE','PAYED','ACCEPT','NEW'].some(token=>previousSource.includes(token))
+  ){
+    return {
+      status:'new',statusLabel:'신규주문',
+      sourceStatus:previousSource||'PAYMENT_COMPLETE',
+      inferred:true,previousStatus
+    };
+  }
   return {
     status:'shipping_wait',
     statusLabel:'발송대기',
     sourceStatus:value||'ORDER_CONFIRMED',
     inferred:true,
-    previousStatus:String(previous?.status||'')
+    previousStatus
   };
 }
 
@@ -566,7 +580,7 @@ function collectRows(node,depth=0,inherited={}){
   const ordPrdSeq=first(context,['ordPrdSeq','orderProductSequence','prdSeq']);
   const recordSignal=Boolean(
     ordPrdSeq||statusText(context)||
-    first(context,['invoiceNo','trackingNumber','dlvNo','waybillNo'])||
+    first(context,['invoiceNo','trackingNumber','waybillNo','waybillNo'])||
     first(context,['claimType','claimNm','claimKind','claimStatus','claimStatusNm','claimProcStatus'])
   );
   if(!recordSignal) return [];
@@ -603,7 +617,7 @@ async function fetchStatusRows(config,batch){
       first(row,['ordNo','orderNo']),
       first(row,['ordPrdSeq','orderProductSequence','prdSeq']),
       statusText(row),
-      first(row,['invoiceNo','trackingNumber','dlvNo'])
+      first(row,['invoiceNo','trackingNumber','waybillNo'])
     ].join('|');
     unique.set(key,row);
   }
@@ -614,10 +628,19 @@ async function fetchStatusRows(config,batch){
   };
 }
 
-function statusRefreshDocuments(existing=[]){
+function statusRefreshDocuments(existing=[],now=Date.now()){
+  const repairLookbackMs=90*24*60*60*1000;
+  const recentEnough=item=>{
+    const raw=item?.datetime||item?.orderDate||item?.paymentDate||item?.sourceUpdatedAt||'';
+    const time=new Date(raw).getTime();
+    return Number.isFinite(time)&&now-time<=repairLookbackMs;
+  };
   const normalExisting=existing.filter(item=>
-    String(item.eventType||'order')==='order'&&
-    (item.activeState!==false||['new','shipping_wait'].includes(String(item.status||'')))
+    String(item.eventType||'order')==='order'&&(
+      item.activeState!==false||
+      ['new','shipping_wait'].includes(String(item.status||''))||
+      recentEnough(item)
+    )
   );
   const activeClaims=existing.filter(item=>
     String(item.eventType||'order')!=='order'&&item.activeState!==false
@@ -625,11 +648,27 @@ function statusRefreshDocuments(existing=[]){
   return {normalExisting,activeClaims};
 }
 
-export async function syncElevenstStatuses(db,config){
+export async function syncElevenstStatuses(db,config,{repair=false}={}){
   // Include inactive documents that still carry a pending status. This repairs
   // records incorrectly deactivated by an earlier partial status response.
   const cached=await getCachedDocuments(db,{source:'elevenst',activeOnly:false});
-  const existing=cached.documents;
+  let existing=[...(cached.documents||[])];
+
+  // v7.6.3 이전에는 11번가 주문이 배송관리번호(dlvNo) 때문에 배송중으로
+  // 잘못 종료될 수 있었습니다. 시작/수동수집 때만 11번가 문서를 제한 조회해
+  // 로컬 캐시에 없는 비활성 주문도 다시 상태 확인 대상으로 복구합니다.
+  if(repair&&typeof db?.collection==='function'){
+    try{
+      let query=db.collection('orders').where('source','==','elevenst');
+      if(typeof query.limit==='function') query=query.limit(500);
+      const snapshot=await query.get();
+      const remote=[];
+      snapshot.forEach(doc=>remote.push({id:doc.id,...(doc.data()||{})}));
+      existing=[...new Map([...existing,...remote].map(item=>[String(item.id),item])).values()];
+    }catch(error){
+      console.warn('11번가 과거 상태 보정 조회 건너뜀:',error instanceof Error?error.message:String(error));
+    }
+  }
   const {normalExisting,activeClaims}=statusRefreshDocuments(existing);
   const orderNos=[...new Set(
     [...normalExisting,...activeClaims]
@@ -655,10 +694,13 @@ export async function syncElevenstStatuses(db,config){
       for(const row of rows){
         const ordNo=first(row,['ordNo','orderNo']);
         const ordPrdSeq=first(row,['ordPrdSeq','orderProductSequence','prdSeq']);
-        const matches=normalExisting.filter(item=>
-          String(item.orderNo||'')===ordNo&&
-          (!ordPrdSeq||String(item.orderProductSequence||'')===ordPrdSeq)
-        );
+        const orderMatches=normalExisting.filter(item=>String(item.orderNo||'')===ordNo);
+        const exactMatches=ordPrdSeq
+          ?orderMatches.filter(item=>String(item.orderProductSequence||'')===ordPrdSeq)
+          :orderMatches;
+        // 일부 11번가 응답은 ordPrdSeq 형식이 기존 주문 문서와 다르게 내려옵니다.
+        // 주문번호가 일치하면 해당 주문의 모든 상품줄에 같은 현재 상태를 적용합니다.
+        const matches=exactMatches.length?exactMatches:orderMatches;
         for(const previous of matches){
           checked+=1;
           const mapped=mapElevenOrderStatus(row,previous);
@@ -670,7 +712,7 @@ export async function syncElevenstStatuses(db,config){
             status:mapped.status,statusLabel:mapped.statusLabel,
             sourceStatus:mapped.sourceStatus,
             activeState:['new','shipping_wait'].includes(mapped.status),
-            invoiceNumber:first(row,['invoiceNo','trackingNumber','dlvNo','waybillNo'])||previous.invoiceNumber||'',
+            invoiceNumber:first(row,['invoiceNo','trackingNumber','waybillNo','waybillNo'])||previous.invoiceNumber||'',
             deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
             statusInferred:Boolean(mapped.inferred),
             sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()

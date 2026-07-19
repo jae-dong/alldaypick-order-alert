@@ -13,6 +13,8 @@ assert.equal(product.inquiryId,'101');
 assert.equal(product.activeState,true);
 assert.equal(product.content,'상품 문의');
 assert.equal(product.claimKey,'smartstore|inquiry|product-101');
+assert.equal(product.inquiryVerificationVersion,1);
+assert.ok(product.lastVerifiedAt);
 
 const customer=H.inquiryDoc({
   inquiryNo:202,
@@ -82,3 +84,8 @@ const currentClaimDocs=H.normalizeDetail({
 });
 assert.equal(currentClaimDocs.filter(item=>item.eventType==='return').length,1,'currentClaim must prevent deprecated duplicate claims');
 assert.equal(currentClaimDocs.find(item=>item.eventType==='return').activeState,false,'RETURN_REJECT must be terminal');
+
+const staleNow=Date.parse('2026-07-20T05:00:00+09:00');
+assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-20T01:00:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),true);
+assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-20T04:30:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),false);
+assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-19T01:00:00+09:00',lastVerifiedAt:'2026-07-20T04:00:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),false);

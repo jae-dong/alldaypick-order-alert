@@ -307,6 +307,8 @@ function inquiryDoc(row,kind){
     inquiryKind:kind,
     content:row.question||row.inquiryContent||row.content||'',
     answered,activeState:!answered,
+    inquiryVerificationVersion:1,
+    lastVerifiedAt:new Date().toISOString(),
     sourceUpdatedAt:
       row.answerRegistrationDateTime||row.answerDate||row.updatedAt||
       inquiryAt,
@@ -517,13 +519,48 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   };
 }
 
+function isLegacyInquiryCacheStale(item,{minAgeMs=2*60*60*1000,now=Date.now()}={}){
+  if(item?.lastVerifiedAt||Number(item?.inquiryVerificationVersion||0)>=1) return false;
+  const time=new Date(
+    item?.sourceUpdatedAt||item?.inquiryAt||item?.datetime||item?.createdAt||0
+  ).getTime();
+  return !Number.isFinite(time)||now-time>=Math.max(0,Number(minAgeMs||0));
+}
+
+export async function retireLegacySmartstoreInquiryCache(db,{minAgeMs=2*60*60*1000,now=Date.now()}={}){
+  const cached=await getCachedDocuments(db,{
+    source:'smartstore',eventType:'inquiry',activeOnly:true,hydrate:false
+  });
+  const stale=cached.documents.filter(item=>
+    isLegacyInquiryCacheStale(item,{minAgeMs,now})
+  );
+  if(!stale.length){
+    return {found:0,statusChanged:0,deactivated:0,quota:{cloudReads:0,cloudWrites:0,cacheHits:0}};
+  }
+  const retired=stale.map(item=>({
+    ...item,
+    answered:true,
+    activeState:false,
+    status:'verification_expired',
+    statusLabel:'문의 확인 만료',
+    sourceStatus:'LEGACY_CACHE_RETIRED',
+    inquiryStatus:'LEGACY_CACHE_RETIRED',
+    legacyCacheRetiredAt:new Date(now).toISOString(),
+    resolvedReason:'v7.6.4 이전 문의 캐시 정리 · 다음 정상 API 조회 시 미답변 문의 자동 복구'
+  }));
+  const saved=await upsertDocuments(db,retired);
+  return {...saved,deactivated:retired.length};
+}
+
 export const smartstoreTestHelpers={
   inquiryDoc,orderStatus,normalizeDetail,
   inquiryPageMeta,
   inquiryRanges,
   inquiryIso,
   inquiryDateOnly,
-  customerInquiryProfiles
+  customerInquiryProfiles,
+  retireLegacySmartstoreInquiryCache,
+  isLegacyInquiryCacheStale
 };
 
 export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
