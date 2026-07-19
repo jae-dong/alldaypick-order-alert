@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.6.0 STATE FLOW
+title ALLDAYPICK ORDER AGENT v7.6.1 FINAL
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -75,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.6.0 STATE FLOW...
+echo Starting ALLDAYPICK order agent v7.6.1 FINAL...
 echo Keep this window open.
 echo.
 call npm run agent

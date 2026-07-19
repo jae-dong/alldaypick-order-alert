@@ -100,6 +100,20 @@ function returnDocuments(rows,{eventType,activeOverride=null}){
   return documents;
 }
 
+
+function exchangeActiveState(row={}){
+  const status=String(row.exchangeStatus||row.status||'').trim().toUpperCase();
+  if(['SUCCESS','REJECT','CANCEL'].includes(status)) return false;
+  if(['RECEIPT','PROGRESS'].includes(status)) return true;
+  return !isClaimTerminal({
+    eventType:'exchange',
+    sourceStatus:status,
+    claimStatus:status,
+    exchangeStatus:status,
+    activeState:true
+  });
+}
+
 function exchangeDocuments(rows){
   const documents=[];
   for(const row of rows){
@@ -120,8 +134,11 @@ function exchangeDocuments(rows){
         reason:row.reasonCodeText||row.reasonEtcDetail||'',modifiedAt:row.modifiedAt||'',
         sourceUpdatedAt:row.modifiedAt||row.createdAt||new Date().toISOString(),syncedAt:new Date().toISOString()
       };
-      document.activeState=!isClaimTerminal(document);
-      if(!document.activeState){document.status='exchanged';document.statusLabel='교환완료';}
+      document.activeState=exchangeActiveState(row);
+      if(!document.activeState){
+        document.status='exchanged';
+        document.statusLabel=sourceStatus==='REJECT'?'교환불가':sourceStatus==='CANCEL'?'교환철회':'교환완료';
+      }
       documents.push(document);
     }
   }
@@ -227,3 +244,5 @@ export async function syncExchanges(db,config,reconcile=false){
   const documents=exchangeDocuments(fetched.rows);
   return saveAndReconcile(db,'exchange',documents,{from:fetched.from,complete:fetched.complete,reconcile});
 }
+
+export const coupangClaimsTestHelpers={exchangeActiveState,exchangeDocuments};

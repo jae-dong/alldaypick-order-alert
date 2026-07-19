@@ -1,13 +1,13 @@
-올데이픽 주문알림 FINAL v7.6.0 적용 순서
+올데이픽 주문알림 FINAL v7.6.1 적용 순서
 
 1. 현재 검은 수집기 창을 닫습니다.
 2. 받은 ZIP을 압축 해제합니다.
 3. ZIP 안쪽 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
 4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어쓰기를 선택합니다.
-5. GitHub Desktop에서 Summary에 "FINAL v7.6.0 상태 흐름 수정"을 입력합니다.
+5. GitHub Desktop에서 Summary에 "FINAL v7.6.1 상태 흐름 수정"을 입력합니다.
 6. Commit to main을 누릅니다.
 7. Push origin을 누릅니다.
-8. 2~5분 뒤 웹 상단이 FINAL v7.6.0인지 확인합니다.
+8. 2~5분 뒤 웹 상단이 FINAL v7.6.1인지 확인합니다.
 9. 프로젝트 폴더의 START_AGENT.cmd를 실행합니다.
 10. 첫 동기화 완료 후 웹을 새로고침해 숫자와 상태 이동을 확인합니다.
 

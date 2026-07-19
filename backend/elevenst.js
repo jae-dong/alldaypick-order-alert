@@ -574,24 +574,27 @@ function collectRows(node,depth=0,inherited={}){
 }
 
 async function fetchStatusRows(config,batch){
-  const requested=new Set(batch.map(String));
+  const requested=[...new Set(batch.map(String).filter(Boolean))];
+  const requestedSet=new Set(requested);
   const parsed=await requestXml(
     config,
-    `/rest/claimservice/orderlistalladdr/${batch.map(encodeURIComponent).join(',')}`
+    `/rest/claimservice/orderlistalladdr/${requested.map(encodeURIComponent).join(',')}`
   );
-  let rows=collectRows(parsed).filter(row=>requested.has(first(row,['ordNo','orderNo'])));
+  let rows=collectRows(parsed).filter(row=>requestedSet.has(first(row,['ordNo','orderNo'])));
 
-  // Some 11st gateways accept only one order number on this route.
-  if(batch.length>1&&rows.length===0){
-    rows=[];
-    for(const orderNo of batch){
-      const single=await requestXml(
-        config,
-        `/rest/claimservice/orderlistalladdr/${encodeURIComponent(orderNo)}`
-      );
-      rows.push(...collectRows(single).filter(row=>first(row,['ordNo','orderNo'])===String(orderNo)));
-      await sleep(350);
-    }
+  // The gateway can return only part of a multi-order request. Re-query every
+  // missing order individually before deciding that the refresh is complete.
+  const responded=new Set(rows.map(row=>first(row,['ordNo','orderNo'])).filter(Boolean));
+  const missing=requested.filter(orderNo=>!responded.has(orderNo));
+  for(const orderNo of missing){
+    const single=await requestXml(
+      config,
+      `/rest/claimservice/orderlistalladdr/${encodeURIComponent(orderNo)}`
+    );
+    const singleRows=collectRows(single).filter(row=>first(row,['ordNo','orderNo'])===String(orderNo));
+    rows.push(...singleRows);
+    if(singleRows.length) responded.add(orderNo);
+    await sleep(350);
   }
 
   const unique=new Map();
@@ -604,24 +607,51 @@ async function fetchStatusRows(config,batch){
     ].join('|');
     unique.set(key,row);
   }
-  return [...unique.values()];
+  return {
+    rows:[...unique.values()],
+    complete:requested.every(orderNo=>responded.has(orderNo)),
+    missingOrderNos:requested.filter(orderNo=>!responded.has(orderNo))
+  };
+}
+
+function statusRefreshDocuments(existing=[]){
+  const normalExisting=existing.filter(item=>
+    String(item.eventType||'order')==='order'&&
+    (item.activeState!==false||['new','shipping_wait'].includes(String(item.status||'')))
+  );
+  const activeClaims=existing.filter(item=>
+    String(item.eventType||'order')!=='order'&&item.activeState!==false
+  );
+  return {normalExisting,activeClaims};
 }
 
 export async function syncElevenstStatuses(db,config){
-  const cached=await getCachedDocuments(db,{source:'elevenst',activeOnly:true});
+  // Include inactive documents that still carry a pending status. This repairs
+  // records incorrectly deactivated by an earlier partial status response.
+  const cached=await getCachedDocuments(db,{source:'elevenst',activeOnly:false});
   const existing=cached.documents;
-  const normalExisting=existing.filter(item=>String(item.eventType||'order')==='order');
-  // Open claims may belong to an order that has already left the normal shipping
-  // workflow, so include every active document's order number in status refresh.
-  const orderNos=[...new Set(existing.map(item=>String(item.orderNo||'').trim()).filter(Boolean))];
+  const {normalExisting,activeClaims}=statusRefreshDocuments(existing);
+  const orderNos=[...new Set(
+    [...normalExisting,...activeClaims]
+      .map(item=>String(item.orderNo||'').trim())
+      .filter(Boolean)
+  )];
   let checked=0,failed=0,recognizedRows=0;
+  let allResponsesComplete=true;
+  const missingOrderNos=[];
   const documents=[];
 
   for(let index=0;index<orderNos.length;index+=10){
     const batch=orderNos.slice(index,index+10);
     try{
-      const rows=await fetchStatusRows(config,batch);
+      const fetched=await fetchStatusRows(config,batch);
+      const rows=fetched.rows;
       recognizedRows+=rows.length;
+      if(!fetched.complete){
+        allResponsesComplete=false;
+        failed+=fetched.missingOrderNos.length;
+        missingOrderNos.push(...fetched.missingOrderNos);
+      }
       for(const row of rows){
         const ordNo=first(row,['ordNo','orderNo']);
         const ordPrdSeq=first(row,['ordPrdSeq','orderProductSequence','prdSeq']);
@@ -638,7 +668,8 @@ export async function syncElevenstStatuses(db,config){
             id:previous.id,eventType:'order',
             ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:'order'}),
             status:mapped.status,statusLabel:mapped.statusLabel,
-            sourceStatus:mapped.sourceStatus,activeState:true,
+            sourceStatus:mapped.sourceStatus,
+            activeState:['new','shipping_wait'].includes(mapped.status),
             invoiceNumber:first(row,['invoiceNo','trackingNumber','dlvNo','waybillNo'])||previous.invoiceNumber||'',
             deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
             statusInferred:Boolean(mapped.inferred),
@@ -671,6 +702,8 @@ export async function syncElevenstStatuses(db,config){
       }
     }catch(error){
       failed+=batch.length;
+      allResponsesComplete=false;
+      missingOrderNos.push(...batch);
       console.error('11번가 상태조회 실패:',error instanceof Error?error.message:String(error));
     }
     await sleep(1200);
@@ -680,7 +713,9 @@ export async function syncElevenstStatuses(db,config){
   const saved=await upsertDocuments(db,unique);
   const reconciliation={};
   const reconciliationQuota={cloudReads:0,cloudWrites:0};
-  const responseComplete=failed===0&&(orderNos.length===0||recognizedRows>0);
+  const responseComplete=
+    failed===0&&allResponsesComplete&&
+    (orderNos.length===0||recognizedRows>0);
 
   if(responseComplete){
     reconciliation.order=await reconcileOpenDocuments(db,{
@@ -710,6 +745,7 @@ export async function syncElevenstStatuses(db,config){
 
   return {
     checked,changed:saved.statusChanged,failed,recognizedRows,
+    missingOrderNos:[...new Set(missingOrderNos)],
     deactivatedOrders:reconciliation.order?.deactivated||0,
     changedOrders:saved.changedDocuments,
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
@@ -723,5 +759,5 @@ export async function syncElevenstStatuses(db,config){
 }
 
 export const elevenstTestHelpers={
-  mapElevenOrderStatus,collectRows,statusText
+  mapElevenOrderStatus,collectRows,statusText,fetchStatusRows,statusRefreshDocuments
 };

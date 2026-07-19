@@ -460,7 +460,9 @@ async function fetchCustomerInquiries(token,days){
 export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   const token=await accessToken(config);
   const documents=[];
+  const errors=[];
   let complete=true;
+  let rateLimitedResult=false;
   const days=reconcile?90:7;
   const from=new Date(Date.now()-days*86400000);
   const to=new Date();
@@ -473,6 +475,8 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
     );
   }catch(error){
     complete=false;
+    rateLimitedResult=rateLimitedResult||rateLimited(error);
+    errors.push(`상품문의: ${error.message}`);
     console.warn('스마트스토어 상품문의 조회 건너뜀:',error.message);
   }
 
@@ -484,6 +488,8 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
     );
   }catch(error){
     complete=false;
+    rateLimitedResult=rateLimitedResult||rateLimited(error);
+    errors.push(`고객문의: ${error.message}`);
     console.warn('스마트스토어 고객문의 조회 건너뜀:',error.message);
   }
 
@@ -507,7 +513,7 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
       cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(reconciled.quota?.cloudWrites||0),
       cacheHits:Number(saved.quota?.cacheHits||0)
     },
-    complete,days
+    complete,days,rateLimited:rateLimitedResult,errors
   };
 }
 

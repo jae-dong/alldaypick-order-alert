@@ -31,7 +31,7 @@ import {
   syncExchanges
 } from './coupang-claims.js';
 import { syncCoupangInquiries } from './coupang-inquiries.js';
-import { migrateLegacyDocuments } from './order-store.js';
+import { migrateLegacyDocuments,getCachedDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
@@ -84,10 +84,85 @@ const db=admin.firestore();
 const HEARTBEAT_INTERVAL_MS=5*60*1000;
 const QUOTA_STATE_PATH=path.join(BACKEND_DIR,'.firestore-quota-cooldown.json');
 const SYSTEM_WRITE_CACHE_PATH=path.join(BACKEND_DIR,'.firestore-system-write-cache.json');
+const SMARTSTORE_INQUIRY_STATE_PATH=path.join(BACKEND_DIR,'.smartstore-inquiry-state.json');
+const SMARTSTORE_INQUIRY_INTERVAL_MS=Math.max(
+  30,
+  Number(process.env.SMARTSTORE_INQUIRY_INTERVAL_MINUTES||60)
+)*60*1000;
+const SMARTSTORE_INQUIRY_429_COOLDOWN_MS=Math.max(
+  60,
+  Number(process.env.SMARTSTORE_INQUIRY_429_COOLDOWN_MINUTES||120)
+)*60*1000;
 let quotaBlockedUntil=0;
 let quotaResumeTimer=null;
 let quotaSkipLoggedAt=0;
 let agentLockReleased=false;
+
+function defaultSmartstoreInquiryState(){
+  return {
+    version:1,
+    lastAttemptAt:0,
+    lastSuccessAt:0,
+    blockedUntil:0,
+    lastFound:0,
+    lastError:''
+  };
+}
+
+function loadSmartstoreInquiryState(){
+  try{
+    if(!fs.existsSync(SMARTSTORE_INQUIRY_STATE_PATH)){
+      return defaultSmartstoreInquiryState();
+    }
+    const parsed=JSON.parse(fs.readFileSync(SMARTSTORE_INQUIRY_STATE_PATH,'utf8'));
+    return {...defaultSmartstoreInquiryState(),...(parsed||{})};
+  }catch{
+    return defaultSmartstoreInquiryState();
+  }
+}
+
+let smartstoreInquiryState=loadSmartstoreInquiryState();
+
+function saveSmartstoreInquiryState(){
+  try{
+    fs.writeFileSync(
+      SMARTSTORE_INQUIRY_STATE_PATH,
+      JSON.stringify(smartstoreInquiryState,null,2),
+      'utf8'
+    );
+  }catch(error){
+    console.warn('스마트스토어 문의 제한상태 저장 실패:',error?.message||error);
+  }
+}
+
+function smartstoreInquiryDue(){
+  const now=Date.now();
+  if(Number(smartstoreInquiryState.blockedUntil||0)>now) return false;
+  const lastAttempt=Number(smartstoreInquiryState.lastAttemptAt||0);
+  return !lastAttempt||now-lastAttempt>=SMARTSTORE_INQUIRY_INTERVAL_MS;
+}
+
+function smartstoreInquiryWaitLabel(){
+  const now=Date.now();
+  const blocked=Number(smartstoreInquiryState.blockedUntil||0);
+  const dueAt=blocked>now
+    ?blocked
+    :Number(smartstoreInquiryState.lastAttemptAt||0)+SMARTSTORE_INQUIRY_INTERVAL_MS;
+  return Math.max(1,Math.ceil((dueAt-now)/60000));
+}
+
+async function cachedSmartstoreInquiryResult(reason='간격 보호'){
+  const cached=await getCachedDocuments(db,{
+    source:'smartstore',eventType:'inquiry',activeOnly:true,hydrate:false
+  });
+  const documents=cached.documents||[];
+  const found=documents.length||Number(smartstoreInquiryState.lastFound||0);
+  return {
+    found,created:0,statusChanged:0,createdClaims:[],changedClaims:[],
+    complete:false,skipped:true,cached:true,reason,
+    quota:{cloudReads:0,cloudWrites:0,cacheHits:documents.length}
+  };
+}
 
 
 function loadQuotaState(){
@@ -1320,15 +1395,50 @@ async function syncSmartstoreSafe(source){
       reconcile?480000:180000
     );
 
-    const inquiryResult=await withTimeout(
-      '스마트스토어 문의조회',
-      syncSmartstoreInquiries(db,smartstoreConfig(),{reconcile}),
-      300000
-    ).catch(error=>{
-      if(markQuotaCooldown(error)) throw error;
-      console.error('스마트스토어 문의조회 실패:',error.message);
-      return {found:0,created:0,statusChanged:0,createdClaims:[],complete:false,error:error.message};
-    });
+    let inquiryResult;
+    if(smartstoreInquiryDue()){
+      smartstoreInquiryState.lastAttemptAt=Date.now();
+      saveSmartstoreInquiryState();
+      inquiryResult=await withTimeout(
+        '스마트스토어 문의조회',
+        syncSmartstoreInquiries(db,smartstoreConfig(),{reconcile}),
+        300000
+      ).catch(async error=>{
+        if(markQuotaCooldown(error)) throw error;
+        const message=error instanceof Error?error.message:String(error);
+        smartstoreInquiryState.lastError=message;
+        saveSmartstoreInquiryState();
+        console.error('스마트스토어 문의조회 실패:',message);
+        return cachedSmartstoreInquiryResult('문의 API 오류 보호');
+      });
+
+      if(inquiryResult?.rateLimited){
+        smartstoreInquiryState.blockedUntil=Date.now()+SMARTSTORE_INQUIRY_429_COOLDOWN_MS;
+        smartstoreInquiryState.lastError=(inquiryResult.errors||[]).join(' · ')||'HTTP 429';
+        const cachedResult=await cachedSmartstoreInquiryResult('429 보호');
+        inquiryResult={
+          ...inquiryResult,
+          found:Math.max(Number(inquiryResult.found||0),Number(cachedResult.found||0)),
+          cached:true,
+          skipped:true,
+          reason:'429 보호'
+        };
+        console.warn(
+          `스마트스토어 문의 API 제한 보호 · ${smartstoreInquiryWaitLabel()}분 뒤 재조회`
+        );
+      }else if(inquiryResult?.complete!==false){
+        smartstoreInquiryState.lastSuccessAt=Date.now();
+        smartstoreInquiryState.blockedUntil=0;
+        smartstoreInquiryState.lastFound=Number(inquiryResult?.found||0);
+        smartstoreInquiryState.lastError='';
+      }
+      saveSmartstoreInquiryState();
+    }else{
+      const reason=Number(smartstoreInquiryState.blockedUntil||0)>Date.now()
+        ?`429 보호 ${smartstoreInquiryWaitLabel()}분`
+        :`조회간격 보호 ${smartstoreInquiryWaitLabel()}분`;
+      inquiryResult=await cachedSmartstoreInquiryResult(reason);
+    }
 
     const push=await sendMarketplacePush(result.createdOrders||[],'스마트스토어',source);
     let inquirySent=0;
@@ -1340,7 +1450,7 @@ async function syncSmartstoreSafe(source){
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',connected:true,lastRun:new Date().toISOString(),
-        message:`정상 조회 · 주문문서 ${result.found} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}`,
+        message:`정상 조회 · 주문문서 ${result.found} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}${inquiryResult.skipped?'(캐시)':''}`,
         lastResult:{
           found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
           inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,complete:inquiryResult.complete!==false},
@@ -1351,7 +1461,8 @@ async function syncSmartstoreSafe(source){
 
     console.log(
       `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
-      `상태변경 ${result.statusChanged}, 미답변문의 ${inquiryResult.found||0}, `+
+      `상태변경 ${result.statusChanged}, 미답변문의 ${inquiryResult.found||0}`+
+      `${inquiryResult.skipped?'(캐시)':''}, `+
       `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
 
@@ -1552,7 +1663,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.6.0-STATE-FLOW-FIX',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.6.1',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1572,7 +1683,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.6.0-STATE-FLOW-FIX',
+    version:'FINAL-7.6.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1983,7 +2094,8 @@ setInterval(()=>{
 
 console.log(
   `로컬 수집기 준비 완료 · 신규 10분 · 전체상태 30분 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 5분 · 무료한도 최적화`
+  `스마트스토어 문의 60분(429 보호) · 텔레그램 테스트 즉시 사용 가능 · `+
+  `생존신호 5분 · 무료한도 최적화`
 );
 
 run('startup').catch(error=>{

@@ -38,8 +38,14 @@ assert.doesNotMatch(elevenst,/collection\('orders'\).*where\('source'.*get\(\)/s
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.6\.0-STATE-FLOW-FIX'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.6\.1'/,'Agent diagnostics version must match release');
 
+
+assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
+assert.match(agent,/SMARTSTORE_INQUIRY_429_COOLDOWN_MS/,'Smartstore inquiries must persist a 429 cooldown');
+assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorrectly deactivated pending records');
+assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
+assert.match(coupangClaims,/\['SUCCESS','REJECT','CANCEL'\]/,'Coupang terminal exchange statuses must be explicitly closed');
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
