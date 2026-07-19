@@ -384,15 +384,52 @@ async function fetchProductInquiries(token,days){
 
   return {items:all,complete};
 }
-async function fetchCustomerInquiries(token){
-  // 현재 공식 명세의 고객 문의 조회는 별도 검색 파라미터가 없습니다.
-  // 알 수 없는 page/size/date 파라미터를 붙이면 HTTP 400이 발생할 수 있습니다.
-  const body=await api(token,'/v1/pay-user/inquiries');
-  const extracted=inquiryArray(body);
-  if(!extracted.recognized){
-    throw new Error('/v1/pay-user/inquiries 응답 목록 형식을 확인할 수 없습니다.');
+function inquiryDateOnly(date){
+  return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(date);
+}
+function customerInquiryProfiles(range){
+  const base={
+    startSearchDate:inquiryDateOnly(range.from),
+    endSearchDate:inquiryDateOnly(range.to),
+    answered:'false'
+  };
+  // 공식 지원 답변에는 page로 안내되는 경우와 pgae로 표기된 경우가 함께 있어
+  // 실제 게이트웨이 호환성을 위해 두 키를 순서대로 시도합니다.
+  return [
+    (page,size)=>({...base,page:String(page),size:String(size)}),
+    (page,size)=>({...base,pgae:String(page),size:String(size)}),
+    (page,size)=>({startSearchDate:base.startSearchDate,endSearchDate:base.endSearchDate,page:String(page),size:String(size)}),
+    (page,size)=>({startSearchDate:base.startSearchDate,endSearchDate:base.endSearchDate,pgae:String(page),size:String(size)})
+  ];
+}
+async function fetchCustomerInquiryRange(token,range){
+  let lastError;
+  for(const profile of customerInquiryProfiles(range)){
+    try{
+      return await fetchInquiryPages(
+        token,
+        '/v1/pay-user/inquiries',
+        profile,
+        {size:200,maxPages:100}
+      );
+    }catch(error){
+      lastError=error;
+      if(!badRequest(error)) throw error;
+    }
   }
-  return {items:extracted.items,complete:true};
+  throw lastError||new Error('스마트스토어 고객문의 조회 실패');
+}
+async function fetchCustomerInquiries(token,days){
+  const all=[];
+  let complete=true;
+  // 날짜 형식은 yyyy-MM-dd이며, 과도한 단일 조회를 피하도록 7일 미만 단위로 나눕니다.
+  for(const range of inquiryRanges(days,6)){
+    const result=await fetchCustomerInquiryRange(token,range);
+    all.push(...result.items);
+    complete=complete&&result.complete;
+    await sleep(300);
+  }
+  return {items:all,complete};
 }
 export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   const token=await accessToken(config);
@@ -414,7 +451,7 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   }
 
   try{
-    const customer=await fetchCustomerInquiries(token);
+    const customer=await fetchCustomerInquiries(token,days);
     complete=complete&&customer.complete;
     documents.push(
       ...customer.items.map(row=>inquiryDoc(row,'customer')).filter(Boolean)
@@ -452,7 +489,9 @@ export const smartstoreTestHelpers={
   inquiryDoc,
   inquiryPageMeta,
   inquiryRanges,
-  inquiryIso
+  inquiryIso,
+  inquiryDateOnly,
+  customerInquiryProfiles
 };
 
 export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){

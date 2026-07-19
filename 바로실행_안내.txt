@@ -1,4 +1,4 @@
-올데이픽 주문알림 FINAL v7.5.1
+올데이픽 주문알림 FINAL v7.5.2
 
 1. 이 ZIP을 "문서\GitHub" 폴더에 압축 해제합니다.
 2. 최종 위치는 "문서\GitHub\alldaypick-order-alert"입니다.

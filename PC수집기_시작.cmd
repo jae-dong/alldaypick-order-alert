@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ALLDAYPICK ORDER AGENT v7.5.1 FREE TIER
+title ALLDAYPICK ORDER AGENT v7.5.2 FREE TIER
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -75,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.5.1 FREE TIER...
+echo Starting ALLDAYPICK order agent v7.5.2 FREE TIER...
 echo Keep this window open.
 echo.
 call npm run agent

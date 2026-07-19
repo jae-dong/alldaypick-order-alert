@@ -47,4 +47,19 @@ assert.ok(ranges.length>=4);
 assert.ok(ranges.every(range=>range.to-range.from<=29*86400000));
 assert.match(H.inquiryIso(new Date('2026-07-19T00:00:00.123Z')),/2026-07-19T00:00:00Z/);
 
+const customerRange={
+  from:new Date('2026-07-12T00:00:00+09:00'),
+  to:new Date('2026-07-18T23:59:59+09:00')
+};
+const profiles=H.customerInquiryProfiles(customerRange);
+const normalParams=profiles[0](1,200);
+assert.equal(normalParams.startSearchDate,'2026-07-12');
+assert.equal(normalParams.endSearchDate,'2026-07-18');
+assert.equal(normalParams.page,'1');
+assert.equal(normalParams.size,'200');
+assert.equal(normalParams.answered,'false');
+const typoCompatible=profiles[1](2,200);
+assert.equal(typoCompatible.pgae,'2');
+assert.equal(H.inquiryDateOnly(new Date('2026-07-18T16:00:00Z')),'2026-07-19');
+
 console.log('smartstore inquiry tests passed');

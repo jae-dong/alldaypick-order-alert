@@ -149,18 +149,44 @@ async function fetchExchangeRows(config,days=31,maxPages=10){
   const now=new Date();
   const from=new Date(now.getTime()-days*86400000);
   const path=`/v2/providers/openapi/apis/api/v4/vendors/${encodeURIComponent(config.vendorId)}/exchangeRequests`;
-  const rows=[];let nextToken='';let complete=false;
-  for(let page=0;page<maxPages;page+=1){
-    const params={createdAtFrom:kstSecond(from),createdAtTo:kstSecond(now),maxPerPage:'50'};
-    if(nextToken) params.nextToken=nextToken;
-    const payload=await request(config,path,params);
-    const pageRows=Array.isArray(payload.data)?payload.data:[];
-    rows.push(...pageRows);
-    nextToken=payload.nextToken||payload.pagination?.nextToken||'';
-    if(!nextToken||pageRows.length===0){complete=true;break;}
-    await sleep(1000);
+  const rows=[];
+  let complete=true;
+
+  // 교환 조회 API는 createdAtFrom~createdAtTo가 7일 미만이어야 하므로
+  // 6일 단위로 나누고 각 구간을 끝까지 페이지 조회합니다.
+  for(const window of rangeWindows(days,6)){
+    let nextToken='';
+    let windowComplete=false;
+
+    for(let page=0;page<maxPages;page+=1){
+      const params={
+        createdAtFrom:kstSecond(window.from),
+        createdAtTo:kstSecond(window.to),
+        maxPerPage:'50'
+      };
+      if(nextToken) params.nextToken=nextToken;
+
+      const payload=await request(config,path,params);
+      const pageRows=Array.isArray(payload.data)?payload.data:[];
+      rows.push(...pageRows);
+      nextToken=payload.nextToken||payload.pagination?.nextToken||'';
+
+      if(!nextToken||pageRows.length===0){
+        windowComplete=true;
+        break;
+      }
+      await sleep(1000);
+    }
+
+    complete=complete&&windowComplete;
+    await sleep(800);
   }
-  return {rows,complete,from};
+
+  const unique=[...new Map(rows.map(row=>[
+    String(row.exchangeId||row.receiptId||JSON.stringify(row)),
+    row
+  ])).values()];
+  return {rows:unique,complete,from};
 }
 
 async function saveAndReconcile(db,eventType,documents,{from,complete,reconcile}){
