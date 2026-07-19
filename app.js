@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.4.2';
+const APP_VERSION='FINAL v7.5.0';
 const BUILD_DATE='2026-07-19';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -8,7 +8,8 @@ const fmt=n=>Number(n||0).toLocaleString('ko-KR')+'원';
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['elevenst','11번가'],['gmarket','G마켓'],['auction','옥션'],['lotteon','롯데온']];
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
-let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,collectUnsub=null;
+let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,collectUnsub=null;
+let monthOrderMap=new Map(),activeOrderMap=new Map();
 const PAGE_SIZE=40;
 
 function toast(text){const el=$('toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
@@ -2256,13 +2257,13 @@ function watchAgentHeartbeat(){
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<=75*1000){
+      if(age<=6*60*1000){
         indicator.textContent=
-          `PC 수집기 정상 · ${Math.floor(age/1000)}초 전`;
+          `PC 수집기 정상 · ${relativeTime(new Date(Date.now()-age).toISOString())}`;
         indicator.classList.add('ok');
-      }else if(age<=180*1000){
+      }else if(age<=12*60*1000){
         indicator.textContent=
-          `PC 수집기 지연 · ${Math.floor(age/1000)}초 전`;
+          `PC 수집기 지연 · ${relativeTime(new Date(Date.now()-age).toISOString())}`;
         indicator.classList.add('warning');
       }else{
         indicator.textContent='PC 수집기 응답 없음';
@@ -2362,6 +2363,11 @@ function stopCloudListeners(){
     unsubscribeOrders=null;
   }
 
+  if(unsubscribeActiveOrders){
+    unsubscribeActiveOrders();
+    unsubscribeActiveOrders=null;
+  }
+
   if(integrationUnsubscribe){
     integrationUnsubscribe();
     integrationUnsubscribe=null;
@@ -2383,6 +2389,28 @@ function retryCloud(delay=5000){
   cloudRetryTimer=setTimeout(initCloud,delay);
 }
 
+function monthStartIso(){
+  return `${monthKey()}-01T00:00:00+09:00`;
+}
+
+function refreshOrdersFromCloudMaps(){
+  const merged=new Map(monthOrderMap);
+  for(const [id,item] of activeOrderMap){
+    merged.set(id,item);
+  }
+  orders=[...merged.values()]
+    .sort((a,b)=>timestampValue(b)-timestampValue(a));
+  saveCloudCache();
+  render();
+}
+
+function replaceSnapshotMap(target,snapshot){
+  target.clear();
+  snapshot.docs.forEach(doc=>{
+    target.set(doc.id,{id:doc.id,...doc.data()});
+  });
+}
+
 function startCloudListeners(){
   stopCloudListeners();
 
@@ -2396,58 +2424,66 @@ function startCloudListeners(){
     false
   );
 
+  // 무료 한도 보호: 월 통계에 필요한 이번 달 문서만 구독합니다.
+  // 오래된 미완료 주문/클레임은 아래 activeState 구독으로 보완합니다.
   unsubscribeOrders=db.collection('orders')
-    .orderBy('createdAt','desc')
-    .limit(1500)
+    .where('datetime','>=',monthStartIso())
+    .orderBy('datetime','desc')
+    .limit(1300)
     .onSnapshot(
-    {includeMetadataChanges:true},
-    snapshot=>{
-      orders=snapshot.docs.map(doc=>({
-        id:doc.id,
-        ...doc.data()
-      }));
+      snapshot=>{
+        replaceSnapshotMap(monthOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+        cloudMessage(
+          snapshot.metadata.fromCache
+            ?'클라우드 연결됨 · 캐시 동기화 중'
+            :'클라우드 연결됨 · 무료한도 모드',
+          true
+        );
+      },
+      error=>{
+        console.error('Monthly order listener error:',error);
+        cloudMessage(
+          orders.length
+            ?'월 주문 재연결 중 · 저장된 데이터 표시'
+            :'월 주문 연결 오류 · '+readableCloudError(error),
+          false
+        );
+        retryCloud(60000);
+      }
+    );
 
-      saveCloudCache();
-
-      cloudMessage(
-        snapshot.metadata.fromCache
-          ?'클라우드 연결됨 · 캐시 동기화 중'
-          :'클라우드 연결됨',
-        true
-      );
-
-      render();
-    },
-    error=>{
-      console.error('Order listener error:',error);
-
-      cloudMessage(
-        orders.length
-          ?'클라우드 재연결 중 · 저장된 데이터 표시'
-          :'주문 연결 오류 · '+readableCloudError(error),
-        false
-      );
-
-      retryCloud(60000);
-    }
-  );
+  unsubscribeActiveOrders=db.collection('orders')
+    .where('activeState','==',true)
+    .limit(300)
+    .onSnapshot(
+      snapshot=>{
+        replaceSnapshotMap(activeOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+      },
+      error=>{
+        console.error('Active order listener error:',error);
+        cloudMessage(
+          orders.length
+            ?'미완료 주문 재연결 중 · 저장된 데이터 표시'
+            :'미완료 주문 연결 오류 · '+readableCloudError(error),
+          false
+        );
+        retryCloud(60000);
+      }
+    );
 
   integrationUnsubscribe=db.collection('system')
     .doc('integrations')
     .onSnapshot(
-      {includeMetadataChanges:true},
       snapshot=>{
-        integrations=snapshot.exists
-          ?snapshot.data()
-          :{};
-
+        integrations=snapshot.exists?snapshot.data():{};
         saveCloudCache();
         renderIntegrations();
         renderMarkets();
       },
       error=>{
         console.error('Integration listener error:',error);
-
         renderIntegrations();
         renderMarkets();
         retryCloud(60000);
@@ -2629,7 +2665,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.4.2-inquiry-fix',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.5.0-free-tier',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -2752,6 +2788,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 
 let renderedKoreaDay=todayKey();
+let renderedKoreaMonth=monthKey();
 
 setInterval(()=>{
   const currentDay=todayKey();
@@ -2762,6 +2799,10 @@ setInterval(()=>{
     activeStatus='';
     activeMarket='';
     render();
+    if(monthKey()!==renderedKoreaMonth){
+      renderedKoreaMonth=monthKey();
+      if(db) startCloudListeners();
+    }
     toast('날짜가 변경되어 오늘 주문 현황을 초기화했습니다.');
   }
 },120000);
@@ -2782,7 +2823,7 @@ function replaceSubscription(slot,unsubscribe){
 
 
 const FREE_MODE_LIMITS={
-  maxLoadedOrders:600,
+  maxLoadedOrders:1600,
   listenerReconnectMs:60000,
   mode:'무료 한도 보호'
 };
@@ -2792,9 +2833,9 @@ function renderFreeModeBadge(){
 
   if(
     badge &&
-    !badge.textContent.includes('무료 보호')
+    !badge.textContent.includes('무료한도')
   ){
-    badge.textContent+=' · 무료 보호';
+    badge.textContent+=' · 무료한도 최적화';
   }
 }
 

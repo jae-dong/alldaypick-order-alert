@@ -25,8 +25,18 @@ const elevenst=read('elevenst.js');
 assert.match(elevenst,/String\(item\.eventType\|\|'order'\)==='order'/,'11st order status refresh must not treat claim documents as orders');
 assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconciled after a complete refresh');
 
-const agent=read('local-agent.js');
-assert.match(agent,/HEARTBEAT_INTERVAL_MS=60\*1000/,'Agent heartbeat must run every minute');
-assert.match(agent,/version:'FINAL-7\.4\.2-INQUIRY-FIX'/,'Agent diagnostics version must match release');
+assert.doesNotMatch(smartstore,/collection\('orders'\).*where\('source'.*get\(\)/s,'Smartstore sync must not scan Firestore orders');
+assert.doesNotMatch(elevenst,/collection\('orders'\).*where\('source'.*get\(\)/s,'11st sync must not scan Firestore orders');
 
+
+const agent=read('local-agent.js');
+const orderStore=read('order-store.js');
+assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
+assert.match(agent,/version:'FINAL-7\.5\.0-FREE-TIER'/,'Agent diagnostics version must match release');
+
+assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
+assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
+const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
+assert.match(app,/where\('datetime','>=',monthStartIso\(\)\)/,'Web app must subscribe only to the current month');
+assert.match(app,/where\('activeState','==',true\)/,'Web app must separately subscribe to unresolved items');
 console.log('source-contract tests passed');

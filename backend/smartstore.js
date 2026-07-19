@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
-import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -439,6 +439,11 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
     ...saved,createdClaims:saved.createdDocuments,
     changedClaims:saved.changedDocuments,
     deactivated:reconciled.deactivated||0,
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+Number(reconciled.quota?.cloudReads||0),
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(reconciled.quota?.cloudWrites||0),
+      cacheHits:Number(saved.quota?.cacheHits||0)
+    },
     complete,days
   };
 }
@@ -467,9 +472,8 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   }
 
   if(reconcile){
-    const snapshot=await db.collection('orders').where('source','==','smartstore').get();
-    snapshot.forEach(doc=>{
-      const data=doc.data()||{};
+    const cached=await getCachedDocuments(db,{source:'smartstore',eventType:'order',activeOnly:true});
+    cached.documents.forEach(data=>{
       if(data.productOrderId) idSet.add(String(data.productOrderId));
     });
   }
@@ -486,6 +490,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   const documents=await queryDetails(token,ids);
   const saved=await upsertDocuments(db,documents);
   const claimReconcile={cancel:0,return:0,exchange:0};
+  const claimQuota={cloudReads:0,cloudWrites:0};
 
   if(reconcile){
     for(const eventType of ['cancel','return','exchange']){
@@ -500,6 +505,8 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
         reason:'스마트스토어 현재 미처리 클레임에서 제외됨'
       });
       claimReconcile[eventType]=result.deactivated||0;
+      claimQuota.cloudReads+=Number(result.quota?.cloudReads||0);
+      claimQuota.cloudWrites+=Number(result.quota?.cloudWrites||0);
     }
   }
 
@@ -508,6 +515,11 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     createdOrders:saved.createdDocuments.filter(item=>item.eventType==='order'&&item.status==='new'),
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
     rangeCount:ranges.length,
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+claimQuota.cloudReads,
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,
+      cacheHits:Number(saved.quota?.cacheHits||0)
+    },
     claimReconcile
   };
 }

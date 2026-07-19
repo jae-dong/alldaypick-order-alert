@@ -136,6 +136,7 @@ export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,re
   const all=[];
   const counts={};
   const completeness={};
+  const reconcileQuota={cloudReads:0,cloudWrites:0,cacheHits:0};
 
   for(let index=0;index<statuses.length;index+=1){
     if(index) await sleep(1500);
@@ -153,6 +154,8 @@ export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,re
       });
       counts[`${sourceStatus}_DEACTIVATED`]=result.deactivated||0;
       counts[`${sourceStatus}_RECONCILE_SKIPPED`]=result.skipped?1:0;
+      reconcileQuota.cloudReads+=Number(result.quota?.cloudReads||0);
+      reconcileQuota.cloudWrites+=Number(result.quota?.cloudWrites||0);
     }
   }
 
@@ -161,6 +164,11 @@ export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,re
   return {
     ...saved,createdOrders:saved.createdDocuments,changedOrders:saved.changedDocuments,
     counts,completeness,statuses,days,
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+reconcileQuota.cloudReads,
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+reconcileQuota.cloudWrites,
+      cacheHits:Number(saved.quota?.cacheHits||0)
+    },
     checkedFrom:from.toISOString(),checkedTo:now.toISOString()
   };
 }

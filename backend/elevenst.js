@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
-import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
 
@@ -487,8 +487,8 @@ function collectRows(node,depth=0){
 }
 
 export async function syncElevenstStatuses(db,config){
-  const snapshot=await db.collection('orders').where('source','==','elevenst').get();
-  const existing=snapshot.docs.map(doc=>({id:doc.id,...doc.data()}));
+  const cached=await getCachedDocuments(db,{source:'elevenst',activeOnly:true});
+  const existing=cached.documents;
   const normalExisting=existing.filter(item=>String(item.eventType||'order')==='order');
   const orderNos=[...new Set(normalExisting.map(item=>String(item.orderNo||'').trim()).filter(Boolean))];
   let checked=0,failed=0;
@@ -546,6 +546,7 @@ export async function syncElevenstStatuses(db,config){
 
   const saved=await upsertDocuments(db,documents);
   const claimReconciliation={};
+  const claimQuota={cloudReads:0,cloudWrites:0};
 
   if(failed===0){
     for(const eventType of ['cancel','return','exchange']){
@@ -558,6 +559,8 @@ export async function syncElevenstStatuses(db,config){
         complete:true,
         reason:'11번가 현재 미처리 클레임 목록에서 제외됨'
       });
+      claimQuota.cloudReads+=Number(claimReconciliation[eventType].quota?.cloudReads||0);
+      claimQuota.cloudWrites+=Number(claimReconciliation[eventType].quota?.cloudWrites||0);
     }
   }
 
@@ -565,6 +568,11 @@ export async function syncElevenstStatuses(db,config){
     checked,changed:saved.statusChanged,failed,
     changedOrders:saved.changedDocuments,
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+claimQuota.cloudReads,
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,
+      cacheHits:Number(saved.quota?.cacheHits||0)
+    },
     claimReconciliation
   };
 }

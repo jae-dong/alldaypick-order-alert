@@ -1,14 +1,14 @@
-FINAL v7.4.2 FIXED 적용 순서
+FINAL v7.5.0 FREE TIER 적용 순서
 
-1. 현재 검은 수집기 창을 닫고 STOP_AGENT.cmd를 한 번 실행합니다.
-2. GitHub Desktop에서 alldaypick-order-alert 저장소를 선택합니다.
-3. Repository > Show in Explorer를 눌러 실제 연결 폴더를 엽니다.
-4. 기존 backend/.env.local 파일이 있는지 확인합니다. 이 파일은 삭제하면 안 됩니다.
-5. v7.4.2 ZIP의 alldaypick-order-alert 폴더 안 파일을 실제 연결 폴더에 덮어씁니다.
-   ZIP에는 .env.local이 없으므로 기존 설정 파일은 그대로 남습니다.
-6. GitHub Desktop Summary: FINAL v7.4.2 Firestore 저장 오류 수정
-7. Commit to main > Push origin
-8. 2~5분 뒤 웹 상단 FINAL v7.4.2 확인
-9. 실제 연결 폴더의 START_AGENT.cmd 실행
-10. 검은 창에서 네 마켓 동기화 완료와 생존신호 성공을 확인합니다.
-11. 웹앱에서 지금 수집을 누르고 3~10분 뒤 수치를 확인합니다.
+1. 현재 검은 수집기 창 닫기
+2. STOP_AGENT.cmd 한 번 실행
+3. ZIP 압축 해제
+4. GitHub Desktop > Repository > Show in Explorer
+5. ZIP 안쪽 alldaypick-order-alert 폴더의 내용물만 실제 연결 폴더에 덮어쓰기
+6. backend/.env.local과 .git은 유지
+7. GitHub Desktop Summary: FINAL v7.5.0 무료한도 최적화
+8. Commit to main
+9. Push origin
+10. 기존 웹주소에서 FINAL v7.5.0 확인
+11. 실제 연결 폴더의 START_AGENT.cmd 실행
+12. 첫 동기화 완료 후 웹에서 지금 수집은 한 번만 누르기

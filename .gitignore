@@ -7,3 +7,10 @@ backend/.telegram-alert-ledger.json.corrupt-*
 *.log
 .DS_Store
 Thumbs.db
+
+backend/.firestore-quota-cooldown.json
+
+backend/.firestore-mirror-cache.json
+backend/.firestore-mirror-cache.json.tmp
+backend/.firestore-system-write-cache.json
+backend/.firestore-system-write-cache.json.tmp

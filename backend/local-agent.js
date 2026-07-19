@@ -31,6 +31,7 @@ import {
 } from './coupang-claims.js';
 import { syncCoupangInquiries } from './coupang-inquiries.js';
 import { migrateLegacyDocuments } from './order-store.js';
+import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 
 dotenv.config({path:path.resolve('.env.local')});
 
@@ -66,57 +67,112 @@ admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 const db=admin.firestore();
 
 
-const QUOTA_COOLDOWN_MS=15*60*1000;
-const HEARTBEAT_INTERVAL_MS=60*1000;
+const HEARTBEAT_INTERVAL_MS=5*60*1000;
+const QUOTA_STATE_PATH=path.resolve('.firestore-quota-cooldown.json');
+const SYSTEM_WRITE_CACHE_PATH=path.resolve('.firestore-system-write-cache.json');
 let quotaBlockedUntil=0;
+let quotaResumeTimer=null;
+let quotaSkipLoggedAt=0;
 let agentLockReleased=false;
 
-function quotaExceeded(error){
-  const message=String(
-    error instanceof Error
-      ?error.message
-      :error
-  ).toUpperCase();
 
-  return (
-    message.includes('RESOURCE_EXHAUSTED') ||
-    message.includes('QUOTA EXCEEDED')
-  );
+function loadQuotaState(){
+  try{
+    if(!fs.existsSync(QUOTA_STATE_PATH)) return 0;
+    const parsed=JSON.parse(fs.readFileSync(QUOTA_STATE_PATH,'utf8'));
+    const until=Number(parsed?.blockedUntil||0);
+    return Number.isFinite(until)&&until>Date.now()?until:0;
+  }catch{
+    return 0;
+  }
+}
+
+function saveQuotaState(){
+  try{
+    if(quotaBlockedUntil>Date.now()){
+      fs.writeFileSync(QUOTA_STATE_PATH,JSON.stringify({
+        blockedUntil:quotaBlockedUntil,
+        blockedUntilIso:new Date(quotaBlockedUntil).toISOString(),
+        reason:'Firestore RESOURCE_EXHAUSTED'
+      },null,2),'utf8');
+    }else if(fs.existsSync(QUOTA_STATE_PATH)){
+      fs.unlinkSync(QUOTA_STATE_PATH);
+    }
+  }catch{}
+}
+
+function quotaResumeLabel(){
+  return new Date(quotaBlockedUntil).toLocaleString('ko-KR',{
+    timeZone:'Asia/Seoul',hour12:false
+  });
+}
+
+function scheduleQuotaResume(){
+  clearTimeout(quotaResumeTimer);
+  if(quotaBlockedUntil<=Date.now()) return;
+  const delay=Math.min(quotaBlockedUntil-Date.now()+3000,2147480000);
+  quotaResumeTimer=setTimeout(()=>{
+    if(Date.now()<quotaBlockedUntil){
+      scheduleQuotaResume();
+      return;
+    }
+    quotaBlockedUntil=0;
+    saveQuotaState();
+    console.log('[무료 한도 복구 예상 시각 도달] 자동 동기화를 다시 시작합니다.');
+    run('startup').catch(error=>{
+      console.error('한도 복구 후 재시작 실패:',error instanceof Error?error.message:String(error));
+    });
+  },Math.max(1000,delay));
 }
 
 function inQuotaCooldown(){
+  if(quotaBlockedUntil&&Date.now()>=quotaBlockedUntil){
+    quotaBlockedUntil=0;
+    saveQuotaState();
+  }
   return Date.now()<quotaBlockedUntil;
 }
 
 function markQuotaCooldown(error){
-  if(!quotaExceeded(error)){
-    return false;
-  }
+  if(!quotaExceeded(error)) return false;
 
-  quotaBlockedUntil=Date.now()+QUOTA_COOLDOWN_MS;
+  quotaBlockedUntil=Math.max(
+    quotaBlockedUntil,
+    nextFirestoreFreeResetMs(Date.now())
+  );
+  saveQuotaState();
+  scheduleQuotaResume();
 
   console.error(
-    '[무료 한도 보호] Firestore 저장을 15분 쉬고 자동 재시도합니다.'
+    `[Firestore 무료 한도 초과] 반복 재시도를 중단합니다. `+
+    `${quotaResumeLabel()} 이후 자동 재시도합니다.`
   );
 
   return true;
 }
 
+function logQuotaSkip(label='수집'){
+  if(Date.now()-quotaSkipLoggedAt<5*60*1000) return;
+  quotaSkipLoggedAt=Date.now();
+  console.log(
+    `[무료 한도 보호 중] ${label} 건너뜀 · 재개 예정 ${quotaResumeLabel()}`
+  );
+}
+
+quotaBlockedUntil=loadQuotaState();
+if(quotaBlockedUntil){
+  console.log(
+    `[Firestore 무료 한도 보호 상태] ${quotaResumeLabel()} 이후 자동 재개 예정`
+  );
+  scheduleQuotaResume();
+}
+
 function stableObject(value){
-  if(value===undefined){
-    return undefined;
-  }
-
-  if(value===null||typeof value!=='object'){
-    return value;
-  }
-
+  if(value===undefined) return undefined;
+  if(value===null||typeof value!=='object') return value;
   if(Array.isArray(value)){
-    return value
-      .map(stableObject)
-      .filter(item=>item!==undefined);
+    return value.map(stableObject).filter(item=>item!==undefined);
   }
-
   if(
     value instanceof Date ||
     typeof value?.toDate==='function' ||
@@ -124,56 +180,100 @@ function stableObject(value){
   ){
     return value;
   }
+  return Object.keys(value).sort().reduce((result,key)=>{
+    const clean=stableObject(value[key]);
+    if(clean!==undefined) result[key]=clean;
+    return result;
+  },{});
+}
 
-  return Object.keys(value)
-    .sort()
-    .reduce((result,key)=>{
-      const clean=stableObject(value[key]);
+const SYSTEM_VOLATILE_FIELDS=new Set([
+  'lastRun','lastSuccess','updatedAt','checkedAt','generatedAt',
+  'generatedAtIso','startedAt','completedAt','lastSeen','lastSeenIso',
+  'lastSeenEpoch','telegramCheckedAt','telegramLastSuccess'
+]);
 
-      if(clean!==undefined){
-        result[key]=clean;
-      }
-
-      return result;
-    },{});
+function meaningfulSystemObject(value){
+  if(value===undefined) return undefined;
+  if(value===null||typeof value!=='object') return value;
+  if(Array.isArray(value)){
+    return value.map(meaningfulSystemObject).filter(item=>item!==undefined);
+  }
+  if(
+    value instanceof Date ||
+    typeof value?.toDate==='function' ||
+    value?.constructor?.name==='FieldValue'
+  ){
+    return '[timestamp]';
+  }
+  return Object.keys(value).sort().reduce((result,key)=>{
+    if(SYSTEM_VOLATILE_FIELDS.has(key)) return result;
+    const clean=meaningfulSystemObject(value[key]);
+    if(clean!==undefined) result[key]=clean;
+    return result;
+  },{});
 }
 
 function stableJson(value){
   return JSON.stringify(stableObject(value));
 }
 
-const lastWrittenHashes=new Map();
+function loadSystemWriteCache(){
+  try{
+    if(!fs.existsSync(SYSTEM_WRITE_CACHE_PATH)) return {};
+    const parsed=JSON.parse(fs.readFileSync(SYSTEM_WRITE_CACHE_PATH,'utf8'));
+    return parsed&&typeof parsed==='object'?parsed:{};
+  }catch{
+    return {};
+  }
+}
 
-async function setOnlyWhenChanged(reference,data,options={merge:true}){
+function saveSystemWriteCache(){
+  try{
+    const temporary=`${SYSTEM_WRITE_CACHE_PATH}.tmp`;
+    fs.writeFileSync(temporary,JSON.stringify(systemWriteCache),{encoding:'utf8',flag:'w'});
+    fs.renameSync(temporary,SYSTEM_WRITE_CACHE_PATH);
+  }catch{}
+}
+
+const systemWriteCache=loadSystemWriteCache();
+
+async function setOnlyWhenChanged(reference,data,options={merge:true,minRefreshMs:30*60*1000}){
   if(inQuotaCooldown()){
-    return {
-      skipped:true,
-      reason:'quota-cooldown'
-    };
+    return {skipped:true,reason:'quota-cooldown'};
   }
 
   const clean=stableObject(data);
-  const hash=stableJson(clean);
-  const previous=lastWrittenHashes.get(reference.path);
+  const topKeys=Object.keys(clean||{}).sort().join(',');
+  const cacheKey=`${reference.path}|${topKeys}`;
+  const hash=JSON.stringify(meaningfulSystemObject(clean));
+  const previous=systemWriteCache[cacheKey]||{};
+  const elapsed=Date.now()-Number(previous.lastWriteAt||0);
 
-  if(previous===hash){
-    return {
-      skipped:true,
-      reason:'unchanged'
-    };
+  if(previous.hash===hash&&elapsed<Math.max(60*1000,Number(options.minRefreshMs||0))){
+    return {skipped:true,reason:'unchanged'};
   }
 
   try{
-    await reference.set(clean,options);
-    lastWrittenHashes.set(reference.path,hash);
-
-    return {
-      skipped:false
-    };
+    await reference.set(clean,{merge:options.merge!==false});
+    systemWriteCache[cacheKey]={hash,lastWriteAt:Date.now()};
+    saveSystemWriteCache();
+    return {skipped:false};
   }catch(error){
     markQuotaCooldown(error);
     throw error;
   }
+}
+
+function quotaLog(...results){
+  const totals=results.reduce((sum,result)=>{
+    const quota=result?.quota||{};
+    sum.reads+=Number(quota.cloudReads||0);
+    sum.writes+=Number(quota.cloudWrites||0);
+    sum.cache+=Number(quota.cacheHits||0);
+    return sum;
+  },{reads:0,writes:0,cache:0});
+  return `DB읽기 ${totals.reads} · DB쓰기 ${totals.writes} · 로컬캐시 ${totals.cache}`;
 }
 
 function acquireSingleAgentLock(){
@@ -779,7 +879,10 @@ async function fastSync(source='interval'){
     pollCoupangStatuses(db,coupang(),{
       statuses:FAST,
       days:reconcile?Math.max(1,new Date().getDate()):2,
-      maxPages:reconcile?15:2
+      maxPages:reconcile?15:2,
+      // 무료 한도에서는 Firestore를 다시 읽지 않고 로컬 캐시로만
+      // 현재 ACCEPT/INSTRUCT 목록을 대조해 상태 이동을 10분 안에 반영합니다.
+      reconcile:true
     }),
     reconcile?180000:45000
   );
@@ -899,6 +1002,7 @@ async function syncAllClaimTypes(source='interval'){
   const results=[];
 
   for(const type of CLAIM_TYPES){
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
     let result;
 
     if(type==='cancel'){
@@ -1148,7 +1252,7 @@ async function syncElevenstSafe(source){
       `11번가 동기화 완료: 발견 ${result.found}, `+
       `신규 ${result.created}, 상태확인 ${statusResult.checked}, `+
       `상태변경 ${statusResult.changed}, `+
-      `상태푸시 ${statusPush.sent}`
+      `상태푸시 ${statusPush.sent} · ${quotaLog(result)}`
     );
 
     return result;
@@ -1156,6 +1260,8 @@ async function syncElevenstSafe(source){
     const message=error instanceof Error
       ? error.message
       : String(error);
+
+    if(markQuotaCooldown(error)) return null;
 
     console.error('11번가 동기화 실패:',message);
 
@@ -1205,6 +1311,7 @@ async function syncSmartstoreSafe(source){
       syncSmartstoreInquiries(db,smartstoreConfig(),{reconcile}),
       300000
     ).catch(error=>{
+      if(markQuotaCooldown(error)) throw error;
       console.error('스마트스토어 문의조회 실패:',error.message);
       return {found:0,created:0,statusChanged:0,createdClaims:[],complete:false,error:error.message};
     });
@@ -1231,12 +1338,13 @@ async function syncSmartstoreSafe(source){
     console.log(
       `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
       `상태변경 ${result.statusChanged}, 미답변문의 ${inquiryResult.found||0}, `+
-      `조회구간 ${result.rangeCount||1}`
+      `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
 
     return {...result,inquiries:inquiryResult};
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
+    if(markQuotaCooldown(error)) return null;
     console.error('스마트스토어 동기화 실패:',message);
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
@@ -1356,11 +1464,12 @@ async function syncLotteonSafe(source){
       `신규 ${result.created}, `+
       `상태변경 ${result.statusChanged}, `+
       `신규푸시 ${push.sent}, `+
-      `상태푸시 ${statusPush.sent}`
+      `상태푸시 ${statusPush.sent} · ${quotaLog(result)}`
     );
 
     return result;
   }catch(error){
+    if(markQuotaCooldown(error)) return null;
     await saveLotteonError(db,config,error);
 
     console.error(
@@ -1383,6 +1492,7 @@ async function refreshEsmStatus(){
       esmConfigFromEnv(process.env)
     );
   }catch(error){
+    if(markQuotaCooldown(error)) return;
     console.error(
       'ESM 연결상태 확인 실패:',
       error instanceof Error?error.message:String(error)
@@ -1396,8 +1506,14 @@ let legacyMigrationDone=false;
 
 async function ensureLegacyMigration(){
   if(legacyMigrationDone) return null;
-  const result=await migrateLegacyDocuments(db);
   legacyMigrationDone=true;
+
+  if(String(process.env.RUN_LEGACY_MIGRATION||'').trim()!=='1'){
+    console.log('기존 데이터 자동정리 생략 · 필요 시 RUN_LEGACY_MIGRATION=1');
+    return {scanned:0,patched:0,legacyClaimsDeactivated:0,skipped:true};
+  }
+
+  const result=await migrateLegacyDocuments(db);
   console.log(
     `기존 데이터 정리 완료: 검사 ${result.scanned}, 보정 ${result.patched}, `+
     `혼합상태 제외 ${result.legacyClaimsDeactivated}`
@@ -1405,7 +1521,10 @@ async function ensureLegacyMigration(){
   return result;
 }
 
+
 async function writeDiagnostics(reason='sync'){
+  if(String(process.env.ENABLE_DIAGNOSTICS||'').trim()!=='1') return null;
+  if(inQuotaCooldown()) return null;
   try{
     const snapshot=await db.collection('orders').get();
     const counts={};
@@ -1419,21 +1538,27 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.4.2-INQUIRY-FIX',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.5.0-FREE-TIER',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
+    if(markQuotaCooldown(error)) return null;
     console.error('진단정보 저장 실패:',error instanceof Error?error.message:String(error));
   }
+  return null;
 }
 
 async function writeAgentHeartbeat(reason='interval'){
+  if(inQuotaCooldown()){
+    logQuotaSkip('생존신호');
+    return false;
+  }
   const now=new Date();
   const payload={
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.4.2-INQUIRY-FIX',
+    version:'FINAL-7.5.0-FREE-TIER',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1460,6 +1585,8 @@ async function writeAgentHeartbeat(reason='interval'){
         ?error.message
         :String(error);
 
+    if(markQuotaCooldown(error)) return false;
+
     console.error(
       `[생존신호 실패] ${now.toLocaleTimeString('ko-KR')} · ${message}`
     );
@@ -1478,10 +1605,16 @@ async function runTelegramTest(requestId=''){
         '텔레그램 주문알림 연결이 정상입니다.',
         `테스트 시각: ${new Date().toLocaleString('ko-KR')}`,
         '앞으로 신규주문·주문취소·반품요청·문의사항만 이 채팅으로 전송됩니다.'
-      ].join('\n')
+      ].join('\n'),
+      {test:true}
     );
 
     const success=(result.sent||0)>0;
+
+    if(inQuotaCooldown()){
+      console.log(success?'텔레그램 테스트 메시지 전송 성공':'텔레그램 테스트 메시지 전송 실패');
+      return;
+    }
 
     await commandRef.set({
       status:success?'test_success':'test_error',
@@ -1514,6 +1647,10 @@ async function runTelegramTest(requestId=''){
 }
 
 async function runFastSync(){
+  if(inQuotaCooldown()){
+    logQuotaSkip('빠른수집');
+    return;
+  }
   if(fastRunning||running) return;
   fastRunning=true;
   fastLoopCount+=1;
@@ -1525,15 +1662,19 @@ async function runFastSync(){
 
     await new Promise(r=>setTimeout(r,1200));
     await syncSmartstoreSafe('interval');
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
     await new Promise(r=>setTimeout(r,1200));
     await syncElevenstSafe('interval');
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
     await new Promise(r=>setTimeout(r,800));
     await refreshEsmStatus();
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
     await new Promise(r=>setTimeout(r,800));
     await syncLotteonSafe('interval');
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
     console.log(
       `빠른수집 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
@@ -1545,6 +1686,7 @@ async function runFastSync(){
       console.log('다음 정규수집에서 전체 상태 순환 확인 예정');
     }
   }catch(error){
+    if(markQuotaCooldown(error)) return;
     console.error(
       '빠른수집 실패:',
       error instanceof Error?error.message:String(error)
@@ -1557,7 +1699,7 @@ async function runFastSync(){
 
 async function run(source){
   if(inQuotaCooldown()){
-    console.log('[무료 한도 보호 중] 이번 수집은 건너뜁니다.');
+    logQuotaSkip(source==='startup'?'시작 수집':'정규 수집');
     return;
   }
   if(running) return;
@@ -1565,8 +1707,15 @@ async function run(source){
   running=true;
 
   if(['startup','reconcile','immediate'].includes(source)){
-    try{await ensureLegacyMigration();}
-    catch(error){console.error('기존 데이터 정리 실패:',error instanceof Error?error.message:String(error));}
+    try{
+      await ensureLegacyMigration();
+    }catch(error){
+      if(markQuotaCooldown(error)){
+        running=false;
+        return;
+      }
+      console.error('기존 데이터 정리 실패:',error instanceof Error?error.message:String(error));
+    }
   }
 
   const reconcile=source==='reconcile';
@@ -1575,12 +1724,21 @@ async function run(source){
   console.log(`[${new Date().toISOString()}] ${label} 시작`);
 
   if(source==='immediate'||reconcile){
-    await commandRef.set({
-      status:'running',
-      action:reconcile?'reconcile':'collect',
-      startedAt:admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt:admin.firestore.FieldValue.serverTimestamp()
-    },{merge:true});
+    try{
+      await commandRef.set({
+        status:'running',
+        action:reconcile?'reconcile':'collect',
+        startedAt:admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt:admin.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+    }catch(error){
+      if(markQuotaCooldown(error)){
+        running=false;
+        return;
+      }
+      running=false;
+      throw error;
+    }
   }
 
   const summary={};
@@ -1607,6 +1765,7 @@ async function run(source){
             70000
           );
         }catch(error){
+          if(markQuotaCooldown(error)) throw error;
           console.error('쿠팡 상태 순환조회 실패:',error.message);
         }
       }
@@ -1617,36 +1776,32 @@ async function run(source){
       console.log(
         `쿠팡 동기화 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
         `발송대기 ${fast.counts?.INSTRUCT||0}`+
-        (slow?` · ${slow.slowStatus} ${slow.counts?.[slow.slowStatus]||0}`:'')
+        (slow?` · ${slow.slowStatus} ${slow.counts?.[slow.slowStatus]||0}`:'')+
+        ` · ${quotaLog(fast,slow)}`
       );
     }catch(error){
       const message=error instanceof Error?error.message:String(error);
       summary.coupang={error:message};
+      if(markQuotaCooldown(error)) throw error;
       console.error('쿠팡 실패:',message);
     }
 
-    const [smartstoreResult,elevenstResult,lotteonResult]=await Promise.all([
-      syncSmartstoreSafe(source).catch(error=>{
-        console.error('스마트스토어 실행 오류:',error.message);
-        return null;
-      }),
-      syncElevenstSafe(source).catch(error=>{
-        console.error('11번가 실행 오류:',error.message);
-        return null;
-      }),
-      syncLotteonSafe(source).catch(error=>{
-        console.error('롯데온 실행 오류:',error.message);
-        return null;
-      })
-    ]);
-
+    const smartstoreResult=await syncSmartstoreSafe(source);
     summary.smartstore=smartstoreResult;
-    summary.elevenst=elevenstResult;
-    summary.lotteon=lotteonResult;
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
-    await refreshEsmStatus().catch(error=>{
-      console.error('ESM 상태 오류:',error.message);
-    });
+    await new Promise(resolve=>setTimeout(resolve,800));
+    const elevenstResult=await syncElevenstSafe(source);
+    summary.elevenst=elevenstResult;
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+
+    await new Promise(resolve=>setTimeout(resolve,800));
+    const lotteonResult=await syncLotteonSafe(source);
+    summary.lotteon=lotteonResult;
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+
+    await refreshEsmStatus();
+    if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 
     try{
       summary.claims=
@@ -1666,6 +1821,7 @@ async function run(source){
               ]
             :[];
     }catch(error){
+      if(markQuotaCooldown(error)) throw error;
       console.error('쿠팡 CS 실패:',error.message);
       summary.claims=[];
     }
@@ -1699,6 +1855,11 @@ async function run(source){
     }
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
+
+    if(markQuotaCooldown(error)||inQuotaCooldown()){
+      console.error(`${label} 중단: Firestore 무료 한도 보호`);
+      return;
+    }
 
     console.error(`${label} 전체 오류:`,message);
 
@@ -1744,7 +1905,10 @@ commandRef.onSnapshot(snap=>{
   }
 
   run('immediate');
-},error=>console.error('명령 감시 오류:',error.message));
+},error=>{
+  if(markQuotaCooldown(error)) return;
+  console.error('명령 감시 오류:',error.message);
+});
 
 await writeAgentHeartbeat();
 
@@ -1805,7 +1969,7 @@ setInterval(()=>{
 
 console.log(
   `로컬 수집기 준비 완료 · 신규 10분 · 전체상태 30분 · `+
-  `텔레그램 테스트 즉시 사용 가능 · 생존신호 1분`
+  `텔레그램 테스트 즉시 사용 가능 · 생존신호 5분 · 무료한도 최적화`
 );
 
 run('startup').catch(error=>{
