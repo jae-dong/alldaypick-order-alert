@@ -250,32 +250,63 @@ export async function syncReturns(db,config,reconcile=false){
 }
 
 
+function normalizedMarketValue(value){
+  return String(value??'').trim().toLowerCase().replace(/\s+/g,' ');
+}
+
+function isCoupangExchangeDocument(data={},documentId=''){
+  const sourceValues=[data.source,data.market,data.marketName,data.channel]
+    .map(normalizedMarketValue);
+  const coupang=sourceValues.some(value=>value==='coupang'||value==='쿠팡')||
+    normalizedMarketValue(documentId).startsWith('coupang-');
+  if(!coupang) return false;
+
+  const event=normalizedMarketValue(data.eventType);
+  if(event==='exchange') return true;
+
+  const signals=[
+    data.workflowType,data.status,data.statusLabel,data.sourceStatus,
+    data.claimStatus,data.exchangeStatus,data.exchangeStatusLabel,
+    data.claimKey,documentId
+  ].filter(Boolean).join(' ').toUpperCase();
+  return signals.includes('EXCHANGE')||signals.includes('교환');
+}
+
+function exchangeClaimIdentity(data={},documentId=''){
+  const explicit=String(
+    data.claimId||data.exchangeId||data.receiptId||''
+  ).trim();
+  const stored=String(data.claimKey||'').trim();
+  return explicit||stored||String(documentId||'').trim();
+}
+
 async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=true}={}){
   if(!complete) return {deactivated:0,skipped:true};
-  const activeIds=new Set(
-    (currentDocuments||[])
-      .filter(item=>item?.activeState!==false&&item?.id)
-      .map(item=>String(item.id))
-  );
 
-  let snapshot;
-  try{
-    snapshot=await db.collection('orders')
-      .where('source','==','coupang')
-      .where('eventType','==','exchange')
-      .where('activeState','==',true)
-      .get();
-  }catch(error){
-    const message=String(error?.message||error).toLowerCase();
-    if(!message.includes('index')&&!message.includes('failed_precondition')) throw error;
-    snapshot=await db.collection('orders').where('source','==','coupang').get();
+  const activeIds=new Set();
+  const activeClaims=new Set();
+  for(const item of currentDocuments||[]){
+    if(item?.activeState===false) continue;
+    if(item?.id) activeIds.add(String(item.id));
+    const identity=exchangeClaimIdentity(item,item?.id);
+    if(identity) activeClaims.add(identity);
   }
+
+  // A single-field activeState query is intentionally used here. It reads only
+  // currently open workflow documents and also catches legacy records whose
+  // source was stored as Korean "쿠팡" or whose eventType was omitted.
+  const snapshot=await db.collection('orders')
+    .where('activeState','==',true)
+    .get();
 
   const stale=[];
   snapshot.forEach(doc=>{
     const data=doc.data()||{};
-    if(String(data.eventType||'')!=='exchange'||data.activeState===false) return;
+    if(!isCoupangExchangeDocument(data,doc.id)) return;
+    if(data.activeState===false) return;
     if(activeIds.has(doc.id)) return;
+    const identity=exchangeClaimIdentity(data,doc.id);
+    if(identity&&activeClaims.has(identity)) return;
     stale.push(doc.ref);
   });
 
@@ -286,6 +317,8 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
         activeState:false,
         status:'exchanged',
         statusLabel:'교환완료',
+        sourceStatus:'SUCCESS',
+        claimStatus:'SUCCESS',
         resolvedReason:'쿠팡 현재 미처리 교환 목록에서 제외됨',
         resolvedAt:new Date(),
         updatedAt:new Date()
@@ -330,5 +363,7 @@ export const coupangClaimsTestHelpers={
   exchangeDocuments,
   rangeWindows,
   exchangeReconcileFrom,
-  forceCloseStaleCoupangExchanges
+  forceCloseStaleCoupangExchanges,
+  isCoupangExchangeDocument,
+  exchangeClaimIdentity
 };

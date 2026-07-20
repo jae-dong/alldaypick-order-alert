@@ -38,7 +38,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.1'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.2'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -66,4 +66,11 @@ assert.match(app,/action:'collect'/,'Manual button must request fast current col
 assert.match(app,/analysisKpis/,'Today analytics must render KPI cards');
 assert.match(app,/hourlySvg/,'Today analytics must render an hourly SVG chart');
 assert.match(app,/marketDonut/,'Today analytics must render a market sales donut');
+
+const startCmd=fs.readFileSync(new URL('../START_AGENT.cmd',import.meta.url),'utf8');
+assert.match(startCmd,/Stopping previous ALLDAYPICK agent automatically/,'START_AGENT must automatically stop a previous agent process');
+assert.match(startCmd,/Removing a stale ALLDAYPICK agent lock/,'START_AGENT must automatically remove stale locks');
+assert.match(coupangClaims,/where\('activeState','==',true\)/,'Coupang exchange cleanup must inspect all active legacy aliases');
+assert.match(coupangClaims,/value==='쿠팡'/,'Coupang exchange cleanup must recognize Korean source aliases');
+
 console.log('source-contract tests passed');

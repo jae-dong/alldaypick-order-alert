@@ -58,6 +58,12 @@ const multiLineClaim=[
 assert.equal(E.openClaims(multiLineClaim,integrations).length,1);
 assert.equal(E.counts(multiLineClaim,integrations).return,1);
 
+
+// Legacy Coupang exchange documents may store the source name in Korean.
+// Unknown/old exchange states must not remain in the current counter.
+assert.equal(E.terminalClaim({source:'쿠팡',market:'쿠팡',eventType:'exchange',sourceStatus:'EXCHANGE_REQUEST',activeState:true}),true);
+assert.equal(E.terminalClaim({source:'쿠팡',market:'쿠팡',eventType:'exchange',exchangeStatus:'PROGRESS',activeState:true}),false);
+
 console.log('state-engine tests passed');
 assert.equal(E.terminalClaim({eventType:'cancel',sourceStatus:'CANCEL_DONE'}),true);
 assert.equal(E.terminalClaim({eventType:'return',sourceStatus:'RETURN_REQUEST'}),false);

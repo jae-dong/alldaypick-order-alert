@@ -406,8 +406,33 @@ function acquireSingleAgentLock(){
 
     return true;
   }catch{
+    // Windows may leave the lock file behind when the black console is closed.
+    // Remove it only when the recorded PID is no longer alive, then retry once.
+    try{
+      const savedPid=Number(fs.readFileSync(lockPath,'utf8').trim());
+      let alive=Number.isInteger(savedPid)&&savedPid>0;
+      if(alive){
+        try{process.kill(savedPid,0);}catch{alive=false;}
+      }
+      if(!alive){
+        fs.unlinkSync(lockPath);
+        const fd=fs.openSync(lockPath,'wx');
+        fs.writeFileSync(fd,String(process.pid),'utf8');
+        fs.closeSync(fd);
+        agentLockReleased=false;
+        const release=()=>{
+          if(agentLockReleased)return;
+          agentLockReleased=true;
+          try{fs.unlinkSync(lockPath);}catch{}
+        };
+        process.on('exit',release);
+        process.on('SIGINT',()=>{release();process.exit(0);});
+        process.on('SIGTERM',()=>{release();process.exit(0);});
+        return true;
+      }
+    }catch{}
     console.error(
-      '이미 다른 PC 수집기가 실행 중입니다. 기존 검은 창을 먼저 종료해 주세요.'
+      '이미 다른 PC 수집기가 실행 중입니다. START_AGENT.cmd가 이전 수집기를 자동 정리한 뒤 다시 실행합니다.'
     );
     return false;
   }
@@ -1757,7 +1782,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.1',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.2',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1777,7 +1802,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.1',
+    version:'FINAL-7.7.2',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

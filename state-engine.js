@@ -28,6 +28,11 @@
     return candidates.length?Math.max(...candidates):0;
   }
   function market(item){return text(item?.market||item?.source||'기타');}
+  function isCoupang(item){
+    return [item?.source,item?.market,item?.channel]
+      .map(normalized)
+      .some(value=>value==='coupang'||value==='쿠팡');
+  }
   function orderNo(item){return text(item?.orderNo||item?.orderId||item?.shipmentBoxId||item?.deliveryNo||item?.id);}
   function orderKey(item){return text(item?.orderKey)||`${normalized(market(item))}|${normalized(orderNo(item))}`;}
   function lineKey(item){
@@ -115,7 +120,7 @@
     // 쿠팡 교환은 공식 상태 RECEIPT/PROGRESS만 현재 처리 중입니다.
     // 이전 버전에서 남은 EXCHANGE_REQUEST/빈 상태 캐시는 화면에서 제외하고,
     // 실제 진행 중 교환은 다음 API 동기화에서 공식 상태로 다시 활성화됩니다.
-    if(eventType(item)==='exchange'&&normalized(item?.source||market(item))==='coupang'){
+    if(eventType(item)==='exchange'&&isCoupang(item)){
       const exchangeState=text(
         item?.exchangeStatus||
         item?.exchangeStatusLabel||

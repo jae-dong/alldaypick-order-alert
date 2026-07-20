@@ -47,3 +47,24 @@ assert.equal(H.exchangeActiveState({exchangeStatus:'EXCHANGE_REQUEST'}),false,'n
   assert.equal(writes[0].ref.path,'orders/stale');
   assert.equal(writes[0].payload.activeState,false);
 }
+
+assert.equal(H.isCoupangExchangeDocument({source:'쿠팡',status:'exchange_request'},'legacy-1'),true);
+assert.equal(H.isCoupangExchangeDocument({market:'쿠팡',eventType:'exchange'},'legacy-2'),true);
+assert.equal(H.isCoupangExchangeDocument({source:'smartstore',eventType:'exchange'},'naver-1'),false);
+
+{
+  const writes=[];
+  const docs=[
+    {id:'legacy-korean-exchange',data:()=>({source:'쿠팡',status:'exchange_request',activeState:true,exchangeId:'OLD-1'}),ref:{path:'orders/legacy-korean'}},
+    {id:'smartstore-exchange',data:()=>({source:'smartstore',market:'스마트스토어',eventType:'exchange',activeState:true}),ref:{path:'orders/naver'}}
+  ];
+  const query={where(){return this;},async get(){return {forEach(callback){docs.forEach(callback);}};}};
+  const db={
+    collection(){return query;},
+    batch(){return {set(ref,payload){writes.push({ref,payload});},async commit(){}};}
+  };
+  const result=await H.forceCloseStaleCoupangExchanges(db,[],{complete:true});
+  assert.equal(result.deactivated,1);
+  assert.equal(writes[0].ref.path,'orders/legacy-korean');
+  assert.equal(writes[0].payload.sourceStatus,'SUCCESS');
+}

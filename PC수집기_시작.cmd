@@ -1,6 +1,6 @@
 @echo off
-setlocal
-title ALLDAYPICK ORDER AGENT v7.7.1 FAST PHOTO
+setlocal EnableExtensions EnableDelayedExpansion
+title ALLDAYPICK ORDER AGENT v7.7.2 AUTO RESTART
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -23,9 +23,26 @@ if errorlevel 1 (
 )
 
 if exist ".agent-running.lock" (
+  set "OLD_AGENT_PID="
+  set /p OLD_AGENT_PID=<".agent-running.lock"
+  if defined OLD_AGENT_PID (
+    set "OLD_AGENT_IMAGE="
+    for /f "tokens=1 delims=," %%A in ('tasklist /FI "PID eq !OLD_AGENT_PID!" /FO CSV /NH 2^>nul') do set "OLD_AGENT_IMAGE=%%~A"
+    if /I "!OLD_AGENT_IMAGE!"=="node.exe" (
+      echo Stopping previous ALLDAYPICK agent automatically. PID: !OLD_AGENT_PID!
+      taskkill /F /PID !OLD_AGENT_PID! >nul 2>nul
+      timeout /t 1 /nobreak >nul
+    ) else (
+      echo Removing a stale ALLDAYPICK agent lock.
+    )
+  )
+  del /F /Q ".agent-running.lock" >nul 2>nul
+)
+
+if exist ".agent-running.lock" (
   echo.
-  echo [ERROR] Another order agent may already be running.
-  echo Close the old black window first, or run STOP_AGENT.cmd once.
+  echo [ERROR] The previous agent lock could not be removed.
+  echo Run STOP_AGENT.cmd once and try again.
   echo.
   popd
   pause
@@ -75,7 +92,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.1 FAST PHOTO...
+echo Starting ALLDAYPICK order agent v7.7.2 AUTO RESTART...
 echo Keep this window open.
 echo.
 call npm run agent
