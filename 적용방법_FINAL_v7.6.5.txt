@@ -1,0 +1,12 @@
+FINAL v7.6.5 적용 방법
+
+1. 실행 중인 검은 수집기 창을 닫습니다.
+2. ZIP 안의 alldaypick-order-alert 폴더 내용물 전체를 복사합니다.
+3. 문서\GitHub\alldaypick-order-alert 폴더 안에 붙여넣고 모두 덮어씁니다.
+4. .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+5. GitHub Desktop Summary: FINAL v7.6.5 쿠팡 완료 교환 캐시 최종 정리
+6. Commit to main → Push origin
+7. 웹 상단 FINAL v7.6.5 확인
+8. START_AGENT.cmd 실행
+9. 첫 시작 수집이 끝난 뒤 웹 새로고침
+10. 쿠팡 교환 0건, 전체 교환요청 1건인지 샵모아와 비교합니다.

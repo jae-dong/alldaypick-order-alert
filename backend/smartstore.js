@@ -546,7 +546,7 @@ export async function retireLegacySmartstoreInquiryCache(db,{minAgeMs=2*60*60*10
     sourceStatus:'LEGACY_CACHE_RETIRED',
     inquiryStatus:'LEGACY_CACHE_RETIRED',
     legacyCacheRetiredAt:new Date(now).toISOString(),
-    resolvedReason:'v7.6.4 이전 문의 캐시 정리 · 다음 정상 API 조회 시 미답변 문의 자동 복구'
+    resolvedReason:'v7.6.5 이전 문의 캐시 정리 · 다음 정상 API 조회 시 미답변 문의 자동 복구'
   }));
   const saved=await upsertDocuments(db,retired);
   return {...saved,deactivated:retired.length};

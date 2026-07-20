@@ -38,7 +38,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.6\.4'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.6\.5'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -47,6 +47,7 @@ assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorr
 assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
 assert.match(coupangClaims,/\['SUCCESS','REJECT','CANCEL'\]/,'Coupang terminal exchange statuses must be explicitly closed');
 assert.match(coupangClaims,/reconcile\?90:31/,'Startup exchange repair must scan a wider history');
+assert.match(coupangClaims,/return reconcile\?new Date\(0\):fetchedFrom/,'Startup exchange reconciliation must close stale active exchange cache regardless of age');
 assert.match(smartstore,/retireLegacySmartstoreInquiryCache/,'Legacy Smartstore inquiry cache must be retired once and restored by a later successful query');
 assert.doesNotMatch(elevenst,/trackingNumber','dlvNo/,'11st dlvNo must not be treated as an invoice number');
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');

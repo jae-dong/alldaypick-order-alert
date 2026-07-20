@@ -97,6 +97,15 @@ assert.equal(rec.deactivated,1);
 assert.equal(reconcileDb.data.get('accept').activeState,false);
 assert.equal(reconcileDb.data.get('instruct').activeState,true);
 
+const staleExchangeDb=mockDb({
+  oldExchange:{source:'coupang',eventType:'exchange',sourceStatus:'PROGRESS',activeState:true,datetime:'2025-01-01T00:00:00+09:00'}
+});
+const staleExchangeResult=await reconcileOpenDocuments(staleExchangeDb,{
+  source:'coupang',eventType:'exchange',currentIds:[],from:new Date(0),complete:true
+});
+assert.equal(staleExchangeResult.deactivated,1,'startup full exchange reconcile must retire old active cache entries');
+assert.equal(staleExchangeDb.data.get('oldExchange').activeState,false);
+
 const migrationDb=mockDb({
   completedClaim:{source:'smartstore',eventType:'return',sourceStatus:'RETURN_DONE',status:'return_request',activeState:true,claimKey:'smartstore|return|R1|1'},
   openClaim:{source:'smartstore',eventType:'return',sourceStatus:'RETURN_REQUEST',status:'return_request',activeState:true,claimKey:'smartstore|return|R2|1'}

@@ -18,3 +18,8 @@ assert.equal(docs.find(item=>item.exchangeId==='2').activeState,true);
 console.log('coupang exchange tests passed');
 
 assert.ok(H.rangeWindows(90,6).length>=15,'startup exchange repair must support a 90-day split range');
+
+
+const regularFrom=new Date('2026-07-01T00:00:00.000Z');
+assert.equal(H.exchangeReconcileFrom(regularFrom,false).getTime(),regularFrom.getTime());
+assert.equal(H.exchangeReconcileFrom(regularFrom,true).getTime(),0,'startup reconciliation must close stale active exchanges regardless of age');

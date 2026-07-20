@@ -242,12 +242,28 @@ export async function syncReturns(db,config,reconcile=false){
   return saveAndReconcile(db,'return',documents,{from:received.from,complete:received.complete&&review.complete&&completed.complete,reconcile});
 }
 
+function exchangeReconcileFrom(fetchedFrom,reconcile=false){
+  // 정밀수집에서 쿠팡의 현재 미처리 교환 목록에 없는 문서는 요청일과 관계없이 닫습니다.
+  // 교환 API는 최근 90일을 모두 확인하므로, 그보다 오래된 active 교환은 이미 처리된
+  // 과거 캐시로 판단할 수 있습니다. 일반 순환수집은 기존 조회기간 기준을 유지합니다.
+  return reconcile?new Date(0):fetchedFrom;
+}
+
 export async function syncExchanges(db,config,reconcile=false){
   // 시작/수동 정밀수집에서는 과거 잘못 남은 완료 교환까지 정리할 수 있도록
   // 90일을 확인하고, 평상시 순환 수집은 API 부담을 줄여 31일만 확인합니다.
   const fetched=await fetchExchangeRows(config,reconcile?90:31,10);
   const documents=exchangeDocuments(fetched.rows);
-  return saveAndReconcile(db,'exchange',documents,{from:fetched.from,complete:fetched.complete,reconcile});
+  return saveAndReconcile(db,'exchange',documents,{
+    from:exchangeReconcileFrom(fetched.from,reconcile),
+    complete:fetched.complete,
+    reconcile
+  });
 }
 
-export const coupangClaimsTestHelpers={exchangeActiveState,exchangeDocuments,rangeWindows};
+export const coupangClaimsTestHelpers={
+  exchangeActiveState,
+  exchangeDocuments,
+  rangeWindows,
+  exchangeReconcileFrom
+};
