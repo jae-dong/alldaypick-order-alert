@@ -101,20 +101,27 @@ function returnDocuments(rows,{eventType,activeOverride=null}){
 }
 
 
+function exchangeStatusValue(row={}){
+  return String(
+    row.exchangeStatus||
+    row.exchangeStatusLabel||
+    row.status||
+    row.statusLabel||
+    ''
+  ).trim().toUpperCase();
+}
+
 function exchangeActiveState(row={}){
-  const status=String(row.exchangeStatus||row.status||'').trim().toUpperCase();
-  if(
-    ['SUCCESS','REJECT','CANCEL'].includes(status)||
-    /(SUCCESS|COMPLETE|COMPLETED|DONE|REJECT|CANCEL|WITHDRAW)/.test(status)
-  ) return false;
-  if(['RECEIPT','PROGRESS','REQUESTED','PROCESSING'].includes(status)) return true;
-  return !isClaimTerminal({
-    eventType:'exchange',
-    sourceStatus:status,
-    claimStatus:status,
-    exchangeStatus:status,
-    activeState:true
-  });
+  const status=exchangeStatusValue(row);
+
+  // 쿠팡 공식 교환 상태 중 현재 판매자가 처리해야 하는 상태는
+  // RECEIPT(접수), PROGRESS(진행) 두 가지뿐입니다.
+  if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
+
+  // SUCCESS/REJECT/CANCEL뿐 아니라 비어 있거나 알 수 없는 과거 캐시도
+  // 현재 미처리 교환으로 남기지 않습니다. 공식 API 응답은 exchangeStatus를
+  // 제공하므로, 명시적 활성 상태가 아닌 값은 종료 상태로 보는 것이 안전합니다.
+  return false;
 }
 
 function exchangeDocuments(rows){
@@ -125,7 +132,7 @@ function exchangeDocuments(rows){
       const claimId=String(row.exchangeId||row.receiptId||'');
       const lineId=String(item.orderItemId||item.targetItemId||'claim');
       if(!claimId) continue;
-      const sourceStatus=String(row.exchangeStatus||row.status||'');
+      const sourceStatus=exchangeStatusValue(row);
       const document={
         id:`coupang-exchange-${claimId}-${lineId}`,source:'coupang',market:'쿠팡',eventType:'exchange',
         ...workflowFields({source:'coupang',orderNo:String(row.orderId||''),lineId,eventType:'exchange',claimId}),
@@ -262,6 +269,7 @@ export async function syncExchanges(db,config,reconcile=false){
 }
 
 export const coupangClaimsTestHelpers={
+  exchangeStatusValue,
   exchangeActiveState,
   exchangeDocuments,
   rangeWindows,

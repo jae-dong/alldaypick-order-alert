@@ -11,7 +11,7 @@ const E=context.OrderStateEngine;
 assert.ok(E,'OrderStateEngine should load');
 
 const integrations={coupang:{connected:true},smartstore:{connected:true},elevenst:{connected:true},lotteon:{connected:true},gmarket:{connected:false},auction:{connected:false}};
-const base={source:'coupang',market:'쿠팡',orderNo:'100',vendorItemId:'A',product:'상품',qty:1,amount:10000,datetime:'2026-07-19T00:00:00+09:00',eventType:'order'};
+const base={source:'coupang',market:'쿠팡',orderNo:'100',vendorItemId:'A',product:'상품',qty:1,amount:10000,datetime:'2026-07-19T00:00:00+09:00',eventType:'order',activeState:true};
 
 // Same line must move, not accumulate.
 let data=[
@@ -95,3 +95,23 @@ regression.push({source:'smartstore',market:'스마트스토어',eventType:'retu
 regression.push({source:'smartstore',market:'스마트스토어',eventType:'exchange',claimId:'NE1',claimKey:'smartstore|exchange|NE1',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
 for(let i=0;i<3;i++) regression.push({source:i===0?'coupang':'smartstore',market:i===0?'쿠팡':'스마트스토어',eventType:'inquiry',claimId:`Q${i}`,claimKey:`${i===0?'coupang':'smartstore'}|inquiry|Q${i}`,sourceStatus:'NOANSWER',activeState:true});
 assert.equal(JSON.stringify(E.counts(regression,integrations)),JSON.stringify({new:13,shipping_wait:43,cancel:0,return:2,exchange:1,inquiry:3}));
+
+// Current-only guard: documents without an explicit activeState are historical/cache data.
+const legacyNoActive={...base,id:'legacy-no-active',status:'new',sourceStatus:'ACCEPT'};
+delete legacyNoActive.activeState;
+assert.equal(E.pendingItems([legacyNoActive],integrations).length,0);
+
+// 2026-07-20 ShopMoa comparison fixture (Gmarket/Auction disconnected).
+const liveComparison=[];
+for(let i=0;i<2;i++) liveComparison.push({source:'coupang',market:'쿠팡',orderNo:`LCN${i}`,shipmentBoxId:`LCNB${i}`,vendorItemId:`LCNI${i}`,eventType:'order',status:'new',sourceStatus:'ACCEPT',activeState:true,sourceUpdatedAt:`2026-07-20T10:0${i}:00+09:00`});
+for(let i=0;i<20;i++) liveComparison.push({source:'coupang',market:'쿠팡',orderNo:`LCW${i}`,shipmentBoxId:`LCWB${i}`,vendorItemId:`LCWI${i}`,eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:`2026-07-20T10:${String(i+10).padStart(2,'0')}:00+09:00`});
+for(let i=0;i<2;i++) liveComparison.push({source:'smartstore',market:'스마트스토어',orderNo:`LSN${i}`,productOrderId:`LSNP${i}`,eventType:'order',status:'new',sourceStatus:'PAYED',placeOrderStatus:'NOT_YET',activeState:true,sourceUpdatedAt:`2026-07-20T10:3${i}:00+09:00`});
+for(let i=0;i<5;i++) liveComparison.push({source:'smartstore',market:'스마트스토어',orderNo:`LSW${i}`,productOrderId:`LSWP${i}`,eventType:'order',status:'shipping_wait',sourceStatus:'PAYED',placeOrderStatus:'OK',activeState:true,sourceUpdatedAt:`2026-07-20T10:4${i}:00+09:00`});
+for(let i=0;i<4;i++) liveComparison.push({source:'elevenst',market:'11번가',orderNo:`LEW${i}`,orderProductSequence:'1',eventType:'order',status:'shipping_wait',sourceStatus:'ORDER_CONFIRMED',activeState:true,sourceUpdatedAt:`2026-07-20T10:5${i}:00+09:00`});
+liveComparison.push({source:'coupang',market:'쿠팡',eventType:'return',claimId:'LCR1',sourceStatus:'UC',activeState:true});
+liveComparison.push({source:'coupang',market:'쿠팡',eventType:'return',claimId:'LCR2',sourceStatus:'PR',activeState:true});
+liveComparison.push({source:'smartstore',market:'스마트스토어',eventType:'exchange',claimId:'LSE1',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
+liveComparison.push({source:'coupang',market:'쿠팡',eventType:'exchange',claimId:'OLD-CEX',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
+liveComparison.push({source:'coupang',market:'쿠팡',eventType:'inquiry',claimId:'LCQ1',sourceStatus:'NOANSWER',activeState:true});
+liveComparison.push({source:'gmarket',market:'G마켓',orderNo:'G-EXCLUDED',eventType:'order',status:'new',sourceStatus:'NEW',activeState:true});
+assert.equal(JSON.stringify(E.counts(liveComparison,integrations)),JSON.stringify({new:4,shipping_wait:29,cancel:0,return:2,exchange:1,inquiry:1}));

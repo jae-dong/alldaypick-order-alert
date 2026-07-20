@@ -1,12 +1,12 @@
-FINAL v7.6.5 적용 방법
+FINAL v7.7.0 적용 방법
 
 1. 현재 검은 수집기 창을 닫습니다.
 2. ZIP을 압축 해제합니다.
 3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
 4. 문서\GitHub\alldaypick-order-alert 폴더 안에 붙여넣고 모두 덮어씁니다.
 5. 기존 .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
-6. GitHub Desktop Summary: FINAL v7.6.5 쿠팡 완료 교환 캐시 최종 정리
+6. GitHub Desktop Summary: FINAL v7.7.0 빠른수집 디자인 현재상태 정리
 7. Commit to main 후 Push origin을 누릅니다.
-8. 웹 상단 FINAL v7.6.5를 확인합니다.
+8. 웹 상단 FINAL v7.7.0를 확인합니다.
 9. 최종 프로젝트 폴더의 START_AGENT.cmd를 실행합니다.
 10. 첫 수집 100% 완료 후 새로고침해 숫자를 확인합니다.

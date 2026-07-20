@@ -38,14 +38,14 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.6\.5'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.0'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
 assert.match(agent,/SMARTSTORE_INQUIRY_429_COOLDOWN_MS/,'Smartstore inquiries must persist a 429 cooldown');
 assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorrectly deactivated pending records');
 assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
-assert.match(coupangClaims,/\['SUCCESS','REJECT','CANCEL'\]/,'Coupang terminal exchange statuses must be explicitly closed');
+assert.match(coupangClaims,/\['RECEIPT','PROGRESS','접수','진행'\]/,'Only official active Coupang exchange statuses may remain open');
 assert.match(coupangClaims,/reconcile\?90:31/,'Startup exchange repair must scan a wider history');
 assert.match(coupangClaims,/return reconcile\?new Date\(0\):fetchedFrom/,'Startup exchange reconciliation must close stale active exchange cache regardless of age');
 assert.match(smartstore,/retireLegacySmartstoreInquiryCache/,'Legacy Smartstore inquiry cache must be retired once and restored by a later successful query');
@@ -55,4 +55,12 @@ assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 assert.match(app,/where\('datetime','>=',monthStartIso\(\)\)/,'Web app must subscribe only to the current month');
 assert.match(app,/where\('activeState','==',true\)/,'Web app must separately subscribe to unresolved items');
+
+assert.match(agent,/quickCurrentCoupangSync/,'Manual collection must use the fast current-status Coupang path');
+assert.match(agent,/refreshClaimsInBackground/,'Claims must continue in the background after current-order collection');
+assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');
+assert.match(app,/action:'collect'/,'Manual button must request fast current collection');
+assert.match(app,/analysisKpis/,'Today analytics must render KPI cards');
+assert.match(app,/hourlySvg/,'Today analytics must render an hourly SVG chart');
+assert.match(app,/marketDonut/,'Today analytics must render a market sales donut');
 console.log('source-contract tests passed');

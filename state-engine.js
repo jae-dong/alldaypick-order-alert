@@ -111,6 +111,22 @@
   }
   function terminalClaim(item){
     if(item?.activeState===false||item?.answered===true)return true;
+
+    // 쿠팡 교환은 공식 상태 RECEIPT/PROGRESS만 현재 처리 중입니다.
+    // 이전 버전에서 남은 EXCHANGE_REQUEST/빈 상태 캐시는 화면에서 제외하고,
+    // 실제 진행 중 교환은 다음 API 동기화에서 공식 상태로 다시 활성화됩니다.
+    if(eventType(item)==='exchange'&&normalized(item?.source||market(item))==='coupang'){
+      const exchangeState=text(
+        item?.exchangeStatus||
+        item?.exchangeStatusLabel||
+        item?.claimStatus||
+        item?.sourceStatus||
+        item?.status
+      ).toUpperCase();
+      if(['RECEIPT','PROGRESS','접수','진행'].includes(exchangeState))return false;
+      return true;
+    }
+
     const raw=sourceText(item);
     const tokens=new Set(raw.split(/[^A-Z0-9_가-힣]+/).filter(Boolean));
     const exact=[
@@ -229,14 +245,14 @@
       }
     }
     return [...groups.values()].filter(unit=>
-      unit.activeState!==false&&PENDING_ORDER_STATUSES.has(status(unit))
+      unit.activeState===true&&PENDING_ORDER_STATUSES.has(status(unit))
     );
   }
   function pendingOrders(items,integrations){
     return pendingOrderUnits(items,integrations);
   }
   function openClaims(items,integrations){
-    return latestClaims(items,integrations).filter(item=>!terminalClaim(item));
+    return latestClaims(items,integrations).filter(item=>item.activeState===true&&!terminalClaim(item));
   }
   function pendingItems(items,integrations){return [...pendingOrders(items,integrations),...openClaims(items,integrations)];}
   function counts(items,integrations){

@@ -1,0 +1,11 @@
+FINAL v7.7.0 적용 방법
+
+1. 실행 중인 검은 수집기 창을 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
+5. 기존 .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+6. GitHub Desktop Summary: FINAL v7.7.0 빠른수집 디자인 현재상태 정리
+7. Commit to main -> Push origin
+8. 웹 상단 FINAL v7.7.0 확인 후 START_AGENT.cmd를 실행합니다.
+9. 지금 수집 100% 후 현재 진행 상태를 샵모아와 비교합니다.

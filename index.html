@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#111827">
+<meta name="theme-color" content="#0f4c81">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>올데이픽 주문알림 · FINAL v7.6.5</title>
-<link rel="manifest" href="./manifest.json?v=final-v7.6.5-final">
+<title>올데이픽 주문알림 · FINAL v7.7.0</title>
+<link rel="manifest" href="./manifest.json?v=final-v7.7.0-final">
 <link rel="icon" href="./icon.svg">
-<link rel="stylesheet" href="./styles.css?v=final-v7.6.5">
+<link rel="stylesheet" href="./styles.css?v=final-v7.7.0">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -18,10 +18,11 @@
 
 <div class="app">
 <header class="card topbar">
-<div>
+<div class="brand-copy">
+<div class="brand-kicker">ALLDAYPICK ORDER DESK</div>
 <div class="brand-title">
         올데이픽 주문알림
-        <button type="button" id="versionBadge" class="version-badge">FINAL v7.6.5</button>
+        <button type="button" id="versionBadge" class="version-badge">FINAL v7.7.0</button>
       </div>
 <div class="brand-sub">
 <span class="dot" id="cloudDot"></span>
@@ -50,39 +51,46 @@
 <div class="integration-grid" id="integrationGrid"></div>
 </section>
 <section class="metrics">
-<div class="card metric"><span>오늘 주문</span><strong id="todayCount">0</strong><small>오늘 주문 누적</small></div>
-<div class="card metric"><span>오늘 매출</span><strong id="todaySales">0원</strong><small>오늘 주문금액</small></div>
-<div class="card metric"><span>이번달 총주문</span><strong id="monthCount">0</strong><small id="monthCountNote">이번달 누적</small></div>
-<div class="card metric"><span>이번달 총매출</span><strong id="monthSales">0원</strong><small id="monthSalesNote">이번달 누적</small></div>
+<div class="card metric tone-blue"><div class="metric-icon">주문</div><span>오늘 주문</span><strong id="todayCount">0</strong><small>오늘 주문 누적</small></div>
+<div class="card metric tone-mint"><div class="metric-icon">매출</div><span>오늘 매출</span><strong id="todaySales">0원</strong><small>오늘 주문금액</small></div>
+<div class="card metric tone-violet"><div class="metric-icon">월간</div><span>이번달 총주문</span><strong id="monthCount">0</strong><small id="monthCountNote">이번달 누적</small></div>
+<div class="card metric tone-orange"><div class="metric-icon">누적</div><span>이번달 총매출</span><strong id="monthSales">0원</strong><small id="monthSalesNote">이번달 누적</small></div>
 </section>
 <section class="card section">
-<div class="section-head"><h2>처리 알림</h2><span class="subtle" id="statusUpdated">실시간 동기화</span></div>
-<div class="subtle" id="dedupeInfo" style="margin-bottom:8px">실제 미완료 상태만 표시 · 완료되면 자동 제외</div>
+<div class="section-head"><div><span class="section-kicker">LIVE WORKFLOW</span><h2>현재 진행 주문</h2></div><span class="subtle" id="statusUpdated">실시간 동기화</span></div>
+<div class="subtle workflow-note" id="dedupeInfo">실제 진행 중인 주문·요청만 표시하며 완료되면 자동으로 사라집니다.</div>
 <div class="alert-grid" id="statusGrid"></div>
 </section>
 <section class="card section">
-<div class="section-head"><h2>쇼핑몰별 주문 현황</h2><span class="subtle" id="marketUpdated">오늘 00:00부터</span></div>
+<div class="section-head"><div><span class="section-kicker">MARKET STATUS</span><h2>쇼핑몰별 주문 현황</h2></div><span class="subtle" id="marketUpdated">오늘 00:00부터</span></div>
 <div class="table-wrap">
-<table class="shop-table"><thead><tr><th>판매처</th><th>오늘 주문·매출</th><th>신규</th><th>발송</th><th>취소</th><th>반품</th><th>교환</th></tr></thead><tbody id="marketBody"></tbody></table>
+<table class="shop-table"><thead><tr><th>판매처</th><th>오늘 주문·매출</th><th>신규</th><th>발송</th><th>취소</th><th>반품</th><th>교환</th><th>문의</th></tr></thead><tbody id="marketBody"></tbody></table>
 </div>
 </section>
-<section class="card section">
+<section class="card section analytics-section">
 <div class="section-head">
-<h2>오늘 분석</h2>
-<span class="subtle">실시간 자동 집계</span>
+<div><span class="section-kicker">TODAY INSIGHT</span><h2>오늘 분석</h2></div>
+<span class="subtle">주문 데이터 실시간 자동 집계</span>
 </div>
-<div class="analytics-grid" style="margin-top:12px">
-<div class="analytics-card"><h3>시간대별 주문</h3><div class="hour-chart" id="hourChart"></div></div>
-<div class="analytics-card"><h3>쇼핑몰별 오늘 매출</h3><div class="share-list" id="marketShare"></div></div>
+<div class="analysis-kpis" id="analysisKpis"></div>
+<div class="analytics-grid">
+<div class="analytics-card analytics-wide">
+  <div class="analytics-title"><div><h3>시간대별 주문 흐름</h3><p id="hourChartSummary">주문 집중 시간대를 확인합니다.</p></div><span class="chart-badge">24시간</span></div>
+  <div class="hour-chart" id="hourChart"></div>
 </div>
-<div class="analytics-card" style="margin-top:10px"><h3>오늘 판매 TOP 10</h3><div class="top-list" id="todayTopProducts"></div></div>
+<div class="analytics-card">
+  <div class="analytics-title"><div><h3>쇼핑몰별 매출 비중</h3><p>연결된 쇼핑몰만 집계</p></div></div>
+  <div class="donut-layout"><div class="market-donut" id="marketDonut"><strong>0%</strong><span>1위 마켓</span></div><div class="share-list" id="marketShare"></div></div>
+</div>
+</div>
+<div class="analytics-card top-products-card"><div class="analytics-title"><div><h3>오늘 판매 TOP 10</h3><p>주문 건수와 매출 기준</p></div></div><div class="top-list" id="todayTopProducts"></div></div>
 </section>
 <nav class="tabs"><button class="tab active" id="ordersTab">주문 현황</button><button class="tab" id="statsTab">주문 통계</button></nav>
 <main>
 <div class="panel active" id="ordersPanel">
 <section class="card section">
 <div class="filter-banner" id="filterBanner"><span id="filterText"></span><button class="btn" id="clearFilterBtn">전체 주문 보기</button></div>
-<div class="section-head"><h2>미완료 주문 목록</h2><span class="subtle" id="orderResultCount">0건</span></div>
+<div class="section-head"><div><span class="section-kicker">ACTIVE ORDERS</span><h2>현재 진행 중 주문 목록</h2></div><span class="result-badge" id="orderResultCount">0건</span></div>
 <div class="toolbar">
 <input id="searchInput" placeholder="상품명, 주문번호, 구매자, 연락처 검색"/>
 <select id="marketFilter"><option value="">전체 쇼핑몰</option><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option></select>
@@ -116,7 +124,7 @@
 
 
 
-<script src="./state-engine.js?v=final-v7.6.5" defer></script>
-<script src="./app.js?v=final-v7.6.5" defer></script>
+<script src="./state-engine.js?v=final-v7.7.0" defer></script>
+<script src="./app.js?v=final-v7.7.0" defer></script>
 </body>
 </html>

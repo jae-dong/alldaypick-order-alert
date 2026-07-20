@@ -23,3 +23,9 @@ assert.ok(H.rangeWindows(90,6).length>=15,'startup exchange repair must support 
 const regularFrom=new Date('2026-07-01T00:00:00.000Z');
 assert.equal(H.exchangeReconcileFrom(regularFrom,false).getTime(),regularFrom.getTime());
 assert.equal(H.exchangeReconcileFrom(regularFrom,true).getTime(),0,'startup reconciliation must close stale active exchanges regardless of age');
+
+assert.equal(H.exchangeActiveState({exchangeStatusLabel:'RECEIPT'}),true);
+assert.equal(H.exchangeActiveState({exchangeStatusLabel:'PROGRESS'}),true);
+assert.equal(H.exchangeActiveState({exchangeStatusLabel:'SUCCESS'}),false);
+assert.equal(H.exchangeActiveState({exchangeStatus:''}),false,'empty legacy exchange status must not remain active');
+assert.equal(H.exchangeActiveState({exchangeStatus:'EXCHANGE_REQUEST'}),false,'non-official legacy status must not remain active');

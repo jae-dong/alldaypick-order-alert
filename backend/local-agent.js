@@ -422,6 +422,7 @@ let lastRequestId='';
 let slowIndex=0;
 let smartstoreRunning=false;
 let claimIndex=0;
+let backgroundClaimsRunning=false;
 const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
 
 function isManualCollectSource(source){
@@ -992,6 +993,31 @@ async function fastSync(source='interval'){
 }
 
 
+async function quickCurrentCoupangSync(source='immediate'){
+  const days=Math.max(7,Math.min(31,Number(process.env.MANUAL_ACTIVE_LOOKBACK_DAYS||31)));
+  const maxPages=Math.max(3,Math.min(15,Number(process.env.MANUAL_ACTIVE_MAX_PAGES||10)));
+
+  const result=await withTimeout(
+    '쿠팡 현재 미처리 주문조회',
+    pollCoupangStatuses(db,coupang(),{
+      statuses:FAST,
+      days,
+      maxPages,
+      // 수동 수집은 현재 신규/발송대기 목록만 정확히 대조합니다.
+      // 배송완료 등 과거 상태 전체를 다시 훑지 않아 훨씬 빠릅니다.
+      reconcile:true
+    }),
+    240000
+  );
+
+  return {
+    ...result,
+    quickCurrent:true,
+    push:await sendPush(result.createdOrders||[],'쿠팡',source)
+  };
+}
+
+
 async function fullCoupangStatusSync(source='interval'){
   const reconcile=source==='reconcile';
   const statuses=[...FAST,...SLOW];
@@ -1120,11 +1146,44 @@ async function syncAllClaimTypes(source='interval'){
     const push=await sendClaimPush(result.createdClaims||[],source);
     results.push({...result,claimType:type,push});
 
-    // Avoid Coupang rate limiting between claim API calls.
-    await new Promise(r=>setTimeout(r,3500));
+    // 수동 수집은 버튼 완료 후 백그라운드에서 진행하므로 짧은 간격만 둡니다.
+    // 정기 수집은 기존과 같이 API 제한을 피하도록 여유를 둡니다.
+    await new Promise(r=>setTimeout(
+      r,
+      source==='interval'?3500:900
+    ));
   }
 
   return results;
+}
+
+
+function refreshClaimsInBackground(source='immediate'){
+  if(backgroundClaimsRunning||inQuotaCooldown()) return;
+  backgroundClaimsRunning=true;
+
+  setTimeout(async()=>{
+    try{
+      console.log('취소·반품·교환·문의 백그라운드 확인 시작');
+      const results=await withTimeout(
+        '쿠팡 CS 백그라운드 전체조회',
+        syncAllClaimTypes(source),
+        600000
+      );
+      console.log('취소·반품·교환·문의 백그라운드 확인 완료');
+
+      return results;
+    }catch(error){
+      if(!markQuotaCooldown(error)){
+        console.error(
+          '백그라운드 CS 확인 실패:',
+          error instanceof Error?error.message:String(error)
+        );
+      }
+    }finally{
+      backgroundClaimsRunning=false;
+    }
+  },300);
 }
 
 
@@ -1684,7 +1743,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.6.5',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.0',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1704,7 +1763,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.6.5',
+    version:'FINAL-7.7.0',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1843,6 +1902,66 @@ async function runFastSync(){
 }
 
 
+
+
+async function syncCoupangCurrentSafe(source='immediate'){
+  try{
+    const fast=await quickCurrentCoupangSync(source);
+    const slow=null;
+    await saveIntegration(fast,slow);
+    console.log(
+      `쿠팡 빠른 동기화 완료: 신규 ${fast.counts?.ACCEPT||0}, `+
+      `발송대기 ${fast.counts?.INSTRUCT||0} · ${quotaLog(fast)}`
+    );
+    return {fast,slow};
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+    if(markQuotaCooldown(error)) throw error;
+    console.error('쿠팡 빠른 동기화 실패:',message);
+    return {error:message};
+  }
+}
+
+async function runImmediateMarketCollection(summary){
+  const jobs=[
+    {key:'coupang',label:'쿠팡',run:()=>syncCoupangCurrentSafe('immediate')},
+    {key:'smartstore',label:'스마트스토어',run:()=>syncSmartstoreSafe('immediate')},
+    {key:'elevenst',label:'11번가',run:()=>syncElevenstSafe('immediate')},
+    {key:'lotteon',label:'롯데온',run:()=>syncLotteonSafe('immediate')}
+  ];
+
+  let completed=0;
+  let progressQueue=Promise.resolve();
+
+  await Promise.all(jobs.map(async job=>{
+    try{
+      summary[job.key]=await job.run();
+    }catch(error){
+      if(markQuotaCooldown(error)) throw error;
+      const message=error instanceof Error?error.message:String(error);
+      summary[job.key]={error:message};
+      console.error(`${job.label} 빠른수집 실패:`,message);
+    }finally{
+      completed+=1;
+      const percent=Math.min(88,8+completed*20);
+      progressQueue=progressQueue.then(()=>
+        updateCollectProgress(
+          'immediate',
+          percent,
+          `${job.label} 확인 완료 · ${completed}/4`
+        )
+      );
+      await progressQueue;
+    }
+  }));
+
+  if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
+  await refreshEsmStatus();
+  summary.claims={background:true};
+  await updateCollectProgress('immediate',95,'현재 주문 반영 완료');
+  refreshClaimsInBackground('immediate');
+}
+
 async function run(source){
   if(inQuotaCooldown()){
     logQuotaSkip(source==='startup'?'시작 수집':'정규 수집');
@@ -1852,7 +1971,7 @@ async function run(source){
 
   running=true;
 
-  if(['startup','reconcile','immediate'].includes(source)){
+  if(['startup','reconcile'].includes(source)){
     try{
       await ensureLegacyMigration();
     }catch(error){
@@ -1894,20 +2013,35 @@ async function run(source){
   const summary={};
 
   try{
+    if(source==='immediate'){
+      await runImmediateMarketCollection(summary);
+      await commandRef.set({
+        status:'success',
+        action:'collect',
+        progressPercent:100,
+        remainingPercent:0,
+        progressStep:'현재 주문 반영 완료 · 요청 상태는 백그라운드 확인 중',
+        result:summary,
+        completedAt:admin.firestore.FieldValue.serverTimestamp(),
+        progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt:admin.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+      console.log('immediate 완료 · 현재 주문 우선 반영');
+      return;
+    }
     try{
-      const useFullStatusSync=[
-        'startup',
-        'immediate',
-        'reconcile'
-      ].includes(source);
+      const deepReconcile=source==='reconcile';
+      const quickCurrent=['startup','immediate'].includes(source);
 
-      const fast=useFullStatusSync
+      const fast=deepReconcile
         ?await fullCoupangStatusSync('reconcile')
-        :await fastSync(source);
+        :quickCurrent
+          ?await quickCurrentCoupangSync(source)
+          :await fastSync(source);
 
       let slow=null;
 
-      if(!useFullStatusSync){
+      if(!deepReconcile&&!quickCurrent){
         try{
           slow=await withTimeout(
             '쿠팡 상태 순환조회',
@@ -1957,32 +2091,39 @@ async function run(source){
 
     await refreshEsmStatus();
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
-    await updateCollectProgress(source,78,'취소·반품·교환·문의 확인 중');
 
-    try{
-      summary.claims=
-        reconcile||source==='immediate'||source==='startup'
-          ?await withTimeout(
-              '쿠팡 CS 전체조회',
-              syncAllClaimTypes(source),
-              600000
-            )
-          :source==='interval'
-            ?[
-                await withTimeout(
-                  '쿠팡 CS 순환조회',
-                  syncOneClaimType(source),
-                  180000
-                )
-              ]
-            :[];
-    }catch(error){
-      if(markQuotaCooldown(error)) throw error;
-      console.error('쿠팡 CS 실패:',error.message);
-      summary.claims=[];
+    if(source==='immediate'){
+      // 버튼은 현재 주문 수집이 끝나는 즉시 완료 처리합니다.
+      // 오래 걸리는 취소/반품/교환/문의 조회는 백그라운드에서 이어집니다.
+      summary.claims={background:true};
+      await updateCollectProgress(source,95,'현재 주문 반영 완료');
+      refreshClaimsInBackground(source);
+    }else{
+      await updateCollectProgress(source,78,'취소·반품·교환·문의 확인 중');
+      try{
+        summary.claims=
+          reconcile||source==='startup'
+            ?await withTimeout(
+                '쿠팡 CS 전체조회',
+                syncAllClaimTypes(source),
+                600000
+              )
+            :source==='interval'
+              ?[
+                  await withTimeout(
+                    '쿠팡 CS 순환조회',
+                    syncOneClaimType(source),
+                    180000
+                  )
+                ]
+              :[];
+      }catch(error){
+        if(markQuotaCooldown(error)) throw error;
+        console.error('쿠팡 CS 실패:',error.message);
+        summary.claims=[];
+      }
+      await updateCollectProgress(source,95,'최종 결과 정리 중');
     }
-
-    await updateCollectProgress(source,95,'최종 결과 정리 중');
 
     if(source==='immediate'||reconcile){
       await commandRef.set({
@@ -1990,7 +2131,9 @@ async function run(source){
         action:reconcile?'reconcile':'collect',
         progressPercent:100,
         remainingPercent:0,
-        progressStep:'수집 완료',
+        progressStep:source==='immediate'
+          ?'주문 수집 완료 · 요청 상태는 백그라운드 확인 중'
+          :'수집 완료',
         result:summary,
         completedAt:admin.firestore.FieldValue.serverTimestamp(),
         progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),

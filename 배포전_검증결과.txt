@@ -1,4 +1,4 @@
-FINAL v7.6.5 배포 전 검증 결과
+FINAL v7.7.0 배포 전 검증 결과
 
 통과
 - 전체 JavaScript 문법 검사

@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 FINAL v7.6.5",
+  "name": "올데이픽 주문알림 FINAL v7.7.0",
   "short_name": "올데이픽 주문알림",
-  "start_url": "./?v=final-v7.6.5",
+  "start_url": "./?v=final-v7.7.0",
   "display": "standalone",
   "background_color": "#f4f5f7",
   "theme_color": "#111827",

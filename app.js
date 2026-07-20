@@ -1,5 +1,5 @@
-const APP_VERSION='FINAL v7.6.5';
-const BUILD_DATE='2026-07-19';
+const APP_VERSION='FINAL v7.7.0';
+const BUILD_DATE='2026-07-20';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -1769,6 +1769,7 @@ function renderMarkets(){
         <td>${Number(data.cancel||0)}</td>
         <td>${Number(data.return||0)}</td>
         <td>${Number(data.exchange||0)}</td>
+        <td>${Number(data.inquiry||0)}</td>
       </tr>
     `;
   }).join('');
@@ -1992,30 +1993,156 @@ function renderStats(){
 }
 
 
+const ANALYTICS_MARKET_COLORS={
+  '쿠팡':'#f97373',
+  '스마트스토어':'#22c98b',
+  '11번가':'#ff9f43',
+  '롯데온':'#8b7cf6',
+  'G마켓':'#31b46d',
+  '옥션':'#ef5b72'
+};
+
+function hourlySvg(hourly){
+  const width=760;
+  const height=230;
+  const pad={left:34,right:18,top:24,bottom:32};
+  const chartW=width-pad.left-pad.right;
+  const chartH=height-pad.top-pad.bottom;
+  const max=Math.max(1,...hourly);
+  const points=hourly.map((count,hour)=>({
+    count,
+    hour,
+    x:pad.left+(chartW/23)*hour,
+    y:pad.top+chartH-(count/max)*chartH
+  }));
+  const line=points.map((point,index)=>
+    `${index?'L':'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`
+  ).join(' ');
+  const area=`M ${points[0].x.toFixed(1)} ${(pad.top+chartH).toFixed(1)} ${line.replace(/^M /,'L ')} L ${points.at(-1).x.toFixed(1)} ${(pad.top+chartH).toFixed(1)} Z`;
+  const grid=[0,.25,.5,.75,1].map(rate=>{
+    const y=pad.top+chartH-chartH*rate;
+    return `<line x1="${pad.left}" y1="${y}" x2="${width-pad.right}" y2="${y}" class="chart-grid-line"/>`;
+  }).join('');
+  const labels=points.filter(point=>point.hour%3===0).map(point=>
+    `<text x="${point.x}" y="${height-9}" text-anchor="middle" class="chart-axis-label">${point.hour}시</text>`
+  ).join('');
+  const dots=points.map(point=>
+    `<circle cx="${point.x}" cy="${point.y}" r="${point.count?4:2.2}" class="chart-point ${point.count?'has-value':''}"><title>${point.hour}시 · ${point.count}건</title></circle>`
+  ).join('');
+
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="시간대별 주문 그래프">
+    <defs>
+      <linearGradient id="orderAreaGradient" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#2588e8" stop-opacity=".28"/>
+        <stop offset="100%" stop-color="#2588e8" stop-opacity=".02"/>
+      </linearGradient>
+      <linearGradient id="orderLineGradient" x1="0" x2="1">
+        <stop offset="0%" stop-color="#0f6fbd"/>
+        <stop offset="100%" stop-color="#26b5a0"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    <path d="${area}" fill="url(#orderAreaGradient)"/>
+    <path d="${line}" class="chart-line"/>
+    ${dots}
+    ${labels}
+  </svg>`;
+}
+
 function renderTodayAnalytics(){
   const groups=todayOrderGroups();
   const hourly=Array.from({length:24},()=>0);
   groups.forEach(group=>{
     const date=group.date;
     if(!date?.getTime?.()) return;
-    const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).format(date));
+    const hour=Number(new Intl.DateTimeFormat('en-GB',{
+      timeZone:'Asia/Seoul',hour:'2-digit',hour12:false
+    }).format(date));
     if(hour>=0&&hour<24) hourly[hour]+=1;
   });
-  const maxHour=Math.max(1,...hourly);
-  $('hourChart').innerHTML=hourly.map((count,hour)=>`<div class="hour-col" title="${hour}시 ${count}건"><span class="hour-value">${count||''}</span><div class="hour-bar" style="height:${Math.max(2,Math.round(count/maxHour*100))}%"></div><span class="hour-label">${hour%3===0?hour+'시':''}</span></div>`).join('');
+
+  const totalSales=groups.reduce((sum,group)=>sum+Number(group.amount||0),0);
+  const averageOrder=groups.length?Math.round(totalSales/groups.length):0;
+  const peakCount=Math.max(0,...hourly);
+  const peakHour=peakCount?hourly.indexOf(peakCount):null;
+  const pending=engineUnresolvedCounts();
+  const pendingTotal=Object.values(pending).reduce((sum,value)=>sum+Number(value||0),0);
 
   const marketSales={};
-  groups.forEach(group=>marketSales[group.market]=Number(marketSales[group.market]||0)+Number(group.amount||0));
-  const totalSales=Object.values(marketSales).reduce((s,v)=>s+v,0)||1;
-  $('marketShare').innerHTML=Object.entries(marketSales).sort((a,b)=>b[1]-a[1]).map(([market,sales])=>`<div class="share-row"><strong>${escapeHtml(market)}</strong><div class="share-track"><div class="share-fill" style="width:${Math.max(2,sales/totalSales*100)}%"></div></div><span class="share-value">${Math.round(sales/totalSales*100)}%</span></div>`).join('')||'<span class="subtle">오늘 주문이 없습니다.</span>';
+  groups.forEach(group=>{
+    marketSales[group.market]=Number(marketSales[group.market]||0)+Number(group.amount||0);
+  });
+  const marketEntries=Object.entries(marketSales).sort((a,b)=>b[1]-a[1]);
+  const topMarket=marketEntries[0]?.[0]||'-';
+  const topMarketSales=Number(marketEntries[0]?.[1]||0);
+
+  const kpis=$('analysisKpis');
+  if(kpis){
+    kpis.innerHTML=[
+      ['피크 시간',peakHour==null?'-':`${peakHour}시`,peakCount?`${peakCount}건 집중`:'주문 대기','kpi-blue'],
+      ['평균 주문금액',fmt(averageOrder),`${groups.length}건 기준`,'kpi-mint'],
+      ['매출 1위',topMarket,fmt(topMarketSales),'kpi-violet'],
+      ['현재 처리중',`${pendingTotal}건`,`신규 ${pending.new} · 발송 ${pending.shipping_wait}`,'kpi-orange']
+    ].map(([label,value,note,tone])=>`<div class="analysis-kpi ${tone}"><span>${label}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join('');
+  }
+
+  $('hourChart').innerHTML=hourlySvg(hourly);
+  const summary=$('hourChartSummary');
+  if(summary){
+    summary.textContent=peakHour==null
+      ?'오늘 주문이 들어오면 시간대별 흐름이 표시됩니다.'
+      :`${peakHour}시대에 ${peakCount}건으로 가장 주문이 많았습니다.`;
+  }
+
+  const donut=$('marketDonut');
+  const denominator=totalSales||1;
+  let cursor=0;
+  const segments=marketEntries.map(([market,sales])=>{
+    const start=cursor;
+    const end=cursor+(Number(sales)/denominator*100);
+    cursor=end;
+    return `${ANALYTICS_MARKET_COLORS[market]||'#7b8ca5'} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+  });
+  if(donut){
+    donut.style.background=segments.length
+      ?`conic-gradient(${segments.join(',')})`
+      :'conic-gradient(#e7edf4 0 100%)';
+    const share=topMarketSales/denominator*100;
+    donut.innerHTML=`<div><strong>${marketEntries.length?Math.round(share):0}%</strong><span>${escapeHtml(topMarket)}</span></div>`;
+  }
+
+  $('marketShare').innerHTML=marketEntries.map(([market,sales])=>{
+    const share=Number(sales)/denominator*100;
+    const color=ANALYTICS_MARKET_COLORS[market]||'#7b8ca5';
+    return `<div class="share-row">
+      <span class="share-market"><i style="background:${color}"></i>${escapeHtml(market)}</span>
+      <strong>${fmt(sales)}</strong>
+      <span class="share-value">${Math.round(share)}%</span>
+    </div>`;
+  }).join('')||'<span class="analytics-empty">오늘 주문이 없습니다.</span>';
 
   const products={};
   groups.forEach(group=>group.lines.forEach(line=>{
     const name=line.product||'상품명 없음';
     if(!products[name]) products[name]={orders:new Set(),qty:0,sales:0};
-    products[name].orders.add(group.key); products[name].qty+=Number(line.qty||1); products[name].sales+=engineAmount(line);
+    products[name].orders.add(group.key);
+    products[name].qty+=Number(line.qty||1);
+    products[name].sales+=engineAmount(line);
   }));
-  $('todayTopProducts').innerHTML=Object.entries(products).map(([name,v])=>[name,{orders:v.orders.size,qty:v.qty,sales:v.sales}]).sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales).slice(0,10).map(([name,v],i)=>`<div class="top-row"><span class="top-no">${i+1}</span><div><strong>${escapeHtml(name)}</strong><small>${v.orders}건 · ${v.qty}개</small></div><strong>${fmt(v.sales)}</strong></div>`).join('')||'<span class="subtle">오늘 판매 상품이 없습니다.</span>';
+  const productRows=Object.entries(products)
+    .map(([name,value])=>[name,{orders:value.orders.size,qty:value.qty,sales:value.sales}])
+    .sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales)
+    .slice(0,10);
+  const maxProductScore=Math.max(1,...productRows.map(([,value])=>value.orders*1000000+value.sales));
+  $('todayTopProducts').innerHTML=productRows.map(([name,value],index)=>{
+    const score=value.orders*1000000+value.sales;
+    const width=Math.max(5,Math.round(score/maxProductScore*100));
+    return `<div class="top-row">
+      <span class="top-no">${index+1}</span>
+      <div class="top-product-main"><strong>${escapeHtml(name)}</strong><small>${value.orders}건 · ${value.qty}개</small><i style="width:${width}%"></i></div>
+      <strong class="top-sales">${fmt(value.sales)}</strong>
+    </div>`;
+  }).join('')||'<span class="analytics-empty">오늘 판매 상품이 없습니다.</span>';
 }
 
 async function toggleImportant(id){
@@ -2116,7 +2243,7 @@ function renderCollectProgress(data={}){
   button.textContent='지금 수집';
 
   if(success){
-    note.textContent='수집 완료 · 100%';
+    note.textContent=`수집 완료 · 100%${step?` · ${step}`:''}`;
   }else if(failed){
     note.textContent=`수집 오류 · PC 확인${step?` · ${step}`:''}`;
   }else{
@@ -2147,8 +2274,8 @@ async function requestCollect(){
         requestId:
           `${currentUser.uid}-${Date.now()}`,
         market:'coupang',
-        action:'reconcile',
-        reason:'manual-month-reconcile',
+        action:'collect',
+        reason:'manual-fast-current-sync',
         requestedBy:currentUser.uid,
         requestedAt:
           firebase.firestore.FieldValue.serverTimestamp(),
@@ -2186,10 +2313,12 @@ function watchCollect(){
 }
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v764';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v764';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v770';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v770';
 
 for(const legacyKey of [
+  'alldaypick-orders-cache-v764',
+  'alldaypick-integrations-cache-v764',
   'alldaypick-orders-cache-v760',
   'alldaypick-integrations-cache-v760',
   'alldaypick-orders-cache-v740',
@@ -2754,7 +2883,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.6.5-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.0-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
