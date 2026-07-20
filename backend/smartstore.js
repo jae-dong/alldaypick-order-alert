@@ -90,12 +90,28 @@ function firstImageUrl(value,depth=0){
   return '';
 }
 
-export async function resolveSmartstoreProductImage(config,channelProductNo){
-  const productNo=String(channelProductNo||'').trim();
-  if(!productNo||!config?.clientId||!config?.clientSecret) return '';
+export async function resolveSmartstoreProductImage(config,orderOrProductNo){
+  if(!config?.clientId||!config?.clientSecret) return '';
+  const order=orderOrProductNo&&typeof orderOrProductNo==='object'?orderOrProductNo:{};
+  const candidates=[
+    order.channelProductNo,
+    order.productId,
+    typeof orderOrProductNo==='object'?'':orderOrProductNo
+  ].map(value=>String(value||'').trim()).filter(Boolean);
+  if(!candidates.length) return '';
   const token=await accessToken(config);
-  const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(productNo)}`);
-  return firstImageUrl(body?.data||body);
+  let lastError;
+  for(const productNo of [...new Set(candidates)]){
+    try{
+      const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(productNo)}`);
+      const image=firstImageUrl(body?.data||body);
+      if(image) return image;
+    }catch(error){
+      lastError=error;
+    }
+  }
+  if(lastError) throw lastError;
+  return '';
 }
 
 function orderStatus(productOrder={},row={}){
@@ -137,6 +153,7 @@ function normalizeDetail(row){
   const base={
     source:'smartstore',market:'스마트스토어',orderNo,productOrderId,product,
     productId:String(productOrder.productId||row.productId||''),
+    channelProductNo:String(productOrder.productId||row.productId||''),
     originalProductId:String(productOrder.originalProductId||row.originalProductId||''),
     merchantChannelId:String(productOrder.merchantChannelId||row.merchantChannelId||''),
     imageUrl:firstImageUrl(productOrder)||firstImageUrl(row),

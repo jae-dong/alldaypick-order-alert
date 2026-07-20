@@ -1,12 +1,12 @@
-FINAL v7.7.2 적용 방법
+FINAL v7.7.3 적용 방법
 
 1. 실행 중인 이전 검은 창은 X로 닫습니다. STOP_AGENT.cmd는 누르지 않아도 됩니다.
 2. ZIP 압축을 풉니다.
 3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
 4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
 5. 기존 .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
-6. GitHub Desktop Summary: FINAL v7.7.2 자동재시작 쿠팡 교환 최종정리
+6. GitHub Desktop Summary: FINAL v7.7.3 상품 썸네일 실제 전송 수정
 7. Commit to main -> Push origin
-8. 웹 상단 FINAL v7.7.2 확인 후 START_AGENT.cmd를 실행합니다.
+8. 웹 상단 FINAL v7.7.3 확인 후 START_AGENT.cmd를 실행합니다.
 9. START_AGENT가 이전 수집기 PID나 남은 잠금파일을 자동 정리하고 새 버전을 시작합니다.
 10. 첫 정밀수집 후 쿠팡 완료 교환이 현재 교환요청에서 빠졌는지 확인합니다.

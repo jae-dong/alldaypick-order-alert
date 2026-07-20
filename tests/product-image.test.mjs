@@ -9,5 +9,6 @@ assert.equal(normalizeImageUrl('//image.example.com/a.jpg'),'https://image.examp
 assert.equal(normalizeImageUrl('/image/product/a.jpg'),'https://image.coupangcdn.com/image/product/a.jpg');
 assert.equal(directOrderImage({thumbnailUrl:'https://img.example.com/thumb.jpg'}),'https://img.example.com/thumb.jpg');
 assert.equal(H.publicProductUrl({productNo:'123'},'11번가'),'https://www.11st.co.kr/products/123');
-assert.equal(H.publicProductUrl({productId:'456',vendorItemId:'789'},'쿠팡'),'https://www.coupang.com/vp/products/456?itemId=789');
+assert.equal(H.publicProductUrl({productId:'456',vendorItemId:'789'},'쿠팡'),'https://www.coupang.com/vp/products/456?vendorItemId=789');
+assert.equal(H.imageFromObject({originProduct:{images:{representativeImage:{url:'https://shop-phinf.pstatic.net/a.jpg'}}}}),'https://shop-phinf.pstatic.net/a.jpg');
 console.log('product image tests passed');

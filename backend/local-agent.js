@@ -785,6 +785,70 @@ async function telegramApiRequest(token,method,payload,timeoutMs=15000){
   return result;
 }
 
+function telegramPhotoFilename(contentType,url=''){
+  const extensionByType={
+    'image/jpeg':'jpg',
+    'image/jpg':'jpg',
+    'image/png':'png',
+    'image/webp':'webp',
+    'image/gif':'gif'
+  };
+  const normalized=String(contentType||'').split(';')[0].trim().toLowerCase();
+  let extension=extensionByType[normalized]||'';
+  if(!extension){
+    try{
+      const match=new URL(url).pathname.match(/\.([a-z0-9]{2,5})$/i);
+      extension=match?.[1]?.toLowerCase()||'jpg';
+    }catch{extension='jpg';}
+  }
+  return `product-thumbnail.${extension}`;
+}
+
+async function downloadTelegramPhoto(photoUrl){
+  const parsed=new URL(photoUrl);
+  const response=await fetch(photoUrl,{
+    redirect:'follow',
+    signal:AbortSignal.timeout(20000),
+    headers:{
+      Accept:'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Accept-Language':'ko-KR,ko;q=0.9,en;q=0.8',
+      'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36',
+      Referer:`${parsed.protocol}//${parsed.host}/`
+    }
+  });
+  if(!response.ok) throw new Error(`상품 이미지 다운로드 HTTP ${response.status}`);
+  const contentType=String(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+  if(!contentType.startsWith('image/')) throw new Error(`상품 이미지 형식 오류: ${contentType||'unknown'}`);
+  const bytes=await response.arrayBuffer();
+  if(!bytes.byteLength) throw new Error('상품 이미지 파일이 비어 있습니다.');
+  if(bytes.byteLength>9.5*1024*1024) throw new Error(`상품 이미지가 너무 큽니다: ${Math.ceil(bytes.byteLength/1024/1024)}MB`);
+  return {
+    blob:new Blob([bytes],{type:contentType}),
+    filename:telegramPhotoFilename(contentType,response.url||photoUrl),
+    size:bytes.byteLength,
+    contentType
+  };
+}
+
+async function telegramPhotoUpload(token,payload,photo,timeoutMs=30000){
+  const form=new FormData();
+  for(const [key,value] of Object.entries(payload)){
+    if(value==null) continue;
+    form.append(key,String(value));
+  }
+  form.append('photo',photo.blob,photo.filename);
+  const response=await fetch(`https://api.telegram.org/bot${token}/sendPhoto`,{
+    method:'POST',
+    signal:AbortSignal.timeout(timeoutMs),
+    body:form
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||result.ok===false){
+    throw new Error(result.description||`Telegram HTTP ${response.status}`);
+  }
+  return result;
+}
+
 async function sendTelegram(title,body,options={}){
   if(inQuotaCooldown()&&!options.test){
     return {enabled:telegramConfigured(),sent:0,failed:0,skipped:1,reason:'quota-cooldown'};
@@ -806,23 +870,44 @@ async function sendTelegram(title,body,options={}){
   let photoFailed=false;
 
   if(photoUrl){
+    const photoPayload={
+      chat_id:chatId,
+      caption:text.slice(0,1024),
+      show_caption_above_media:false
+    };
     try{
-      await telegramApiRequest(token,'sendPhoto',{
-        chat_id:chatId,
-        photo:photoUrl,
-        caption:text.slice(0,1024),
-        show_caption_above_media:false
-      },20000);
+      // 쇼핑몰 CDN은 텔레그램 서버의 원격 다운로드를 막는 경우가 있어
+      // PC 수집기가 이미지를 내려받은 뒤 실제 파일로 업로드합니다.
+      const photo=await downloadTelegramPhoto(photoUrl);
+      await telegramPhotoUpload(token,photoPayload,photo,30000);
+      console.log(`텔레그램 상품 썸네일 전송 성공 · ${Math.ceil(photo.size/1024)}KB`);
       await db.collection('system').doc('agent').set({
         telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
         telegramLastError:'',telegramCheckedAt:new Date().toISOString()
       },{merge:true}).catch(()=>{});
-      return {enabled:true,sent:1,failed:0,withPhoto:true};
-    }catch(error){
-      photoFailed=true;
-      lastError=error instanceof Error?error.message:String(error);
-      console.warn('텔레그램 썸네일 전송 실패 · 텍스트로 재전송:',lastError);
+      return {enabled:true,sent:1,failed:0,withPhoto:true,uploaded:true};
+    }catch(uploadError){
+      lastError=uploadError instanceof Error?uploadError.message:String(uploadError);
+      console.warn('텔레그램 썸네일 파일 업로드 실패 · URL 전송 재시도:',lastError);
+      try{
+        await telegramApiRequest(token,'sendPhoto',{
+          ...photoPayload,
+          photo:photoUrl
+        },20000);
+        console.log('텔레그램 상품 썸네일 URL 전송 성공');
+        await db.collection('system').doc('agent').set({
+          telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
+          telegramLastError:'',telegramCheckedAt:new Date().toISOString()
+        },{merge:true}).catch(()=>{});
+        return {enabled:true,sent:1,failed:0,withPhoto:true,uploaded:false};
+      }catch(error){
+        photoFailed=true;
+        lastError=error instanceof Error?error.message:String(error);
+        console.warn('텔레그램 썸네일 전송 실패 · 텍스트로 재전송:',lastError);
+      }
     }
+  }else if(options.alert){
+    console.log('텔레그램 상품 썸네일 주소 없음 · 텍스트 알림 전송');
   }
 
   for(let attempt=1;attempt<=attempts;attempt+=1){
@@ -1782,7 +1867,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.2',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.3',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1802,7 +1887,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.2',
+    version:'FINAL-7.7.3',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

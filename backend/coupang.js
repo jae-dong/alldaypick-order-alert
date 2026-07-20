@@ -115,6 +115,8 @@ function normalize(sheets,requestedStatus){
         ...workflowFields({source:'coupang',orderNo,lineId,eventType:'order'}),
         orderNo,shipmentBoxId:String(sheet.shipmentBoxId||''),vendorItemId:lineId,
         sellerProductId:String(item.sellerProductId||''),productId:String(item.productId||''),
+        externalVendorSkuCode:String(item.externalVendorSkuCode||item.externalVendorSku||item.sellerProductCode||''),
+        sellerProductCode:String(item.sellerProductCode||item.externalVendorSkuCode||item.externalVendorSku||''),
         imageUrl:firstImageUrl(item),
         product:item.vendorItemName||[item.sellerProductName,item.sellerProductItemName].filter(Boolean).join(' ')||'쿠팡 상품',
         option:item.sellerProductItemName||'',qty,buyer:sheet.receiver?.name||sheet.orderer?.name||'',

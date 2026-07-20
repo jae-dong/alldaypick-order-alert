@@ -38,7 +38,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.2'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.3'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -60,6 +60,8 @@ assert.match(agent,/quickCurrentCoupangSync/,'Manual collection must use the fas
 assert.match(agent,/refreshClaimsInBackground/,'Claims must continue in the background after current-order collection');
 assert.match(agent,/refreshCurrentOrdersInBackground/,'Deep current-order reconciliation must continue after fast button completion');
 assert.match(agent,/sendPhoto/,'Telegram new-order alerts must support product thumbnail photos');
+assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local image files with multipart form data');
+assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
 assert.match(agent,/source==='immediate'[\s\S]*cachedSmartstoreInquiryResult/,'Manual collection must skip slow Smartstore inquiry calls');
 assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');
 assert.match(app,/action:'collect'/,'Manual button must request fast current collection');
