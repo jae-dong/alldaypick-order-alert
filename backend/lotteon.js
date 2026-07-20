@@ -366,6 +366,8 @@ function normalizeOrder(row, sellerId) {
     orderNo,
     deliveryNo,
     orderProductSequence: sequence,
+    productNo:first(row,['spdNo','prdNo','productNo','itemNo']),
+    imageUrl:first(row,['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','thumbUrl','thumbnailUrl']),
     product:
       first(row, [
         'spdNm',

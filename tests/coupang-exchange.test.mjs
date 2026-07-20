@@ -29,3 +29,21 @@ assert.equal(H.exchangeActiveState({exchangeStatusLabel:'PROGRESS'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatusLabel:'SUCCESS'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:''}),false,'empty legacy exchange status must not remain active');
 assert.equal(H.exchangeActiveState({exchangeStatus:'EXCHANGE_REQUEST'}),false,'non-official legacy status must not remain active');
+
+{
+  const writes=[];
+  const docs=[
+    {id:'coupang-exchange-active-1',data:()=>({source:'coupang',eventType:'exchange',activeState:true}),ref:{path:'orders/active'}},
+    {id:'coupang-exchange-stale-2',data:()=>({source:'coupang',eventType:'exchange',activeState:true}),ref:{path:'orders/stale'}}
+  ];
+  const query={where(){return this;},async get(){return {forEach(callback){docs.forEach(callback);}};}};
+  const db={
+    collection(){return query;},
+    batch(){return {set(ref,payload){writes.push({ref,payload});},async commit(){}};}
+  };
+  const result=await H.forceCloseStaleCoupangExchanges(db,[{id:'coupang-exchange-active-1',activeState:true}],{complete:true});
+  assert.equal(result.deactivated,1);
+  assert.equal(writes.length,1);
+  assert.equal(writes[0].ref.path,'orders/stale');
+  assert.equal(writes[0].payload.activeState,false);
+}

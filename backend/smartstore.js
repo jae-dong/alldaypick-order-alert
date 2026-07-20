@@ -59,6 +59,45 @@ function rows(body){
 }
 function detailRows(body){return rows(body);}
 function upper(...values){return values.filter(Boolean).join(' ').toUpperCase();}
+
+function firstImageUrl(value,depth=0){
+  if(depth>6||value==null) return '';
+  if(typeof value==='string'){
+    const text=value.trim();
+    if(/^https?:\/\//i.test(text)) return text;
+    if(text.startsWith('//')) return `https:${text}`;
+    return '';
+  }
+  if(Array.isArray(value)){
+    for(const item of value){
+      const found=firstImageUrl(item,depth+1);
+      if(found) return found;
+    }
+    return '';
+  }
+  if(typeof value!=='object') return '';
+  for(const key of ['representativeImage','representativeImageUrl','productImageUrl','imageUrl','thumbnailUrl','images','url']){
+    if(value[key]!=null){
+      const found=firstImageUrl(value[key],depth+1);
+      if(found) return found;
+    }
+  }
+  for(const [key,item] of Object.entries(value)){
+    if(!/image|thumb|photo/i.test(key)) continue;
+    const found=firstImageUrl(item,depth+1);
+    if(found) return found;
+  }
+  return '';
+}
+
+export async function resolveSmartstoreProductImage(config,channelProductNo){
+  const productNo=String(channelProductNo||'').trim();
+  if(!productNo||!config?.clientId||!config?.clientSecret) return '';
+  const token=await accessToken(config);
+  const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(productNo)}`);
+  return firstImageUrl(body?.data||body);
+}
+
 function orderStatus(productOrder={},row={}){
   const productStatus=upper(productOrder.productOrderStatus,productOrder.status);
   const placeOrderStatus=upper(productOrder.placeOrderStatus,row.placeOrderStatus);
@@ -97,6 +136,10 @@ function normalizeDetail(row){
   const product=productOrder.productName||productOrder.productOrderName||productOrder.itemName||'스마트스토어 상품';
   const base={
     source:'smartstore',market:'스마트스토어',orderNo,productOrderId,product,
+    productId:String(productOrder.productId||row.productId||''),
+    originalProductId:String(productOrder.originalProductId||row.originalProductId||''),
+    merchantChannelId:String(productOrder.merchantChannelId||row.merchantChannelId||''),
+    imageUrl:firstImageUrl(productOrder)||firstImageUrl(row),
     option:productOrder.productOption||productOrder.optionCode||productOrder.optionName||'',
     qty:Number(productOrder.quantity||productOrder.productOrderQuantity||1),
     buyer:order.ordererName||productOrder.shippingAddress?.name||productOrder.shippingAddress?.receiverName||'',

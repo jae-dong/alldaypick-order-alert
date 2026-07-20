@@ -18,7 +18,7 @@ import {
 } from './esm.js';
 
 import { pollCoupangStatuses } from './coupang.js';
-import { syncSmartstore,syncSmartstoreInquiries,retireLegacySmartstoreInquiryCache } from './smartstore.js';
+import { syncSmartstore,syncSmartstoreInquiries,retireLegacySmartstoreInquiryCache,resolveSmartstoreProductImage } from './smartstore.js';
 import {
   elevenstConfigFromEnv,
   isElevenstConfigured,
@@ -34,6 +34,7 @@ import { syncCoupangInquiries } from './coupang-inquiries.js';
 import { migrateLegacyDocuments,getCachedDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 import { telegramOrderBody } from './telegram-format.js';
+import { resolveTelegramProductImage } from './product-image.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -423,6 +424,7 @@ let slowIndex=0;
 let smartstoreRunning=false;
 let claimIndex=0;
 let backgroundClaimsRunning=false;
+let backgroundCurrentOrdersRunning=false;
 const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
 
 function isManualCollectSource(source){
@@ -707,12 +709,22 @@ async function sendOrderTelegramAlert(
     };
   }
 
+  let photoUrl='';
+  if(telegramAlertType(order)==='new_order'){
+    photoUrl=await resolveTelegramProductImage(order,marketName,{
+      coupangConfig:marketName==='쿠팡'?coupang():null,
+      smartstoreConfig:marketName==='스마트스토어'?smartstoreConfig():null,
+      smartstoreResolver:resolveSmartstoreProductImage
+    });
+  }
+
   const result=await sendTelegram(
     telegramAlertTitle(order,marketName),
     telegramOrderBody(order),
     {
       attempts:2,
-      alert:true
+      alert:true,
+      photoUrl
     }
   );
 
@@ -734,69 +746,72 @@ function telegramConfigured(){
   );
 }
 
+async function telegramApiRequest(token,method,payload,timeoutMs=15000){
+  const response=await fetch(`https://api.telegram.org/bot${token}/${method}`,{
+    method:'POST',
+    signal:AbortSignal.timeout(timeoutMs),
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||result.ok===false){
+    throw new Error(result.description||`Telegram HTTP ${response.status}`);
+  }
+  return result;
+}
+
 async function sendTelegram(title,body,options={}){
-  if(
-    inQuotaCooldown() &&
-    !options.test
-  ){
-    return {
-      enabled:telegramConfigured(),
-      sent:0,
-      failed:0,
-      skipped:1,
-      reason:'quota-cooldown'
-    };
+  if(inQuotaCooldown()&&!options.test){
+    return {enabled:telegramConfigured(),sent:0,failed:0,skipped:1,reason:'quota-cooldown'};
   }
   if(!telegramConfigured()){
     const error='TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 없습니다.';
-
     await db.collection('system').doc('agent').set({
-      telegramConfigured:false,
-      telegramLastError:error,
-      telegramCheckedAt:new Date().toISOString()
+      telegramConfigured:false,telegramLastError:error,telegramCheckedAt:new Date().toISOString()
     },{merge:true}).catch(()=>{});
-
     return {enabled:false,sent:0,failed:1,error};
   }
 
   const token=String(process.env.TELEGRAM_BOT_TOKEN||'').trim();
   const chatId=String(process.env.TELEGRAM_CHAT_ID||'').trim();
   const attempts=Math.max(1,Number(options.attempts||3));
+  const text=`${title}\n\n${body}`;
+  const photoUrl=String(options.photoUrl||'').trim();
   let lastError='';
+  let photoFailed=false;
+
+  if(photoUrl){
+    try{
+      await telegramApiRequest(token,'sendPhoto',{
+        chat_id:chatId,
+        photo:photoUrl,
+        caption:text.slice(0,1024),
+        show_caption_above_media:false
+      },20000);
+      await db.collection('system').doc('agent').set({
+        telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
+        telegramLastError:'',telegramCheckedAt:new Date().toISOString()
+      },{merge:true}).catch(()=>{});
+      return {enabled:true,sent:1,failed:0,withPhoto:true};
+    }catch(error){
+      photoFailed=true;
+      lastError=error instanceof Error?error.message:String(error);
+      console.warn('텔레그램 썸네일 전송 실패 · 텍스트로 재전송:',lastError);
+    }
+  }
 
   for(let attempt=1;attempt<=attempts;attempt+=1){
     try{
-      const response=await fetch(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          method:'POST',
-          signal:AbortSignal.timeout(15000),
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            chat_id:chatId,
-            text:`${title}\n\n${body}`,
-            disable_web_page_preview:true
-          })
-        }
-      );
-
-      const result=await response.json().catch(()=>({}));
-
-      if(!response.ok||result.ok===false){
-        throw new Error(result.description||`Telegram HTTP ${response.status}`);
-      }
-
+      await telegramApiRequest(token,'sendMessage',{
+        chat_id:chatId,text,disable_web_page_preview:true
+      });
       await db.collection('system').doc('agent').set({
-        telegramConfigured:true,
-        telegramLastSuccess:new Date().toISOString(),
-        telegramLastError:'',
-        telegramCheckedAt:new Date().toISOString()
+        telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
+        telegramLastError:'',telegramCheckedAt:new Date().toISOString()
       },{merge:true}).catch(()=>{});
-
-      return {enabled:true,sent:1,failed:0};
+      return {enabled:true,sent:1,failed:0,withPhoto:false,photoFailed};
     }catch(error){
       lastError=error instanceof Error?error.message:String(error);
-
       if(attempt<attempts){
         const waitMs=[1500,3500,7000][attempt-1]||7000;
         console.log(`텔레그램 전송 재시도 ${attempt}/${attempts}`);
@@ -806,16 +821,11 @@ async function sendTelegram(title,body,options={}){
   }
 
   await db.collection('system').doc('agent').set({
-    telegramConfigured:true,
-    telegramLastError:lastError,
-    telegramCheckedAt:new Date().toISOString()
+    telegramConfigured:true,telegramLastError:lastError,telegramCheckedAt:new Date().toISOString()
   },{merge:true}).catch(()=>{});
-
   console.error('텔레그램 전송 최종 실패:',lastError);
-
   return {enabled:true,sent:0,failed:1,error:lastError};
 }
-
 
 
 
@@ -994,8 +1004,8 @@ async function fastSync(source='interval'){
 
 
 async function quickCurrentCoupangSync(source='immediate'){
-  const days=Math.max(7,Math.min(31,Number(process.env.MANUAL_ACTIVE_LOOKBACK_DAYS||31)));
-  const maxPages=Math.max(3,Math.min(15,Number(process.env.MANUAL_ACTIVE_MAX_PAGES||10)));
+  const days=Math.max(3,Math.min(14,Number(process.env.MANUAL_FAST_LOOKBACK_DAYS||7)));
+  const maxPages=Math.max(2,Math.min(8,Number(process.env.MANUAL_FAST_MAX_PAGES||4)));
 
   const result=await withTimeout(
     '쿠팡 현재 미처리 주문조회',
@@ -1007,7 +1017,7 @@ async function quickCurrentCoupangSync(source='immediate'){
       // 배송완료 등 과거 상태 전체를 다시 훑지 않아 훨씬 빠릅니다.
       reconcile:true
     }),
-    240000
+    90000
   );
 
   return {
@@ -1369,7 +1379,7 @@ async function syncElevenstSafe(source){
       source==='reconcile'?180000:90000
     );
 
-    await new Promise(r=>setTimeout(r,1800));
+    if(source!=='immediate') await new Promise(r=>setTimeout(r,1200));
 
     const statusResult=await syncElevenstStatuses(
       db,
@@ -1468,7 +1478,7 @@ async function syncSmartstoreSafe(source){
       reconcile?480000:180000
     );
 
-    if(['startup','immediate','reconcile'].includes(source)){
+    if(['startup','reconcile'].includes(source)){
       const retired=await retireLegacySmartstoreInquiryCache(db);
       if(Number(retired.deactivated||0)>0){
         console.log(`스마트스토어 이전 문의 캐시 정리: ${retired.deactivated}건 · 다음 정상 조회 시 미답변 건 자동 복구`);
@@ -1476,7 +1486,9 @@ async function syncSmartstoreSafe(source){
     }
 
     let inquiryResult;
-    if(smartstoreInquiryDue()){
+    if(source==='immediate'){
+      inquiryResult=await cachedSmartstoreInquiryResult('빠른수집 · 문의는 백그라운드/정기 확인');
+    }else if(smartstoreInquiryDue()){
       smartstoreInquiryState.lastAttemptAt=Date.now();
       saveSmartstoreInquiryState();
       inquiryResult=await withTimeout(
@@ -1633,11 +1645,13 @@ async function syncLotteonSafe(source){
 
     const minutes=connectedMarketLookbackMinutes(source);
 
-    const auth=await withTimeout(
-      '롯데온 인증',
-      testLotteonConnection(config),
-      30000
-    );
+    const auth=source==='immediate'
+      ?{identity:'빠른수집'}
+      :await withTimeout(
+          '롯데온 인증',
+          testLotteonConnection(config),
+          30000
+        );
 
     const result=await withTimeout(
       '롯데온 주문조회',
@@ -1743,7 +1757,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.0',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.1',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1763,7 +1777,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.0',
+    version:'FINAL-7.7.1',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1922,6 +1936,27 @@ async function syncCoupangCurrentSafe(source='immediate'){
   }
 }
 
+
+function refreshCurrentOrdersInBackground(){
+  if(backgroundCurrentOrdersRunning||inQuotaCooldown()) return;
+  backgroundCurrentOrdersRunning=true;
+  setTimeout(async()=>{
+    try{
+      const days=Math.max(14,Math.min(31,Number(process.env.MANUAL_DEEP_LOOKBACK_DAYS||31)));
+      const maxPages=Math.max(5,Math.min(15,Number(process.env.MANUAL_DEEP_MAX_PAGES||10)));
+      const result=await withTimeout('쿠팡 백그라운드 현재상태 보정',pollCoupangStatuses(db,coupang(),{
+        statuses:FAST,days,maxPages,reconcile:true
+      }),240000);
+      await saveIntegration(result,null);
+      console.log(`쿠팡 백그라운드 상태보정 완료: 신규 ${result.counts?.ACCEPT||0}, 발송대기 ${result.counts?.INSTRUCT||0}`);
+    }catch(error){
+      if(!markQuotaCooldown(error)) console.error('백그라운드 주문 상태보정 실패:',error?.message||error);
+    }finally{
+      backgroundCurrentOrdersRunning=false;
+    }
+  },1500);
+}
+
 async function runImmediateMarketCollection(summary){
   const jobs=[
     {key:'coupang',label:'쿠팡',run:()=>syncCoupangCurrentSafe('immediate')},
@@ -1956,9 +1991,9 @@ async function runImmediateMarketCollection(summary){
   }));
 
   if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
-  await refreshEsmStatus();
   summary.claims={background:true};
   await updateCollectProgress('immediate',95,'현재 주문 반영 완료');
+  refreshCurrentOrdersInBackground();
   refreshClaimsInBackground('immediate');
 }
 

@@ -75,6 +75,28 @@ function money(value){
   return Number(value.units||0)+Number(value.nanos||0)/1e9;
 }
 
+
+function firstImageUrl(value,depth=0){
+  if(depth>5||value==null) return '';
+  if(typeof value==='string'){
+    const text=value.trim();
+    if(/^https?:\/\//i.test(text)) return text;
+    if(text.startsWith('//')) return `https:${text}`;
+    if(text.startsWith('/image/')) return `https://image.coupangcdn.com${text}`;
+    if(/^image\//i.test(text)) return `https://image.coupangcdn.com/${text}`;
+    return '';
+  }
+  if(Array.isArray(value)){
+    for(const item of value){const found=firstImageUrl(item,depth+1);if(found)return found;}
+    return '';
+  }
+  if(typeof value!=='object') return '';
+  for(const key of ['imageUrl','thumbnailUrl','productImageUrl','vendorPath','cdnPath','images','image']){
+    if(value[key]!=null){const found=firstImageUrl(value[key],depth+1);if(found)return found;}
+  }
+  return '';
+}
+
 function normalize(sheets,requestedStatus){
   const out=[];
   for(const sheet of sheets){
@@ -92,6 +114,8 @@ function normalize(sheets,requestedStatus){
         source:'coupang',market:'쿠팡',eventType:'order',
         ...workflowFields({source:'coupang',orderNo,lineId,eventType:'order'}),
         orderNo,shipmentBoxId:String(sheet.shipmentBoxId||''),vendorItemId:lineId,
+        sellerProductId:String(item.sellerProductId||''),productId:String(item.productId||''),
+        imageUrl:firstImageUrl(item),
         product:item.vendorItemName||[item.sellerProductName,item.sellerProductItemName].filter(Boolean).join(' ')||'쿠팡 상품',
         option:item.sellerProductItemName||'',qty,buyer:sheet.receiver?.name||sheet.orderer?.name||'',
         phone:sheet.receiver?.safeNumber||sheet.receiver?.receiverNumber||'',

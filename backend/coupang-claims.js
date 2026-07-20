@@ -249,6 +249,54 @@ export async function syncReturns(db,config,reconcile=false){
   return saveAndReconcile(db,'return',documents,{from:received.from,complete:received.complete&&review.complete&&completed.complete,reconcile});
 }
 
+
+async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=true}={}){
+  if(!complete) return {deactivated:0,skipped:true};
+  const activeIds=new Set(
+    (currentDocuments||[])
+      .filter(item=>item?.activeState!==false&&item?.id)
+      .map(item=>String(item.id))
+  );
+
+  let snapshot;
+  try{
+    snapshot=await db.collection('orders')
+      .where('source','==','coupang')
+      .where('eventType','==','exchange')
+      .where('activeState','==',true)
+      .get();
+  }catch(error){
+    const message=String(error?.message||error).toLowerCase();
+    if(!message.includes('index')&&!message.includes('failed_precondition')) throw error;
+    snapshot=await db.collection('orders').where('source','==','coupang').get();
+  }
+
+  const stale=[];
+  snapshot.forEach(doc=>{
+    const data=doc.data()||{};
+    if(String(data.eventType||'')!=='exchange'||data.activeState===false) return;
+    if(activeIds.has(doc.id)) return;
+    stale.push(doc.ref);
+  });
+
+  for(let index=0;index<stale.length;index+=400){
+    const batch=db.batch();
+    for(const ref of stale.slice(index,index+400)){
+      batch.set(ref,{
+        activeState:false,
+        status:'exchanged',
+        statusLabel:'교환완료',
+        resolvedReason:'쿠팡 현재 미처리 교환 목록에서 제외됨',
+        resolvedAt:new Date(),
+        updatedAt:new Date()
+      },{merge:true});
+    }
+    await batch.commit();
+  }
+
+  return {deactivated:stale.length,skipped:false};
+}
+
 function exchangeReconcileFrom(fetchedFrom,reconcile=false){
   // 정밀수집에서 쿠팡의 현재 미처리 교환 목록에 없는 문서는 요청일과 관계없이 닫습니다.
   // 교환 API는 최근 90일을 모두 확인하므로, 그보다 오래된 active 교환은 이미 처리된
@@ -261,11 +309,19 @@ export async function syncExchanges(db,config,reconcile=false){
   // 90일을 확인하고, 평상시 순환 수집은 API 부담을 줄여 31일만 확인합니다.
   const fetched=await fetchExchangeRows(config,reconcile?90:31,10);
   const documents=exchangeDocuments(fetched.rows);
-  return saveAndReconcile(db,'exchange',documents,{
+  const saved=await saveAndReconcile(db,'exchange',documents,{
     from:exchangeReconcileFrom(fetched.from,reconcile),
     complete:fetched.complete,
     reconcile
   });
+  const direct=reconcile
+    ?await forceCloseStaleCoupangExchanges(db,documents,{complete:fetched.complete})
+    :{deactivated:0,skipped:true};
+  return {
+    ...saved,
+    deactivated:Number(saved.deactivated||0)+Number(direct.deactivated||0),
+    directCleanup:direct
+  };
 }
 
 export const coupangClaimsTestHelpers={
@@ -273,5 +329,6 @@ export const coupangClaimsTestHelpers={
   exchangeActiveState,
   exchangeDocuments,
   rangeWindows,
-  exchangeReconcileFrom
+  exchangeReconcileFrom,
+  forceCloseStaleCoupangExchanges
 };

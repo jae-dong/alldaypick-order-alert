@@ -19,3 +19,5 @@ backend/*firebase-adminsdk*.json
 
 backend/.smartstore-inquiry-state.json
 backend/.smartstore-inquiry-state.json.tmp
+backend/.telegram-product-image-cache.json
+backend/.telegram-product-image-cache.json.tmp
