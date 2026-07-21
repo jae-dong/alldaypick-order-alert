@@ -87,30 +87,138 @@ function firstImageUrl(value,depth=0){
     const found=firstImageUrl(item,depth+1);
     if(found) return found;
   }
+  // 채널상품 조회 응답은 originProduct.images.representativeImage.url처럼
+  // 이미지가 여러 단계의 일반 래퍼 안에 있으므로 나머지 객체도 제한 깊이 내에서 탐색합니다.
+  for(const [key,item] of Object.entries(value)){
+    if(/image|thumb|photo/i.test(key)||item==null||typeof item!=='object') continue;
+    const found=firstImageUrl(item,depth+1);
+    if(found) return found;
+  }
   return '';
+}
+
+function uniqueText(values=[]){
+  return [...new Set(values.map(value=>String(value||'').trim()).filter(Boolean))];
+}
+
+function productSearchRows(body){
+  if(Array.isArray(body?.contents)) return body.contents;
+  if(Array.isArray(body?.data?.contents)) return body.data.contents;
+  if(Array.isArray(body?.data)) return body.data;
+  return [];
+}
+
+async function readSmartstoreChannelImage(token,channelProductNo){
+  const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(channelProductNo)}`);
+  return firstImageUrl(body?.data||body);
+}
+
+async function readSmartstoreOriginImage(token,originProductNo){
+  const body=await api(token,`/v2/products/origin-products/${encodeURIComponent(originProductNo)}`);
+  return firstImageUrl(body?.data||body);
+}
+
+async function searchSmartstoreProduct(token,searchBody){
+  return api(token,'/v1/products/search',{
+    method:'POST',
+    body:JSON.stringify({page:1,size:50,...searchBody})
+  });
 }
 
 export async function resolveSmartstoreProductImage(config,orderOrProductNo){
   if(!config?.clientId||!config?.clientSecret) return '';
   const order=orderOrProductNo&&typeof orderOrProductNo==='object'?orderOrProductNo:{};
-  const candidates=[
+  const channelProductNos=uniqueText([
     order.channelProductNo,
     order.productId,
+    order.productNo,
+    order.channelProductId,
     typeof orderOrProductNo==='object'?'':orderOrProductNo
-  ].map(value=>String(value||'').trim()).filter(Boolean);
-  if(!candidates.length) return '';
+  ]);
+  const originProductNos=uniqueText([
+    order.originProductNo,
+    order.originalProductId,
+    order.originalProductNo
+  ]);
+  const sellerManagementCodes=uniqueText([
+    order.sellerProductCode,
+    order.sellerManagementCode,
+    order.optionManageCode
+  ]);
+  if(!channelProductNos.length&&!originProductNos.length&&!sellerManagementCodes.length) return '';
+
   const token=await accessToken(config);
-  let lastError;
-  for(const productNo of [...new Set(candidates)]){
+  const errors=[];
+
+  for(const productNo of channelProductNos){
     try{
-      const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(productNo)}`);
-      const image=firstImageUrl(body?.data||body);
+      const image=await readSmartstoreChannelImage(token,productNo);
       if(image) return image;
-    }catch(error){
-      lastError=error;
-    }
+    }catch(error){errors.push(error);}
   }
-  if(lastError) throw lastError;
+
+  for(const productNo of originProductNos){
+    try{
+      const image=await readSmartstoreOriginImage(token,productNo);
+      if(image) return image;
+    }catch(error){errors.push(error);}
+  }
+
+  // 채널 상품이 그룹상품 전환 등으로 308/404가 된 경우 상품 목록 검색으로
+  // 현재 채널상품번호와 원상품번호를 다시 찾아 대표 이미지를 조회합니다.
+  const discoveredChannelNos=[];
+  const discoveredOriginNos=[];
+  if(channelProductNos.length){
+    try{
+      const body=await searchSmartstoreProduct(token,{
+        searchKeywordType:'CHANNEL_PRODUCT_NO',
+        channelProductNos:channelProductNos.map(value=>Number(value)).filter(Number.isSafeInteger)
+      });
+      for(const item of productSearchRows(body)){
+        if(item?.originProductNo!=null) discoveredOriginNos.push(item.originProductNo);
+        for(const channel of Array.isArray(item?.channelProducts)?item.channelProducts:[]){
+          if(channel?.channelProductNo!=null) discoveredChannelNos.push(channel.channelProductNo);
+        }
+      }
+    }catch(error){errors.push(error);}
+  }
+
+  for(const sellerManagementCode of sellerManagementCodes){
+    try{
+      const body=await searchSmartstoreProduct(token,{
+        searchKeywordType:'SELLER_CODE',
+        sellerManagementCode
+      });
+      for(const item of productSearchRows(body)){
+        if(item?.originProductNo!=null) discoveredOriginNos.push(item.originProductNo);
+        for(const channel of Array.isArray(item?.channelProducts)?item.channelProducts:[]){
+          if(channel?.channelProductNo!=null) discoveredChannelNos.push(channel.channelProductNo);
+        }
+      }
+    }catch(error){errors.push(error);}
+  }
+
+  for(const productNo of uniqueText(discoveredChannelNos)){
+    try{
+      const image=await readSmartstoreChannelImage(token,productNo);
+      if(image) return image;
+    }catch(error){errors.push(error);}
+  }
+  for(const productNo of uniqueText([...originProductNos,...discoveredOriginNos])){
+    try{
+      const image=await readSmartstoreOriginImage(token,productNo);
+      if(image) return image;
+    }catch(error){errors.push(error);}
+  }
+
+  if(errors.length){
+    const last=errors.at(-1);
+    console.warn(
+      '스마트스토어 상품 썸네일 상세조회 실패 ·',
+      `채널 ${channelProductNos.join(',')||'-'} · 원상품 ${originProductNos.join(',')||'-'} · 판매자코드 ${sellerManagementCodes.join(',')||'-'} ·`,
+      last?.message||last
+    );
+  }
   return '';
 }
 
@@ -153,8 +261,12 @@ function normalizeDetail(row){
   const base={
     source:'smartstore',market:'스마트스토어',orderNo,productOrderId,product,
     productId:String(productOrder.productId||row.productId||''),
-    channelProductNo:String(productOrder.productId||row.productId||''),
+    channelProductNo:String(productOrder.productId||row.productId||row.channelProductNo||''),
     originalProductId:String(productOrder.originalProductId||row.originalProductId||''),
+    originProductNo:String(productOrder.originalProductId||row.originalProductId||row.originProductNo||''),
+    groupProductId:String(productOrder.groupProductId||row.groupProductId||''),
+    sellerProductCode:String(productOrder.sellerProductCode||row.sellerProductCode||''),
+    optionManageCode:String(productOrder.optionManageCode||row.optionManageCode||''),
     merchantChannelId:String(productOrder.merchantChannelId||row.merchantChannelId||''),
     imageUrl:firstImageUrl(productOrder)||firstImageUrl(row),
     option:productOrder.productOption||productOrder.optionCode||productOrder.optionName||'',

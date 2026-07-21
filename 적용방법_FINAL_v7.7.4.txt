@@ -1,0 +1,13 @@
+FINAL v7.7.4 적용 방법
+
+1. 현재 검은 수집기 창을 X로 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
+5. GitHub Desktop Summary: FINAL v7.7.4 스마트스토어 실제 상품 썸네일 수정
+6. Commit to main -> Push origin
+7. 웹 상단 FINAL v7.7.4 확인
+8. START_AGENT.cmd 실행
+9. 다음 실제 스마트스토어 신규주문에서 텔레그램 사진 확인
+
+주의: .git, backend\.env.local, backend\firebase-service-account.json은 삭제하지 않습니다.

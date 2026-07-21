@@ -23,3 +23,6 @@ backend/.telegram-product-image-cache.json
 backend/.telegram-product-image-cache.json.tmp
 backend/.telegram-product-image-cache-v3.json
 backend/.telegram-product-image-cache-v3.json.tmp
+
+backend/.telegram-product-image-cache-v4.json
+backend/.telegram-product-image-cache-v4.json.tmp
