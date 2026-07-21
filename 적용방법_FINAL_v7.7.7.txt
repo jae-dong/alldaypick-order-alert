@@ -1,0 +1,11 @@
+FINAL v7.7.7 적용 방법
+
+1. 실행 중인 검은 수집기 창을 X로 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+4. 문서\GitHub\alldaypick-order-alert 폴더 안에 붙여넣고 모두 덮어씁니다.
+5. .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+6. GitHub Desktop Summary: FINAL v7.7.7 쿠팡 대표 상품 썸네일 수정
+7. Commit to main, Push origin을 누릅니다.
+8. 웹 상단 FINAL v7.7.7을 확인합니다.
+9. START_AGENT.cmd를 실행합니다.

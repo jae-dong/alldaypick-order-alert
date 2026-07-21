@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { workflowFields } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { directCoupangOrderImage } from './product-image.js';
 
 const MAP={
   ACCEPT:['new','신규주문'],
@@ -76,26 +77,10 @@ function money(value){
 }
 
 
-function firstImageUrl(value,depth=0){
-  if(depth>5||value==null) return '';
-  if(typeof value==='string'){
-    const text=value.trim();
-    if(/^https?:\/\//i.test(text)) return text;
-    if(text.startsWith('//')) return `https:${text}`;
-    if(text.startsWith('/image/')) return `https://image.coupangcdn.com${text}`;
-    if(/^image\//i.test(text)) return `https://image.coupangcdn.com/${text}`;
-    return '';
-  }
-  if(Array.isArray(value)){
-    for(const item of value){const found=firstImageUrl(item,depth+1);if(found)return found;}
-    return '';
-  }
-  if(typeof value!=='object') return '';
-  for(const key of ['imageUrl','thumbnailUrl','productImageUrl','vendorPath','cdnPath','images','image']){
-    if(value[key]!=null){const found=firstImageUrl(value[key],depth+1);if(found)return found;}
-  }
-  return '';
+function firstImageUrl(value){
+  return directCoupangOrderImage(value);
 }
+
 
 function normalize(sheets,requestedStatus){
   const out=[];
