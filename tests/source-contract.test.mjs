@@ -27,6 +27,13 @@ const coupangClaims=read('coupang-claims.js');
 assert.match(coupangClaims,/rangeWindows\(days,6\)/,'Coupang exchange requests must be split into sub-seven-day windows');
 assert.match(coupangClaims,/createdAtFrom:kstSecond\(window\.from\)[\s\S]*createdAtTo:kstSecond\(window\.to\)/,'Coupang exchange request dates must use each split window');
 
+
+const lotteon=read('lotteon.js');
+assert.match(lotteon,/Math\.max\(Number\(minutes \|\| 0\), 3 \* 24 \* 60\)/,'Lotteon sync must cover at least the recent three days');
+assert.match(lotteon,/const attempts = \[\s*base,\s*\{ \.\.\.base, trNo: config\.sellerId \}/,'Lotteon must try API-key seller scope before trNo fallback');
+assert.match(lotteon,/status: 'shipping_wait'/,'Lotteon delivery instructions must default to shipping wait');
+assert.match(lotteon,/function scalarContext/,'Lotteon nested response rows must inherit parent order fields');
+
 const elevenst=read('elevenst.js');
 assert.match(elevenst,/String\(item\.eventType\|\|'order'\)==='order'/,'11st order status refresh must not treat claim documents as orders');
 assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconciled after a complete refresh');
@@ -38,13 +45,14 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.4'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.5'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
 assert.match(agent,/SMARTSTORE_INQUIRY_429_COOLDOWN_MS/,'Smartstore inquiries must persist a 429 cooldown');
 assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorrectly deactivated pending records');
 assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
+assert.match(coupangClaims,/exchangeDeliveryCompleted/,'Coupang completed exchange delivery must close a stale PROGRESS claim');
 assert.match(coupangClaims,/\['RECEIPT','PROGRESS','접수','진행'\]/,'Only official active Coupang exchange statuses may remain open');
 assert.match(coupangClaims,/reconcile\?90:31/,'Startup exchange repair must scan a wider history');
 assert.match(coupangClaims,/return reconcile\?new Date\(0\):fetchedFrom/,'Startup exchange reconciliation must close stale active exchange cache regardless of age');

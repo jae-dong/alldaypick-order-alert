@@ -1,15 +1,22 @@
 {
-  "name": "올데이픽 주문알림 FINAL v7.7.4",
-  "short_name": "올데이픽 주문알림",
-  "start_url": "./?v=final-v7.7.4",
+  "name": "올데이픽 주문알림 FINAL v7.7.5",
+  "short_name": "주문알림",
+  "start_url": "./?v=final-v7.7.5",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f5f7",
-  "theme_color": "#111827",
+  "background_color": "#fff7e8",
+  "theme_color": "#8b5e3c",
   "icons": [
     {
-      "src": "./icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./icon-son-v775-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-son-v775-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

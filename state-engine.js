@@ -121,6 +121,12 @@
     // 이전 버전에서 남은 EXCHANGE_REQUEST/빈 상태 캐시는 화면에서 제외하고,
     // 실제 진행 중 교환은 다음 API 동기화에서 공식 상태로 다시 활성화됩니다.
     if(eventType(item)==='exchange'&&isCoupang(item)){
+      const deliveryStatus=text(item?.deliveryStatus).toUpperCase();
+      if(
+        item?.targetItemDeliveryComplete===true||
+        ['COMPLETEDELIVERY','COMPLETE_DELIVERY','WITHDRAW','FINAL_DELIVERY'].includes(deliveryStatus)
+      )return true;
+
       const exchangeState=text(
         item?.exchangeStatus||
         item?.exchangeStatusLabel||

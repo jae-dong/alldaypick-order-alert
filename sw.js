@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.4-20260720-state-final-fix';
+const CACHE='alldaypick-final-v7.7.5-20260720-lotteon-exchange-icon-fix';
 const STATIC=[
   './',
   './index.html',
@@ -6,7 +6,9 @@ const STATIC=[
   './state-engine.js',
   './app.js',
   './manifest.json',
-  './icon.svg'
+  './icon-son-v775-192.png',
+  './icon-son-v775-512.png',
+  './icon-son-v775-180.png'
 ];
 
 self.addEventListener('install',event=>{

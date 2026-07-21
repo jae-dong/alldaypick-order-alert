@@ -3,6 +3,8 @@ import { coupangClaimsTestHelpers as H } from '../backend/coupang-claims.js';
 
 assert.equal(H.exchangeActiveState({exchangeStatus:'RECEIPT'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS'}),true);
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',exchangeItemDtoV1s:[{targetItemDeliveryComplete:true}]}),false);
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',deliveryStatus:'CompleteDelivery'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'SUCCESS'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'REJECT'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'CANCEL'}),false);

@@ -1,0 +1,10 @@
+FINAL v7.7.5 적용 방법
+
+1. 기존 검은 수집기 창을 X로 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 안쪽 alldaypick-order-alert 폴더의 내용물 전체를 기존 문서\GitHub\alldaypick-order-alert 폴더에 덮어씁니다.
+4. backend\.env.local, backend\firebase-service-account.json, .git은 기존 파일을 유지합니다.
+5. GitHub Desktop Summary: FINAL v7.7.5 롯데온 누락 교환 앱아이콘 수정
+6. Commit to main 후 Push origin을 누릅니다.
+7. 웹 상단 FINAL v7.7.5 확인 후 START_AGENT.cmd를 실행합니다.
+8. 휴대폰 아이콘은 기존 바로가기를 삭제하고 웹주소를 다시 홈 화면에 추가하면 새 아이콘이 확실히 적용됩니다.

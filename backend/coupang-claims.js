@@ -111,16 +111,36 @@ function exchangeStatusValue(row={}){
   ).trim().toUpperCase();
 }
 
+function exchangeDeliveryCompleted(row={}){
+  const deliveryStatus=String(row.deliveryStatus||'').trim().toUpperCase();
+  if(['COMPLETEDELIVERY','COMPLETE_DELIVERY','WITHDRAW'].includes(deliveryStatus)) return true;
+
+  const items=Array.isArray(row.exchangeItemDtoV1s)?row.exchangeItemDtoV1s:[];
+  if(items.length>0&&items.every(item=>item?.targetItemDeliveryComplete===true)) return true;
+
+  const invoiceGroups=Array.isArray(row.deliveryInvoiceGroupDtos)?row.deliveryInvoiceGroupDtos:[];
+  const invoices=invoiceGroups.flatMap(group=>Array.isArray(group?.deliveryInvoiceDtos)?group.deliveryInvoiceDtos:[]);
+  if(invoices.length>0&&invoices.every(invoice=>{
+    const status=String(invoice?.statusCode||'').trim().toUpperCase();
+    return ['FINAL_DELIVERY','DELIVERED','COMPLETEDELIVERY','COMPLETE_DELIVERY'].includes(status);
+  })) return true;
+
+  return false;
+}
+
 function exchangeActiveState(row={}){
   const status=exchangeStatusValue(row);
+
+  // 교환상품 배송까지 끝난 건은 API의 exchangeStatus가 PROGRESS로 늦게 남아 있어도
+  // 판매자센터의 현재 교환요청에서는 완료 건이므로 미처리 목록에서 제외합니다.
+  if(exchangeDeliveryCompleted(row)) return false;
 
   // 쿠팡 공식 교환 상태 중 현재 판매자가 처리해야 하는 상태는
   // RECEIPT(접수), PROGRESS(진행) 두 가지뿐입니다.
   if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
 
   // SUCCESS/REJECT/CANCEL뿐 아니라 비어 있거나 알 수 없는 과거 캐시도
-  // 현재 미처리 교환으로 남기지 않습니다. 공식 API 응답은 exchangeStatus를
-  // 제공하므로, 명시적 활성 상태가 아닌 값은 종료 상태로 보는 것이 안전합니다.
+  // 현재 미처리 교환으로 남기지 않습니다.
   return false;
 }
 
@@ -142,6 +162,8 @@ function exchangeDocuments(rows){
         datetime:row.createdAt||new Date().toISOString(),claimRequestedAt:row.createdAt||'',
         status:'exchange_request',statusLabel:'교환요청',sourceStatus,claimStatus:sourceStatus,
         reason:row.reasonCodeText||row.reasonEtcDetail||'',modifiedAt:row.modifiedAt||'',
+        exchangeStatus:sourceStatus,deliveryStatus:String(row.deliveryStatus||''),
+        targetItemDeliveryComplete:item.targetItemDeliveryComplete===true,
         sourceUpdatedAt:row.modifiedAt||row.createdAt||new Date().toISOString(),syncedAt:new Date().toISOString()
       };
       document.activeState=exchangeActiveState(row);
@@ -360,6 +382,7 @@ export async function syncExchanges(db,config,reconcile=false){
 export const coupangClaimsTestHelpers={
   exchangeStatusValue,
   exchangeActiveState,
+  exchangeDeliveryCompleted,
   exchangeDocuments,
   rangeWindows,
   exchangeReconcileFrom,

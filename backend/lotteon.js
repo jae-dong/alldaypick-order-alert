@@ -78,7 +78,7 @@ function formatDate(date) {
 function parseDate(value) {
   const raw = text(value);
 
-  if (!raw) return new Date().toISOString();
+  if (!raw) return '';
 
   if (/^\d{14}$/.test(raw)) {
     return new Date(
@@ -97,87 +97,100 @@ function parseDate(value) {
   const date = new Date(raw);
 
   return Number.isNaN(date.getTime())
-    ? new Date().toISOString()
+    ? ''
     : date.toISOString();
 }
 
-function collectRecords(node, depth = 0) {
-  if (!node || depth > 12) return [];
+function scalarContext(node, inherited = {}) {
+  const keys = [
+    'ordNo','orderNo','ordId','orderId','odNo','orNo',
+    'dlvNo','deliveryNo','deliveryId','ifNo','dvNo',
+    'ordDtlSeq','ordItemSeq','itemSeq','prdSeq','orderItemSequence',
+    'spdNo','prdNo','productNo','itemNo','sitmNo',
+    'spdNm','prdNm','productName','itemName','ordItemNm','sitmNm',
+    'ordDttm','ordDt','payDttm','ifDttm','ifCreDttm','ifCrtDttm','regDttm','createdAt',
+    'ordrNm','ordNm','buyerName','receiverName','rcvrNm',
+    'ordStsCd','ordStsNm','dlvStsCd','dlvStsNm','procStsCd','procStsNm',
+    'ifTypCd','ifTypNm','workTypCd','workTypNm','dvProcTypCd','dvProcTypNm',
+    'ordDtlStsCd','ordDtlStsNm','dtlDlvStsCd','dtlDlvStsNm'
+  ];
+  const context = { ...inherited };
+  for (const key of keys) {
+    const candidate = node?.[key];
+    if (
+      candidate != null &&
+      (typeof candidate === 'string' || typeof candidate === 'number' || typeof candidate === 'boolean')
+    ) {
+      context[key] = candidate;
+    }
+  }
+  return context;
+}
+
+function collectRecords(node, depth = 0, inherited = {}) {
+  if (!node || depth > 14) return [];
 
   if (Array.isArray(node)) {
-    return node.flatMap(item => collectRecords(item, depth + 1));
+    return node.flatMap(item => collectRecords(item, depth + 1, inherited));
   }
 
   if (typeof node !== 'object') return [];
 
-  const orderNo = first(node, [
-    'ordNo',
-    'orderNo',
-    'ordId',
-    'orderId'
+  const context = scalarContext(node, inherited);
+  const merged = { ...context, ...node };
+
+  const orderNo = first(merged, [
+    'ordNo','orderNo','ordId','orderId','odNo','orNo'
   ]);
 
-  const deliveryNo = first(node, [
-    'dlvNo',
-    'deliveryNo',
-    'deliveryId',
-    'ifNo'
+  const deliveryNo = first(merged, [
+    'dlvNo','deliveryNo','deliveryId','ifNo','dvNo'
   ]);
 
-  const productName = first(node, [
-    'spdNm',
-    'prdNm',
-    'productName',
-    'itemName',
-    'ordItemNm'
+  const productName = first(merged, [
+    'spdNm','prdNm','productName','itemName','ordItemNm','sitmNm'
   ]);
 
-  if (orderNo && (deliveryNo || productName)) {
-    return [node];
+  const itemNo = first(merged, [
+    'sitmNo','spdNo','prdNo','productNo','itemNo'
+  ]);
+
+  if (orderNo && (deliveryNo || productName || itemNo)) {
+    return [merged];
   }
 
   const likelyKeys = [
-    'data',
-    'result',
-    'content',
-    'contents',
-    'items',
-    'itemList',
-    'orderList',
-    'orders',
-    'deliveryOrders',
-    'sellerDeliveryOrders',
-    'ifList',
-    'list'
+    'data','result','content','contents','items','itemList','orderList','orders',
+    'deliveryOrders','sellerDeliveryOrders','ifList','list','rsltData','resultData',
+    'responseData','orderInfos','orderInfoList','deliveryOrderList','ordList','ordDtlList',
+    'orderDetailList','itemDetails','itemsInfo','sitmList','spdList','detailList','dtlList'
   ];
 
-  for (const key of likelyKeys) {
-    if (node[key] != null) {
-      const rows = collectRecords(node[key], depth + 1);
+  const rows = [];
+  const visited = new Set();
 
-      if (rows.length) return rows;
-    }
+  for (const key of likelyKeys) {
+    if (node[key] == null) continue;
+    visited.add(key);
+    rows.push(...collectRecords(node[key], depth + 1, context));
   }
 
-  return Object.values(node)
-    .flatMap(value => collectRecords(value, depth + 1));
+  for (const [key, child] of Object.entries(node)) {
+    if (visited.has(key)) continue;
+    if (!child || (typeof child !== 'object' && !Array.isArray(child))) continue;
+    rows.push(...collectRecords(child, depth + 1, context));
+  }
+
+  return rows;
 }
 
 function statusInfo(row) {
   const raw = [
-    first(row, [
-      'ordStsCd',
-      'ordStsNm',
-      'dlvStsCd',
-      'dlvStsNm',
-      'procStsCd',
-      'procStsNm',
-      'ifTypCd',
-      'ifTypNm',
-      'workTypCd',
-      'workTypNm'
-    ])
+    'ordStsCd','ordStsNm','dlvStsCd','dlvStsNm','procStsCd','procStsNm',
+    'ifTypCd','ifTypNm','workTypCd','workTypNm','dvProcTypCd','dvProcTypNm',
+    'ordDtlStsCd','ordDtlStsNm','dtlDlvStsCd','dtlDlvStsNm','deliveryStatus'
   ]
+    .map(key => text(row?.[key]))
     .filter(Boolean)
     .join(' ')
     .toUpperCase();
@@ -268,10 +281,11 @@ function statusInfo(row) {
     };
   }
 
+  // 이 API는 출고/회수지시 조회이므로 별도 상태값이 없어도 주문확인 후 발송대기 건입니다.
   return {
     eventType: 'order',
-    status: 'new',
-    statusLabel: '신규주문'
+    status: 'shipping_wait',
+    statusLabel: '발송대기'
   };
 }
 
@@ -280,7 +294,9 @@ function normalizeOrder(row, sellerId) {
     'ordNo',
     'orderNo',
     'ordId',
-    'orderId'
+    'orderId',
+    'odNo',
+    'orNo'
   ]);
 
   if (!orderNo) return null;
@@ -289,7 +305,8 @@ function normalizeOrder(row, sellerId) {
     'dlvNo',
     'deliveryNo',
     'deliveryId',
-    'ifNo'
+    'ifNo',
+    'dvNo'
   ]);
 
   const sequence = first(row, [
@@ -303,7 +320,7 @@ function normalizeOrder(row, sellerId) {
   const idPart =
     deliveryNo ||
     sequence ||
-    first(row, ['spdNo', 'prdNo', 'productNo']) ||
+    first(row, ['sitmNo','spdNo', 'prdNo', 'productNo','itemNo']) ||
     'item';
 
   const mapped = statusInfo(row);
@@ -361,12 +378,18 @@ function normalizeOrder(row, sellerId) {
       'procStsCd',
       'procStsNm',
       'ifTypCd',
-      'ifTypNm'
+      'ifTypNm',
+      'dvProcTypCd',
+      'dvProcTypNm',
+      'ordDtlStsCd',
+      'ordDtlStsNm',
+      'dtlDlvStsCd',
+      'dtlDlvStsNm'
     ]),
     orderNo,
     deliveryNo,
     orderProductSequence: sequence,
-    productNo:first(row,['spdNo','prdNo','productNo','itemNo']),
+    productNo:first(row,['sitmNo','spdNo','prdNo','productNo','itemNo']),
     imageUrl:first(row,['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','thumbUrl','thumbnailUrl']),
     product:
       first(row, [
@@ -374,7 +397,8 @@ function normalizeOrder(row, sellerId) {
         'prdNm',
         'productName',
         'itemName',
-        'ordItemNm'
+        'ordItemNm',
+        'sitmNm'
       ]) || '롯데온 상품',
     option: first(row, [
       'itmNm',
@@ -425,7 +449,11 @@ function normalizeOrder(row, sellerId) {
         'payDttm',
         'ifDttm',
         'regDttm',
-        'createdAt'
+        'createdAt',
+        'ifCreDttm',
+        'ifCrtDttm',
+        'ordCrtDttm',
+        'orderDateTime'
       ])
     ),
     deliveryCompanyName: first(row, [
@@ -582,68 +610,64 @@ export async function testLotteonConnection(config) {
   };
 }
 
-async function queryOrderInstructions(
-  config,
-  minutes
-) {
-  const now = new Date();
-  const from = new Date(
-    now.getTime() - minutes * 60 * 1000
-  );
+function splitDateWindows(minutes, maxWindowMinutes = 3 * 24 * 60) {
+  const end = new Date();
+  const start = new Date(end.getTime() - Math.max(1, minutes) * 60000);
+  const windows = [];
+  let cursor = start;
 
-  const bodies = [
-    {
-      trNo: config.sellerId,
-      srchStrtDt: formatDate(from),
-      srchEndDt: formatDate(now)
-    },
-    {
-      srchStrtDt: formatDate(from),
-      srchEndDt: formatDate(now)
-    },
-    {
-      trNo: config.sellerId
-    },
-    {}
-  ];
+  while (cursor < end) {
+    const next = new Date(Math.min(end.getTime(), cursor.getTime() + maxWindowMinutes * 60000));
+    windows.push({ from: new Date(cursor), to: next });
+    cursor = next;
+  }
 
+  return windows;
+}
+
+async function queryOrderInstructions(config, minutes) {
+  // 롯데ON 공식 가이드는 인증키에 상위 거래처가 포함되므로 trNo 없이 조회하는 것이 기본입니다.
+  // 주문확인 후에도 미처리 건이 남을 수 있어 최소 최근 3일을 조회하고, 긴 범위는 3일씩 분할합니다.
+  const effectiveMinutes = Math.max(Number(minutes || 0), 3 * 24 * 60);
+  const windows = splitDateWindows(effectiveMinutes);
+  const responses = [];
+  const requestBodies = [];
   const errors = [];
 
-  for (const body of bodies) {
-    try {
-      const response = await requestJson(
-        config,
-        ORDER_PATH,
-        {
-          method: 'POST',
-          body
-        }
-      );
+  for (const window of windows) {
+    const base = {
+      srchStrtDt: formatDate(window.from),
+      srchEndDt: formatDate(window.to)
+    };
 
-      return {
-        response,
-        requestBody: body
-      };
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(error);
+    const attempts = [
+      base,
+      { ...base, trNo: config.sellerId }
+    ];
 
-      errors.push(message);
-
-      if (
-        message.includes('HTTP 401') ||
-        message.includes('HTTP 403')
-      ) {
-        throw error;
+    let accepted = false;
+    for (const body of attempts) {
+      try {
+        const response = await requestJson(config, ORDER_PATH, { method: 'POST', body });
+        const rows = collectRecords(response);
+        responses.push(response);
+        requestBodies.push(body);
+        accepted = true;
+        // 인증키 자체 거래처 조회에서 데이터가 있으면 trNo 재조회는 하지 않습니다.
+        if (rows.length > 0 || body.trNo) break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(message);
+        if (message.includes('HTTP 401') || message.includes('HTTP 403')) throw error;
       }
+    }
+
+    if (!accepted && errors.length) {
+      throw new Error(`롯데온 주문조회 실패: ${errors.join(' / ')}`);
     }
   }
 
-  throw new Error(
-    `롯데온 주문조회 실패: ${errors.join(' / ')}`
-  );
+  return { responses, requestBodies };
 }
 
 async function saveOrders(db,orders){
@@ -668,22 +692,23 @@ export async function syncLotteonOrders(
   }
 
   const {
-    response,
-    requestBody
-  } = await queryOrderInstructions(
-    config,
-    minutes
-  );
+    responses,
+    requestBodies
+  } = await queryOrderInstructions(config, minutes);
 
-  const rows = collectRecords(response);
-
-  const orders = rows
-    .map(row => normalizeOrder(row, config.sellerId))
-    .filter(Boolean);
+  const rows = responses.flatMap(response => collectRecords(response));
+  const orders = [...new Map(
+    rows
+      .map(row => normalizeOrder(row, config.sellerId))
+      .filter(Boolean)
+      .map(order => [order.id, order])
+  ).values()];
 
   return {
     connected: true,
-    requestBody,
+    requestBody: requestBodies[requestBodies.length - 1] || null,
+    requestBodies,
+    rawRows: rows.length,
     ...(await saveOrders(db, orders))
   };
 }
@@ -745,3 +770,5 @@ export async function saveLotteonError(
     }
   }, { merge: true });
 }
+
+export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows};
