@@ -121,3 +121,21 @@ liveComparison.push({source:'coupang',market:'쿠팡',eventType:'exchange',claim
 liveComparison.push({source:'coupang',market:'쿠팡',eventType:'inquiry',claimId:'LCQ1',sourceStatus:'NOANSWER',activeState:true});
 liveComparison.push({source:'gmarket',market:'G마켓',orderNo:'G-EXCLUDED',eventType:'order',status:'new',sourceStatus:'NEW',activeState:true});
 assert.equal(JSON.stringify(E.counts(liveComparison,integrations)),JSON.stringify({new:4,shipping_wait:29,cancel:0,return:2,exchange:1,inquiry:1}));
+
+
+// Smartstore gifts waiting for recipient acceptance are not actionable orders or sales.
+const giftPending=[{
+  source:'smartstore',market:'스마트스토어',orderNo:'GIFT-WAIT',productOrderId:'GP1',
+  eventType:'order',status:'gift_wait',sourceStatus:'PAYED',giftReceivingStatus:'WAIT_FOR_RECEIVING',
+  giftPending:true,excludedFromMetrics:true,activeState:false,amount:30000,datetime:'2026-07-21T09:00:00+09:00'
+}];
+assert.equal(E.pendingItems(giftPending,integrations).length,0);
+assert.equal(E.salesGroups(giftPending,integrations).length,0);
+
+const giftAccepted=[{
+  source:'smartstore',market:'스마트스토어',orderNo:'GIFT-OK',productOrderId:'GP2',
+  eventType:'order',status:'new',sourceStatus:'PAYED',giftReceivingStatus:'RECEIVED',
+  giftPending:false,excludedFromMetrics:false,activeState:true,amount:30000,datetime:'2026-07-21T09:10:00+09:00'
+}];
+assert.equal(E.pendingItems(giftAccepted,integrations).length,1);
+assert.equal(E.salesGroups(giftAccepted,integrations).length,1);

@@ -1,5 +1,5 @@
-const APP_VERSION='FINAL v7.7.5';
-const BUILD_DATE='2026-07-20';
+const APP_VERSION='FINAL v7.7.6';
+const BUILD_DATE='2026-07-21';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -52,6 +52,7 @@ function statusKey(o){
   const source=String(o?.sourceStatus||'').toUpperCase();
   const status=String(o?.status||'').toLowerCase();
   const eventType=String(o?.eventType||'order').toLowerCase();
+  if(excludedFromOperationalMetrics(o)) return 'gift_wait';
 
   if(
     eventType==='cancel' ||
@@ -201,7 +202,13 @@ function marketIntegrationKey(market){
   }[market]||'';
 }
 
+function excludedFromOperationalMetrics(o){
+  const giftStatus=String(o?.giftReceivingStatus||'').toUpperCase();
+  return o?.excludedFromMetrics===true||o?.giftPending===true||giftStatus==='WAIT_FOR_RECEIVING';
+}
+
 function marketIncludedOrder(o){
+  if(excludedFromOperationalMetrics(o)) return false;
   if(!['G마켓','옥션'].includes(o.market)){
     return true;
   }
@@ -1732,7 +1739,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '연결 쇼핑몰 기준 · 주문번호별 현재 미처리 상태만 표시';
+      '각 쇼핑몰 API 현재상태 기준 · 실제 처리할 주문만 표시';
   }
 
   $('statusUpdated').textContent=
@@ -2883,7 +2890,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.5-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.6-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

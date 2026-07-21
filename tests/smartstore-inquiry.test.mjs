@@ -89,3 +89,27 @@ const staleNow=Date.parse('2026-07-20T05:00:00+09:00');
 assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-20T01:00:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),true);
 assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-20T04:30:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),false);
 assert.equal(H.isLegacyInquiryCacheStale({datetime:'2026-07-19T01:00:00+09:00',lastVerifiedAt:'2026-07-20T04:00:00+09:00'},{minAgeMs:2*60*60*1000,now:staleNow}),false);
+
+
+const giftWaiting=H.normalizeDetail({
+  order:{orderId:'N-GIFT',paymentDate:'2026-07-21T09:00:00+09:00'},
+  productOrder:{
+    productOrderId:'P-GIFT',productOrderStatus:'PAYED',placeOrderStatus:'NOT_YET',
+    giftReceivingStatus:'WAIT_FOR_RECEIVING',productName:'선물 상품',quantity:1,totalPaymentAmount:20000
+  }
+})[0];
+assert.equal(giftWaiting.status,'gift_wait');
+assert.equal(giftWaiting.activeState,false);
+assert.equal(giftWaiting.excludedFromMetrics,true);
+assert.equal(giftWaiting.giftReceivingStatus,'WAIT_FOR_RECEIVING');
+
+const giftReceived=H.normalizeDetail({
+  order:{orderId:'N-GIFT2',paymentDate:'2026-07-21T09:10:00+09:00'},
+  productOrder:{
+    productOrderId:'P-GIFT2',productOrderStatus:'PAYED',placeOrderStatus:'NOT_YET',
+    giftReceivingStatus:'RECEIVED',productName:'수락 선물 상품',quantity:1,totalPaymentAmount:21000
+  }
+})[0];
+assert.equal(giftReceived.status,'new');
+assert.equal(giftReceived.activeState,true);
+assert.equal(giftReceived.excludedFromMetrics,false);

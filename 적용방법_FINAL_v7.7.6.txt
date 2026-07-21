@@ -1,0 +1,12 @@
+FINAL v7.7.6 적용 방법
+
+1. 현재 검은 수집기 창을 X로 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+4. 문서\GitHub\alldaypick-order-alert 폴더 안에 붙여넣고 모두 덮어쓰기를 선택합니다.
+5. .git, backend\.env.local, backend\firebase-service-account.json은 기존 파일을 유지합니다.
+6. GitHub Desktop Summary: FINAL v7.7.6 쇼핑몰 API 직접판정 선물대기 썸네일 보강
+7. Commit to main 후 Push origin을 누릅니다.
+8. 웹 상단 FINAL v7.7.6을 확인합니다.
+9. START_AGENT.cmd를 실행합니다.
+10. 다음 실제 신규 주문의 텔레그램 사진과 스마트스토어 선물 수락 대기 제외를 확인합니다.

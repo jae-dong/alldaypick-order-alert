@@ -4,6 +4,7 @@ import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './ord
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const ACCESS_TOKEN_CACHE=new Map();
 function iso(date){return date.toISOString();}
 function inquiryIso(date){return date.toISOString().replace(/\.\d{3}Z$/,'Z');}
 function signature(clientId,clientSecret,timestamp){
@@ -28,12 +29,19 @@ async function jsonResponse(response,label){
   return body;
 }
 async function accessToken(config){
+  const cacheKey=`${config?.clientId||''}`;
+  const cached=ACCESS_TOKEN_CACHE.get(cacheKey);
+  if(cached?.token&&Number(cached.expiresAt||0)>Date.now()+60000){
+    return cached.token;
+  }
   const timestamp=Date.now();
   const params=new URLSearchParams({client_id:config.clientId,timestamp:String(timestamp),client_secret_sign:signature(config.clientId,config.clientSecret,timestamp),grant_type:'client_credentials',type:'SELF'});
   const response=await fetch(`${API_BASE}/v1/oauth2/token`,{method:'POST',signal:AbortSignal.timeout(30000),headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});
   const body=await jsonResponse(response,'스마트스토어 인증');
   const token=body.access_token||body.accessToken||body.data?.access_token||body.data?.accessToken;
   if(!token) throw new Error('스마트스토어 인증 토큰이 응답에 없습니다.');
+  const expiresIn=Math.max(300,Number(body.expires_in||body.expiresIn||10800));
+  ACCESS_TOKEN_CACHE.set(cacheKey,{token,expiresAt:Date.now()+expiresIn*1000});
   return token;
 }
 async function api(token,path,options={}){
@@ -175,8 +183,12 @@ export async function resolveSmartstoreProductImage(config,orderOrProductNo){
         channelProductNos:channelProductNos.map(value=>Number(value)).filter(Number.isSafeInteger)
       });
       for(const item of productSearchRows(body)){
+        const directImage=firstImageUrl(item);
+        if(directImage) return directImage;
         if(item?.originProductNo!=null) discoveredOriginNos.push(item.originProductNo);
         for(const channel of Array.isArray(item?.channelProducts)?item.channelProducts:[]){
+          const channelImage=firstImageUrl(channel);
+          if(channelImage) return channelImage;
           if(channel?.channelProductNo!=null) discoveredChannelNos.push(channel.channelProductNo);
         }
       }
@@ -190,8 +202,12 @@ export async function resolveSmartstoreProductImage(config,orderOrProductNo){
         sellerManagementCode
       });
       for(const item of productSearchRows(body)){
+        const directImage=firstImageUrl(item);
+        if(directImage) return directImage;
         if(item?.originProductNo!=null) discoveredOriginNos.push(item.originProductNo);
         for(const channel of Array.isArray(item?.channelProducts)?item.channelProducts:[]){
+          const channelImage=firstImageUrl(channel);
+          if(channelImage) return channelImage;
           if(channel?.channelProductNo!=null) discoveredChannelNos.push(channel.channelProductNo);
         }
       }
@@ -222,7 +238,20 @@ export async function resolveSmartstoreProductImage(config,orderOrProductNo){
   return '';
 }
 
+function giftReceivingStatusOf(productOrder={},row={}){
+  return upper(
+    productOrder.giftReceivingStatus,
+    row.giftReceivingStatus,
+    row.order?.giftReceivingStatus,
+    row.orderInfo?.giftReceivingStatus
+  );
+}
+function isGiftWaiting(productOrder={},row={}){
+  return giftReceivingStatusOf(productOrder,row).includes('WAIT_FOR_RECEIVING');
+}
+
 function orderStatus(productOrder={},row={}){
+  if(isGiftWaiting(productOrder,row)) return ['gift_wait','선물 수락 대기'];
   const productStatus=upper(productOrder.productOrderStatus,productOrder.status);
   const placeOrderStatus=upper(productOrder.placeOrderStatus,row.placeOrderStatus);
   const lastChangedType=upper(productOrder.lastChangedType,row.lastChangedType);
@@ -256,6 +285,8 @@ function normalizeDetail(row){
   if(!productOrderId) return [];
 
   const orderNo=String(order.orderId||productOrder.orderId||row.orderId||productOrderId);
+  const giftReceivingStatus=giftReceivingStatusOf(productOrder,row);
+  const giftPending=isGiftWaiting(productOrder,row);
   const [status,statusLabel]=orderStatus(productOrder,row);
   const product=productOrder.productName||productOrder.productOrderName||productOrder.itemName||'스마트스토어 상품';
   const base={
@@ -283,13 +314,18 @@ function normalizeDetail(row){
     placeOrderStatus:productOrder.placeOrderStatus||row.placeOrderStatus||'',
     placeOrderDate:productOrder.placeOrderDate||row.placeOrderDate||'',
     lastChangedType:productOrder.lastChangedType||row.lastChangedType||'',
+    giftReceivingStatus,
+    giftPending,
+    excludedFromMetrics:giftPending,
+    stateAuthority:'smartstore-api',
+    stateVerifiedAt:new Date().toISOString(),
     sourceUpdatedAt:productOrder.lastChangedDate||row.lastChangedDate||productOrder.claimStatusDate||new Date().toISOString(),syncedAt:new Date().toISOString()
   };
 
   const output=[{
     ...base,id:`smartstore-${productOrderId}`,eventType:'order',
     ...workflowFields({source:'smartstore',orderNo,lineId:productOrderId,eventType:'order'}),
-    status,statusLabel,sourceStatus:productOrder.productOrderStatus||productOrder.status||'',activeState:true
+    status,statusLabel,sourceStatus:productOrder.productOrderStatus||productOrder.status||'',activeState:!giftPending
   }];
 
   const currentClaim=row.currentClaim||productOrder.currentClaim||{};
@@ -725,7 +761,7 @@ export async function retireLegacySmartstoreInquiryCache(db,{minAgeMs=2*60*60*10
 }
 
 export const smartstoreTestHelpers={
-  inquiryDoc,orderStatus,normalizeDetail,
+  inquiryDoc,orderStatus,normalizeDetail,giftReceivingStatusOf,isGiftWaiting,
   inquiryPageMeta,
   inquiryRanges,
   inquiryIso,

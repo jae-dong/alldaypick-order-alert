@@ -1,6 +1,6 @@
 {
   "name": "alldaypick-order-alert",
-  "version": "7.7.5",
+  "version": "7.7.6",
   "private": true,
   "type": "module",
   "scripts": {

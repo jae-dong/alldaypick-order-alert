@@ -5,6 +5,7 @@ import { upsertDocuments } from './order-store.js';
 const API_BASE = 'https://openapi.lotteon.com';
 const ORDER_PATH =
   '/v1/openapi/delivery/v1/SellerDeliveryOrdersSearch';
+const PRODUCT_DETAIL_PATH='/v1/openapi/product/v1/product/detail';
 
 function value(object, keys) {
   for (const key of keys) {
@@ -40,6 +41,44 @@ function numberValue(value) {
 function asArray(value) {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function normalizeImageUrl(value){
+  let url=text(value).replaceAll('&amp;','&');
+  if(!url) return '';
+  if(url.startsWith('//')) url=`https:${url}`;
+  if(!/^https?:\/\//i.test(url)) return '';
+  return url;
+}
+function productImageFromResponse(value,depth=0,parentKey=''){
+  if(depth>10||value==null) return '';
+  if(typeof value==='string'){
+    const raw=value.replaceAll('&amp;','&');
+    const html=raw.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
+    if(html?.[1]) return normalizeImageUrl(html[1]);
+    const direct=normalizeImageUrl(raw);
+    if(!direct) return '';
+    if(/image|img|thumb|photo|pic|url|path/i.test(parentKey)||/\.(?:jpe?g|png|webp|gif)(?:[?#]|$)/i.test(direct)) return direct;
+    return '';
+  }
+  if(Array.isArray(value)){
+    for(const item of value){const found=productImageFromResponse(item,depth+1,parentKey);if(found)return found;}
+    return '';
+  }
+  if(typeof value!=='object') return '';
+  for(const key of ['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','mainImageUrl','representativeImageUrl','thumbUrl','thumbnailUrl','image','images','imgList','spdImgList']){
+    if(value[key]!=null){const found=productImageFromResponse(value[key],depth+1,key);if(found)return found;}
+  }
+  for(const [key,item] of Object.entries(value)){
+    if(!/image|img|thumb|photo|pic/i.test(key)) continue;
+    const found=productImageFromResponse(item,depth+1,key);if(found)return found;
+  }
+  for(const [key,item] of Object.entries(value)){
+    if(item&&typeof item==='object'){
+      const found=productImageFromResponse(item,depth+1,key);if(found)return found;
+    }
+  }
+  return '';
 }
 
 function messageFrom(body) {
@@ -389,7 +428,10 @@ function normalizeOrder(row, sellerId) {
     orderNo,
     deliveryNo,
     orderProductSequence: sequence,
-    productNo:first(row,['sitmNo','spdNo','prdNo','productNo','itemNo']),
+    spdNo:first(row,['spdNo','prdNo','productNo']),
+    sitmNo:first(row,['sitmNo','itemNo']),
+    productNo:first(row,['spdNo','prdNo','productNo','sitmNo','itemNo']),
+    itemNo:first(row,['sitmNo','itemNo']),
     imageUrl:first(row,['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','thumbUrl','thumbnailUrl']),
     product:
       first(row, [
@@ -479,6 +521,8 @@ function normalizeOrder(row, sellerId) {
     claimId:mapped.eventType==='order'?'':claimId,
     claimStatus:mapped.eventType==='order'?'':first(row,['claimStsCd','claimStsNm','procStsCd','procStsNm']),
     activeState:true,
+    stateAuthority:'lotteon-api',
+    stateVerifiedAt:new Date().toISOString(),
     sourceUpdatedAt:first(row,['modDttm','updDttm','ifDttm'])||new Date().toISOString(),
     syncedAt: new Date().toISOString()
   };
@@ -565,6 +609,28 @@ method,
   }
 
   return parsed;
+}
+
+export async function resolveLotteonProductImage(config,order={}){
+  if(!isLotteonConfigured(config)) return '';
+  const spdNo=text(order.spdNo||order.productNo||order.productId);
+  if(!spdNo) return '';
+  const attempts=[
+    {spdNo},
+    {spdNo,trNo:config.sellerId},
+    {spdNo,sitmNo:text(order.sitmNo||order.itemNo)},
+    {spdNo,sitmNo:text(order.sitmNo||order.itemNo),trNo:config.sellerId}
+  ].filter((body,index,array)=>array.findIndex(item=>JSON.stringify(item)===JSON.stringify(body))===index);
+  let lastError;
+  for(const body of attempts){
+    try{
+      const response=await requestJson(config,PRODUCT_DETAIL_PATH,{method:'POST',body});
+      const image=productImageFromResponse(response);
+      if(image) return image;
+    }catch(error){lastError=error;}
+  }
+  if(lastError) console.warn('롯데온 상품 썸네일 상세조회 실패:',lastError?.message||lastError);
+  return '';
 }
 
 export async function testLotteonConnection(config) {
@@ -771,4 +837,4 @@ export async function saveLotteonError(
   }, { merge: true });
 }
 
-export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows};
+export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows,productImageFromResponse};

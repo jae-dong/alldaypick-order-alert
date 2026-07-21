@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 // 이전 버전에서 "이미지 없음"으로 저장된 음수 캐시를 재사용하지 않습니다.
-const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v4.json');
+const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v5.json');
 const POSITIVE_TTL_MS=30*24*60*60*1000;
 const NEGATIVE_TTL_MS=30*60*1000;
 let cache=null;
@@ -30,7 +30,7 @@ function saveCache(){
 }
 
 export function normalizeImageUrl(value){
-  let url=String(value||'').trim().replaceAll('&amp;','&');
+  let url=String(value||'').trim().replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\u002F/gi,'/');
   if(!url) return '';
   if(url.startsWith('//')) url=`https:${url}`;
   if(url.startsWith('/image/')) url=`https://image.coupangcdn.com${url}`;
@@ -48,10 +48,29 @@ export function normalizeImageUrl(value){
 function imageFromObject(value,depth=0,parentKey=''){
   if(depth>9||value==null) return '';
   if(typeof value==='string'){
-    const normalized=normalizeImageUrl(value);
+    const raw=value.trim().replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\u002F/gi,'/');
+    if((raw.startsWith('{')||raw.startsWith('['))&&raw.length<1000000){
+      try{
+        const parsed=JSON.parse(raw);
+        const found=imageFromObject(parsed,depth+1,parentKey);
+        if(found) return found;
+      }catch{}
+    }
+    const htmlPatterns=[
+      /<img[^>]+(?:src|data-src|data-original)=["']([^"']+)["']/ig,
+      /(?:"|')?(?:imageUrl|representativeImageUrl|thumbnailUrl|vendorPath|cdnPath)(?:"|')?\s*[:=]\s*["']([^"']+)["']/ig
+    ];
+    for(const pattern of htmlPatterns){
+      let match;
+      while((match=pattern.exec(raw))){
+        const normalized=normalizeImageUrl(match[1]);
+        if(normalized) return normalized;
+      }
+    }
+    const normalized=normalizeImageUrl(raw);
     if(!normalized) return '';
     // 상세페이지 URL을 이미지로 오인하지 않도록 이미지 문맥 또는 이미지 확장자를 요구합니다.
-    if(/image|thumb|photo|picture|vendorpath|cdnpath|representative/i.test(parentKey)) return normalized;
+    if(/image|thumb|photo|picture|vendorpath|cdnpath|representative|content/i.test(parentKey)) return normalized;
     if(/\.(?:jpe?g|png|webp|gif)(?:[?#]|$)/i.test(normalized)) return normalized;
     if(/coupangcdn|pstatic|naver\.net|11st|lotte/i.test(new URL(normalized).hostname)) return normalized;
     return '';
@@ -73,7 +92,7 @@ function imageFromObject(value,depth=0,parentKey=''){
   const preferred=[
     'representativeImage','representativeImageUrl','imageUrl','thumbnailUrl',
     'productImageUrl','mainImageUrl','prdImgUrl','prdImg','thumbUrl',
-    'thumbnail','images','image','vendorPath','cdnPath'
+    'thumbnail','images','image','vendorPath','cdnPath','content','detailContent','htmlContent'
   ];
   for(const key of preferred){
     if(value[key]!=null){
@@ -98,7 +117,7 @@ function imageFromObject(value,depth=0,parentKey=''){
 }
 
 export function directOrderImage(order={}){
-  return imageFromObject({
+  return imageFromObject(order)||imageFromObject({
     representativeImage:order.representativeImage,
     imageUrl:order.imageUrl,
     thumbnailUrl:order.thumbnailUrl,
@@ -135,6 +154,20 @@ async function coupangGet(config,pathName){
   return response.json();
 }
 
+function findValues(value,keyPattern,depth=0,found=[]){
+  if(depth>10||value==null) return found;
+  if(Array.isArray(value)){
+    value.forEach(item=>findValues(item,keyPattern,depth+1,found));
+    return found;
+  }
+  if(typeof value!=='object') return found;
+  for(const [key,item] of Object.entries(value)){
+    if(keyPattern.test(key)&&item!=null&&['string','number'].includes(typeof item)) found.push(String(item));
+    if(item&&typeof item==='object') findValues(item,keyPattern,depth+1,found);
+  }
+  return found;
+}
+
 async function coupangSellerProductId(order,config){
   const direct=String(order?.sellerProductId||'').trim();
   if(direct) return direct;
@@ -142,6 +175,8 @@ async function coupangSellerProductId(order,config){
   if(!sku) return '';
   const pathName=`/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/external-vendor-sku-codes/${encodeURIComponent(sku)}`;
   const body=await coupangGet(config,pathName);
+  const candidates=[...new Set(findValues(body,/^sellerProductId$/i))];
+  if(candidates.length) return candidates[0];
   const rows=Array.isArray(body?.data)?body.data:body?.data?[body.data]:[];
   const matching=rows.find(item=>String(item?.vendorItemId||'')===String(order?.vendorItemId||''))||rows[0];
   return String(matching?.sellerProductId||'').trim();
@@ -220,6 +255,8 @@ export async function resolveTelegramProductImage(order={},marketName='',options
       url=await resolveCoupang(order,options.coupangConfig);
     }else if(marketName==='스마트스토어'&&typeof options.smartstoreResolver==='function'){
       url=await options.smartstoreResolver(options.smartstoreConfig,order);
+    }else if(marketName==='롯데온'&&typeof options.lotteonResolver==='function'){
+      url=await options.lotteonResolver(options.lotteonConfig,order);
     }
     if(!url) url=await resolveOpenGraph(publicProductUrl(order,marketName));
   }catch(error){
@@ -238,4 +275,4 @@ export async function resolveTelegramProductImage(order={},marketName='',options
   return url;
 }
 
-export const productImageTestHelpers={imageFromObject,publicProductUrl,cacheKey};
+export const productImageTestHelpers={imageFromObject,publicProductUrl,cacheKey,findValues};

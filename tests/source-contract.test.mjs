@@ -45,7 +45,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.5'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.6'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -61,6 +61,8 @@ assert.match(smartstore,/searchKeywordType:'CHANNEL_PRODUCT_NO'/,'Smartstore thu
 assert.match(smartstore,/searchKeywordType:'SELLER_CODE'/,'Smartstore thumbnail lookup must fall back to seller management code');
 assert.match(smartstore,/\/v2\/products\/origin-products\//,'Smartstore thumbnail lookup must support origin-product image fallback');
 assert.match(smartstore,/sellerProductCode:String/,'Smartstore orders must preserve seller product code for thumbnail lookup');
+assert.match(smartstore,/WAIT_FOR_RECEIVING/,'Smartstore gift orders must exclude recipient-acceptance waiting state');
+assert.match(smartstore,/excludedFromMetrics:giftPending/,'Smartstore gift waiting must be excluded from operational metrics');
 assert.doesNotMatch(elevenst,/trackingNumber','dlvNo/,'11st dlvNo must not be treated as an invoice number');
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
@@ -74,6 +76,7 @@ assert.match(agent,/refreshCurrentOrdersInBackground/,'Deep current-order reconc
 assert.match(agent,/sendPhoto/,'Telegram new-order alerts must support product thumbnail photos');
 assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local image files with multipart form data');
 assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
+assert.match(agent,/lotteonResolver:resolveLotteonProductImage/,'Lotteon thumbnail lookup must use the official product detail resolver');
 assert.match(agent,/source==='immediate'[\s\S]*cachedSmartstoreInquiryResult/,'Manual collection must skip slow Smartstore inquiry calls');
 assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');
 assert.match(app,/action:'collect'/,'Manual button must request fast current collection');

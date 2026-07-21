@@ -1,4 +1,4 @@
-FINAL v7.7.5 배포 전 검증 결과
+FINAL v7.7.6 배포 전 검증 결과
 
 - 전체 JavaScript 문법 검사 통과
 - 전체 npm 자동시험 통과

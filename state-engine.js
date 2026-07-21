@@ -73,7 +73,7 @@
       item?.exchangeStatus,item?.inquiryStatus,item?.partnerCounselingStatus,
       item?.csPartnerCounselingStatus,
       item?.placeOrderStatus,item?.lastChangedType,
-      item?.deliveryStatus,item?.deliveryStatusName
+      item?.deliveryStatus,item?.deliveryStatusName,item?.giftReceivingStatus
     ].filter(Boolean).join(' ').toUpperCase();
   }
   function status(item){
@@ -82,6 +82,7 @@
 
     const raw=sourceText(item);
     const current=text(item?.status).toLowerCase();
+    if(item?.excludedFromMetrics===true||item?.giftPending===true||raw.includes('WAIT_FOR_RECEIVING'))return 'gift_wait';
     const placeOrderStatus=text(item?.placeOrderStatus).toUpperCase();
     const hasPlaceOrder=Boolean(
       item?.placeOrderDate||
@@ -163,6 +164,8 @@
     ].some(word=>raw.includes(word));
   }
   function included(item,integrations){
+    const giftStatus=text(item?.giftReceivingStatus).toUpperCase();
+    if(item?.excludedFromMetrics===true||item?.giftPending===true||giftStatus==='WAIT_FOR_RECEIVING')return false;
     const m=market(item);
     const key={쿠팡:'coupang',스마트스토어:'smartstore','11번가':'elevenst',G마켓:'gmarket',옥션:'auction',롯데온:'lotteon'}[m];
     if(!key)return true;

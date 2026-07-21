@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.5-20260720-lotteon-exchange-icon-fix';
+const CACHE='alldaypick-final-v7.7.6-20260721-market-api-gift-photo';
 const STATIC=[
   './',
   './index.html',

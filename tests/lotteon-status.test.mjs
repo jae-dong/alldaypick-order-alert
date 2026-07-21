@@ -18,4 +18,5 @@ assert.equal(order.orderNo,'LO-100');
 assert.equal(order.status,'shipping_wait');
 assert.equal(order.activeState,true);
 assert.equal(H.splitDateWindows(7*24*60).length,3);
+assert.equal(H.productImageFromResponse({data:{spdImgList:[{imgUrl:'https://contents.lotteon.com/a.jpg'}]}}),'https://contents.lotteon.com/a.jpg');
 console.log('lotteon status tests passed');
