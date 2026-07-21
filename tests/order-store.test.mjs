@@ -71,7 +71,8 @@ const unchanged=await upsertDocuments(db,[{
   sourceStatus:'INSTRUCT',status:'shipping_wait',statusLabel:'발송대기',
   activeState:true,qty:1,invoiceNumber:'',
   datetime:'2026-07-19T00:00:00+09:00',
-  syncedAt:new Date().toISOString(),sourceUpdatedAt:new Date().toISOString()
+  syncedAt:new Date().toISOString(),sourceUpdatedAt:new Date().toISOString(),
+  stateVerifiedAt:new Date().toISOString(),lastVerifiedAt:new Date().toISOString()
 }]);
 assert.equal(unchanged.existing,1);
 assert.equal(unchanged.statusChanged,0);

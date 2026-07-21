@@ -55,49 +55,90 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
-function findOrders(node, depth = 0) {
-  if (!node || depth > 8) return [];
-
-  if (Array.isArray(node)) {
-    return node.flatMap(item => findOrders(item, depth + 1));
-  }
-
-  if (typeof node !== 'object') return [];
-
-  const directKeys = [
-    'order',
-    'orders',
-    'Order',
-    'productOrder',
-    'productOrders'
+function scalarOrderContext(node, inherited = {}) {
+  const keys = [
+    'ordNo','orderNo','orderNumber','ordPrdSeq','orderProductSequence','prdSeq',
+    'prdNo','productNo','prdNm','productName','prdName','itemName','selPrc',
+    'optionNm','optionName','optNm','prdOptNm','ordNm','recvNm','rcvrNm',
+    'buyerName','receiverName','recvHp','rcvrHp','ordHp','buyerPhone','receiverPhone',
+    'recvAddr','rcvrAddr','addr','receiverAddress','recvAddrDetail','rcvrAddrDtl',
+    'addrDetail','receiverAddressDetail','dlvMemo','deliveryMemo','memo','ordQty',
+    'qty','quantity','ordAmt','ordPayAmt','paymentAmount','totalAmount','salePrice',
+    'unitPrice','ordDt','payDt','orderDate','paymentDate','createdAt','ordPrdStat',
+    'ordStat','orderStatus','status','ordPrdStatNm','ordStatNm','orderStatusName',
+    'statusName','dlvStat','deliveryStatus','deliveryState','procStat','dlvStatNm',
+    'deliveryStatusName','deliveryStateName','procStatNm','invoiceNo','trackingNumber',
+    'waybillNo','dlvNo','sellerPrdCd','sellerProductCode','prdImgUrl','prdImg',
+    'productImageUrl','imageUrl','thumbUrl','thumbnailUrl','claimNo','claimId',
+    'claimSeq','ordCnDtsSeq','claimReason','claimRsn','reason','reasonText'
   ];
-
-  for (const key of directKeys) {
-    if (node[key] != null) {
-      const value = node[key];
-
-      if (key.toLowerCase().endsWith('orders') && typeof value === 'object') {
-        const nested =
-          value.order ??
-          value.Order ??
-          value.productOrder ??
-          value.productOrders;
-
-        if (nested != null) return asArray(nested);
-      }
-
-      if (key === 'order' || key === 'Order' || key === 'productOrder') {
-        return asArray(value);
-      }
+  const context = { ...inherited };
+  for (const key of keys) {
+    const candidate = node?.[key];
+    if (candidate != null && ['string','number','boolean'].includes(typeof candidate)) {
+      context[key] = candidate;
     }
   }
+  return context;
+}
 
-  for (const value of Object.values(node)) {
-    const found = findOrders(value, depth + 1);
-    if (found.length) return found;
+function rowIdentity(row = {}) {
+  return [
+    first(row,['ordNo','orderNo','orderNumber']),
+    first(row,['ordPrdSeq','orderProductSequence','prdSeq']),
+    first(row,['prdNo','productNo']),
+    first(row,['prdNm','productName','prdName','itemName'])
+  ].join('|');
+}
+
+function collectOrderRows(node, depth = 0, inherited = {}) {
+  if (!node || depth > 14) return [];
+  if (Array.isArray(node)) {
+    return node.flatMap(item => collectOrderRows(item, depth + 1, inherited));
+  }
+  if (typeof node !== 'object') return [];
+
+  const context = scalarOrderContext(node, inherited);
+  const merged = { ...context, ...node };
+  const likelyKeys = [
+    'order','orders','Order','productOrder','productOrders','orderList','ordersList',
+    'ordList','ordPrdList','productList','products','items','itemList','data','result',
+    'content','contents','response','responseData','orderInfo','orderInfos','detailList'
+  ];
+  const rows = [];
+  const visited = new Set();
+
+  for (const key of likelyKeys) {
+    if (node[key] == null) continue;
+    visited.add(key);
+    rows.push(...collectOrderRows(node[key], depth + 1, context));
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (visited.has(key) || child == null || typeof child !== 'object') continue;
+    rows.push(...collectOrderRows(child, depth + 1, context));
   }
 
-  return [];
+  // Header + product-line XML responses are merged through inherited context.
+  // Prefer leaf rows so one response containing several products never collapses to the first row.
+  if (!rows.length) {
+    const orderNo = first(merged,['ordNo','orderNo','orderNumber']);
+    const lineSignal = first(merged,[
+      'ordPrdSeq','orderProductSequence','prdSeq','prdNo','productNo',
+      'prdNm','productName','prdName','itemName','ordPrdStat','ordStat','deliveryStatus'
+    ]);
+    if (orderNo && lineSignal) rows.push(merged);
+  }
+
+  const unique = new Map();
+  for (const row of rows) {
+    const key = rowIdentity(row);
+    if (key.replaceAll('|','')) unique.set(key, row);
+  }
+  return [...unique.values()];
+}
+
+function findOrders(node) {
+  return collectOrderRows(node);
 }
 
 function formatDate(date) {
@@ -407,28 +448,40 @@ async function saveOrders(db,orders){
 export async function syncElevenstOrders(
   db,
   config,
-  minutes = 30
+  minutes = 30,
+  { repair = false } = {}
 ) {
   if (!isElevenstConfigured(config)) {
     throw new Error('11번가 Open API 키가 등록되지 않았습니다.');
   }
 
   const now = new Date();
-  const from = new Date(now.getTime() - minutes * 60 * 1000);
+  // 시작/수동수집은 최근 7일을 다시 발견해 기존 캐시에 없는 현재 주문도 복구합니다.
+  const effectiveMinutes = repair
+    ? Math.max(Number(minutes || 0), Number(process.env.ELEVENST_REPAIR_LOOKBACK_DAYS || 7) * 24 * 60)
+    : Math.max(1, Number(minutes || 30));
+  const from = new Date(now.getTime() - effectiveMinutes * 60 * 1000);
+  const rows = [];
+  let cursor = from;
 
-  const path =
-    `/rest/ordservices/complete/` +
-    `${formatDate(from)}/${formatDate(now)}`;
+  // 한 번에 너무 넓은 범위를 요청하지 않고 하루 단위로 나눕니다.
+  while (cursor < now) {
+    const windowEnd = new Date(Math.min(now.getTime(), cursor.getTime() + 24 * 60 * 60 * 1000));
+    const path = `/rest/ordservices/complete/${formatDate(cursor)}/${formatDate(windowEnd)}`;
+    const parsed = await requestXml(config, path);
+    rows.push(...findOrders(parsed));
+    cursor = windowEnd;
+    if (cursor < now) await sleep(250);
+  }
 
-  const parsed = await requestXml(config, path);
-  const rows = findOrders(parsed);
-
-  const orders = rows
-    .map(normalizeOrder)
-    .filter(Boolean);
+  const orders = [...new Map(
+    rows.map(normalizeOrder).filter(Boolean).map(order => [order.id, order])
+  ).values()];
 
   return {
     connected: true,
+    repairDiscovery: repair,
+    rawRows: rows.length,
     ...(await saveOrders(db, orders))
   };
 }
@@ -801,6 +854,6 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
   };
 }
 
-export const elevenstTestHelpers={
+export const elevenstTestHelpers={collectOrderRows,
   mapElevenOrderStatus,collectRows,statusText,fetchStatusRows,statusRefreshDocuments
 };

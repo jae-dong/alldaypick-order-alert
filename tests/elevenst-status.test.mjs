@@ -21,6 +21,20 @@ assert.equal(rows[0].ordNo,'100');
 assert.equal(rows[0].ordPrdSeq,'1');
 assert.equal(H.mapElevenOrderStatus(rows[0]).status,'delivering');
 
+const discovered=H.collectOrderRows({
+  response:{
+    order:{
+      ordNo:'500',ordNm:'구매자',
+      products:{product:[
+        {ordPrdSeq:'1',prdNo:'A',prdNm:'상품 A'},
+        {ordPrdSeq:'2',prdNo:'B',prdNm:'상품 B'}
+      ]}
+    }
+  }
+});
+assert.equal(discovered.length,2,'nested 11st products must all be discovered');
+assert.ok(discovered.every(row=>row.ordNo==='500'));
+
 
 
 const now=Date.parse('2026-07-20T00:00:00+09:00');

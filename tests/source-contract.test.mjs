@@ -29,14 +29,18 @@ assert.match(coupangClaims,/createdAtFrom:kstSecond\(window\.from\)[\s\S]*create
 
 
 const lotteon=read('lotteon.js');
-assert.match(lotteon,/Math\.max\(Number\(minutes \|\| 0\), 3 \* 24 \* 60\)/,'Lotteon sync must cover at least the recent three days');
-assert.match(lotteon,/const attempts = \[\s*base,\s*\{ \.\.\.base, trNo: config\.sellerId \}/,'Lotteon must try API-key seller scope before trNo fallback');
+assert.match(lotteon,/\(repair\?7:3\)\*24\*60/,'Lotteon sync must cover at least three days and use a wider repair window');
+assert.match(lotteon,/base14,[\s\S]*trNo: config\.sellerId/,'Lotteon must try API-key seller scope before trNo fallback');
 assert.match(lotteon,/status: 'shipping_wait'/,'Lotteon delivery instructions must default to shipping wait');
 assert.match(lotteon,/function scalarContext/,'Lotteon nested response rows must inherit parent order fields');
+assert.match(lotteon,/SellerDeliveryProgressStateSearch/,'Lotteon repair must also query current delivery progress');
+assert.match(lotteon,/instructionRows[\s\S]*progressRows/,'Lotteon sync must report instruction and progress discovery separately');
 
 const elevenst=read('elevenst.js');
 assert.match(elevenst,/String\(item\.eventType\|\|'order'\)==='order'/,'11st order status refresh must not treat claim documents as orders');
 assert.match(elevenst,/reconcileOpenDocuments/,'11st open claims must be reconciled after a complete refresh');
+assert.match(elevenst,/collectOrderRows/,'11st nested order products must all be discovered');
+assert.match(elevenst,/ELEVENST_REPAIR_LOOKBACK_DAYS/,'11st repair must rediscover recent missing orders');
 
 assert.doesNotMatch(smartstore,/collection\('orders'\).*where\('source'.*get\(\)/s,'Smartstore sync must not scan Firestore orders');
 assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11st startup repair must use a bounded source query');
@@ -45,7 +49,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.7'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.8'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -66,6 +70,7 @@ assert.match(smartstore,/excludedFromMetrics:giftPending/,'Smartstore gift waiti
 assert.doesNotMatch(elevenst,/trackingNumber','dlvNo/,'11st dlvNo must not be treated as an invoice number');
 assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist a local Firestore mirror cache');
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
+assert.match(orderStore,/stateVerifiedAt/,'Verification timestamps must not trigger repeated Firestore writes');
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 assert.match(app,/where\('datetime','>=',monthStartIso\(\)\)/,'Web app must subscribe only to the current month');
 assert.match(app,/where\('activeState','==',true\)/,'Web app must separately subscribe to unresolved items');
@@ -76,6 +81,9 @@ assert.match(agent,/refreshCurrentOrdersInBackground/,'Deep current-order reconc
 assert.match(agent,/sendPhoto/,'Telegram new-order alerts must support product thumbnail photos');
 assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local image files with multipart form data');
 assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
+const productImage=read('product-image.js');
+assert.match(productImage,/sellerProductName:searchName/,'Coupang thumbnails must recover sellerProductId by product-name search');
+assert.match(productImage,/telegram-product-image-cache-v8/,'Coupang negative thumbnail cache must be invalidated for the new resolver');
 assert.match(agent,/lotteonResolver:resolveLotteonProductImage/,'Lotteon thumbnail lookup must use the official product detail resolver');
 assert.match(agent,/source==='immediate'[\s\S]*cachedSmartstoreInquiryResult/,'Manual collection must skip slow Smartstore inquiry calls');
 assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');

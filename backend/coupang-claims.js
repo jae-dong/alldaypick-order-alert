@@ -369,9 +369,11 @@ export async function syncExchanges(db,config,reconcile=false){
     complete:fetched.complete,
     reconcile
   });
-  const direct=reconcile
-    ?await forceCloseStaleCoupangExchanges(db,documents,{complete:fetched.complete})
-    :{deactivated:0,skipped:true};
+  // 교환 API가 완전한 응답을 돌려준 주기에는 현재 목록에 없는 과거 active 교환을
+  // 매번 정리합니다. 기존에는 정밀수집 때만 실행되어 완료 건이 장시간 남았습니다.
+  const direct=await forceCloseStaleCoupangExchanges(
+    db,documents,{complete:fetched.complete}
+  );
   return {
     ...saved,
     deactivated:Number(saved.deactivated||0)+Number(direct.deactivated||0),

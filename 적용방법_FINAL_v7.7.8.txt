@@ -1,0 +1,9 @@
+FINAL v7.7.8 적용 방법
+
+1. 현재 검은 수집기 창을 X로 닫습니다.
+2. ZIP 압축을 풉니다.
+3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
+4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어쓰기 합니다.
+5. GitHub Desktop Summary: FINAL v7.7.8 마켓상태 복구 쿠팡썸네일 수정
+6. Commit to main 후 Push origin을 누릅니다.
+7. 웹 상단 FINAL v7.7.8 확인 후 START_AGENT.cmd를 실행합니다.

@@ -451,7 +451,7 @@ let smartstoreRunning=false;
 let claimIndex=0;
 let backgroundClaimsRunning=false;
 let backgroundCurrentOrdersRunning=false;
-const CLAIM_TYPES=['cancel','return','exchange','inquiry'];
+const CLAIM_TYPES=['exchange','cancel','return','inquiry'];
 
 function isManualCollectSource(source){
   return source==='immediate'||source==='reconcile';
@@ -1488,7 +1488,7 @@ async function syncElevenstSafe(source){
 
     const result=await withTimeout(
       '11번가 주문조회',
-      syncElevenstOrders(db,config,minutes),
+      syncElevenstOrders(db,config,minutes,{repair:['startup','immediate','reconcile'].includes(source)}),
       source==='reconcile'?180000:90000
     );
 
@@ -1537,7 +1537,7 @@ async function syncElevenstSafe(source){
       `11번가 동기화 완료: 발견 ${result.found}, `+
       `신규 ${result.created}, 상태확인 ${statusResult.checked}, `+
       `상태변경 ${statusResult.changed}, `+
-      `상태푸시 ${statusPush.sent} · ${quotaLog(result)}`
+      `상태푸시 ${statusPush.sent} · 재발견 ${result.rawRows||0} · ${quotaLog(result)}`
     );
 
     return result;
@@ -1768,7 +1768,7 @@ async function syncLotteonSafe(source){
 
     const result=await withTimeout(
       '롯데온 주문조회',
-      syncLotteonOrders(db,config,minutes),
+      syncLotteonOrders(db,config,minutes,{repair:['startup','immediate','reconcile'].includes(source)}),
       source==='reconcile'?180000:90000
     );
 
@@ -1796,7 +1796,7 @@ async function syncLotteonSafe(source){
       `신규 ${result.created}, `+
       `상태변경 ${result.statusChanged}, `+
       `신규푸시 ${push.sent}, `+
-      `상태푸시 ${statusPush.sent} · ${quotaLog(result)}`
+      `상태푸시 ${statusPush.sent} · 출고지시 ${result.instructionRows||0} · 배송상태 ${result.progressRows||0} · ${quotaLog(result)}`
     );
 
     return result;
@@ -1870,7 +1870,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.7',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.8',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1890,7 +1890,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.7',
+    version:'FINAL-7.7.8',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

@@ -53,7 +53,8 @@ function valueTime(value){
 const NON_SEMANTIC_FIELDS=new Set([
   'syncedAt','sourceUpdatedAt','updatedAt','createdAt',
   'resolvedAt','resolvedReason','lastSeen','lastRun','checkedAt',
-  'telegramCheckedAt','telegramLastSuccess','generatedAt','generatedAtIso'
+  'telegramCheckedAt','telegramLastSuccess','generatedAt','generatedAtIso',
+  'stateVerifiedAt','verifiedAt','lastVerifiedAt','imageCheckedAt'
 ]);
 
 function comparable(value){

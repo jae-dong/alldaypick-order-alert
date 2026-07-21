@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.7-20260721-coupang-representative-photo';
+const CACHE='alldaypick-final-v7.7.8-20260721-market-recovery-photo';
 const STATIC=[
   './',
   './index.html',

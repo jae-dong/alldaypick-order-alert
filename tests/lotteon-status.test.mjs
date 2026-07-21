@@ -19,4 +19,16 @@ assert.equal(order.status,'shipping_wait');
 assert.equal(order.activeState,true);
 assert.equal(H.splitDateWindows(7*24*60).length,3);
 assert.equal(H.productImageFromResponse({data:{spdImgList:[{imgUrl:'https://contents.lotteon.com/a.jpg'}]}}),'https://contents.lotteon.com/a.jpg');
+
+const progressNested={
+  data:{orderInfos:[{
+    orderNumber:'LO-200',orderDateTime:'20260721100000',
+    deliveryProgressList:[{deliveryOrderNo:'D-1',productId:'P-1',productTitle:'진행상품',deliveryStatus:'상품준비'}]
+  }]}
+};
+const progressRows=H.collectRecords(progressNested);
+assert.equal(progressRows.length,1);
+assert.equal(progressRows[0].orderNumber,'LO-200');
+assert.equal(progressRows[0].productId,'P-1');
+assert.equal(H.normalizeOrder(progressRows[0],'SELLER').status,'shipping_wait');
 console.log('lotteon status tests passed');

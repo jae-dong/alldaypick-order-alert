@@ -49,5 +49,30 @@ assert.equal(
   'https://thumbnail.coupangcdn.com/thumbnails/remote/q89/image/product/image/vendoritem/real.jpg'
 );
 
+assert.equal(
+  H.coupangImageEntryUrl({imageType:'representation',cdnPath:'vendor_inventory/abc/main.jpg'}),
+  'https://image.coupangcdn.com/vendor_inventory/abc/main.jpg'
+);
+assert.equal(
+  H.coupangImagesFromObject({images:[{imageOrder:0,imageType:'MAIN',cdnPath:'/image/product/image/vendoritem/main.jpg'}]}),
+  'https://image.coupangcdn.com/image/product/image/vendoritem/main.jpg'
+);
+
+{
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async url=>{
+    assert.match(String(url),/seller-products\?vendorId=A0001/);
+    return new Response(JSON.stringify({data:[{sellerProductId:999,productId:123,sellerProductName:'테스트 상품'}]}),{status:200,headers:{'content-type':'application/json'}});
+  };
+  try{
+    const ids=await H.coupangSellerProductCandidates(
+      {product:'테스트 상품',productId:'123'},
+      {accessKey:'ak',secretKey:'sk',vendorId:'A0001'}
+    );
+    assert.deepEqual(ids,['999']);
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+}
 
 console.log('product image tests passed');

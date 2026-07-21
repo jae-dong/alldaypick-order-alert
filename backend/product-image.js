@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 // 이전 버전에서 "이미지 없음"으로 저장된 음수 캐시를 재사용하지 않습니다.
-const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v6.json');
+const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v8.json');
 const POSITIVE_TTL_MS=30*24*60*60*1000;
 const NEGATIVE_TTL_MS=30*60*1000;
 let cache=null;
@@ -147,9 +147,19 @@ function isRejectedCoupangImageUrl(value){
 }
 
 function coupangImageEntryUrl(entry={}){
-  return normalizeImageUrl(
+  let raw=String(
     entry.vendorPath||entry.cdnPath||entry.imageUrl||entry.thumbnailUrl||entry.productImageUrl||entry.url||''
-  );
+  ).trim().replaceAll('\\/','/').replace(/\u002F/gi,'/');
+  if(!raw) return '';
+  try{raw=decodeURIComponent(raw);}catch{}
+  // 쿠팡 상품조회 응답의 vendorPath/cdnPath는 프로토콜 없이 내려오는 경우가 많습니다.
+  if(raw.startsWith('//')) raw=`https:${raw}`;
+  if(raw.startsWith('/')) raw=`https://image.coupangcdn.com${raw}`;
+  if(!/^https?:\/\//i.test(raw)&&/^(?:image|vendor_inventory|product|retail|thumbnails)\//i.test(raw)){
+    raw=`https://image.coupangcdn.com/${raw}`;
+  }
+  const url=normalizeImageUrl(raw);
+  return url&&!isRejectedCoupangImageUrl(url)?url:'';
 }
 
 function isTrustedCoupangDirectUrl(value){
@@ -172,14 +182,18 @@ function isTrustedCoupangDirectUrl(value){
 function coupangImagesFromObject(value){
   if(!value||typeof value!=='object') return '';
   const images=Array.isArray(value.images)?value.images:[];
+  const typeOf=item=>String(
+    item?.imageType||item?.type||item?.imageTypeName||item?.imageRole||''
+  ).trim().toUpperCase();
   const preferred=images
-    .filter(item=>String(item?.imageType||'').trim().toUpperCase()==='REPRESENTATION')
-    .sort((a,b)=>Number(a?.imageOrder??999)-Number(b?.imageOrder??999));
-  const untypedPrimary=images
-    .filter(item=>!String(item?.imageType||'').trim()&&Number(item?.imageOrder??-1)===0);
-  for(const item of [...preferred,...untypedPrimary]){
+    .filter(item=>['REPRESENTATION','REPRESENTATIVE','MAIN','대표'].includes(typeOf(item)))
+    .sort((a,b)=>Number(a?.imageOrder??a?.order??999)-Number(b?.imageOrder??b?.order??999));
+  const primary=images
+    .filter(item=>!typeOf(item)&&Number(item?.imageOrder??item?.order??-1)===0);
+  // 상세 이미지(DETAIL/CONTENTS)는 절대 후보로 넣지 않습니다.
+  for(const item of [...preferred,...primary]){
     const url=coupangImageEntryUrl(item);
-    if(url&&!isRejectedCoupangImageUrl(url)) return url;
+    if(url) return url;
   }
   return '';
 }
@@ -242,17 +256,27 @@ function coupangAuthorization(config,method,pathName,query=''){
   return `CEA algorithm=HmacSHA256, access-key=${config.accessKey}, signed-date=${datetime}, signature=${signature}`;
 }
 
-async function coupangGet(config,pathName){
-  const response=await fetch(`https://api-gateway.coupang.com${pathName}`,{
+async function coupangGet(config,pathName,params={}){
+  const query=new URLSearchParams();
+  for(const [key,value] of Object.entries(params||{})){
+    if(value==null||String(value)==='') continue;
+    query.append(key,String(value));
+  }
+  const queryText=query.toString();
+  const suffix=queryText?`?${queryText}`:'';
+  const response=await fetch(`https://api-gateway.coupang.com${pathName}${suffix}`,{
     method:'GET',
-    signal:AbortSignal.timeout(15000),
+    signal:AbortSignal.timeout(20000),
     headers:{
       Accept:'application/json',
-      Authorization:coupangAuthorization(config,'GET',pathName,''),
+      Authorization:coupangAuthorization(config,'GET',pathName,queryText),
       'X-Requested-By':String(config.vendorId||'')
     }
   });
-  if(!response.ok) throw new Error(`쿠팡 상품이미지 HTTP ${response.status}`);
+  if(!response.ok){
+    const detail=(await response.text()).slice(0,300);
+    throw new Error(`쿠팡 상품이미지 HTTP ${response.status}: ${detail}`);
+  }
   return response.json();
 }
 
@@ -270,29 +294,69 @@ function findValues(value,keyPattern,depth=0,found=[]){
   return found;
 }
 
-async function coupangSellerProductId(order,config){
-  const direct=String(order?.sellerProductId||'').trim();
-  if(direct) return direct;
+function normalizedProductName(value){
+  return String(value||'').toLowerCase().replace(/[^0-9a-z가-힣]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+async function coupangSellerProductCandidates(order,config){
+  const ids=[];
+  const add=value=>{
+    const id=String(value||'').trim();
+    if(id&&/^\d+$/.test(id)&&!ids.includes(id)) ids.push(id);
+  };
+  add(order?.sellerProductId);
+
   const sku=String(order?.externalVendorSkuCode||order?.externalVendorSku||order?.sellerProductCode||'').trim();
-  if(!sku) return '';
-  const pathName=`/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/external-vendor-sku-codes/${encodeURIComponent(sku)}`;
-  const body=await coupangGet(config,pathName);
-  const candidates=[...new Set(findValues(body,/^sellerProductId$/i))];
-  if(candidates.length) return candidates[0];
-  const rows=Array.isArray(body?.data)?body.data:body?.data?[body.data]:[];
-  const matching=rows.find(item=>String(item?.vendorItemId||'')===String(order?.vendorItemId||''))||rows[0];
-  return String(matching?.sellerProductId||'').trim();
+  if(sku){
+    try{
+      const pathName=`/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/external-vendor-sku-codes/${encodeURIComponent(sku)}`;
+      const body=await coupangGet(config,pathName);
+      for(const value of findValues(body,/^sellerProductId$/i)) add(value);
+    }catch(error){
+      console.warn('쿠팡 판매자상품코드 이미지 조회 건너뜀:',error?.message||error);
+    }
+  }
+
+  // 발주서에 sellerProductId가 없는 상품은 상품명(최대 20자)으로 등록상품 목록을 찾습니다.
+  if(ids.length===0&&config?.vendorId&&order?.product){
+    try{
+      const pathName='/v2/providers/seller_api/apis/api/v1/marketplace/seller-products';
+      const searchName=String(order.product).replace(/\s+/g,' ').trim().slice(0,20);
+      const body=await coupangGet(config,pathName,{
+        vendorId:config.vendorId,maxPerPage:100,nextToken:1,sellerProductName:searchName
+      });
+      const rows=Array.isArray(body?.data)?body.data:[];
+      const targetProductId=String(order?.productId||'').trim();
+      const targetName=normalizedProductName(order?.product);
+      rows.sort((a,b)=>{
+        const score=item=>
+          (targetProductId&&String(item?.productId||'')===targetProductId?100:0)+
+          (normalizedProductName(item?.sellerProductName)===targetName?50:0)+
+          (normalizedProductName(item?.sellerProductName).includes(targetName.slice(0,12))?10:0);
+        return score(b)-score(a);
+      });
+      for(const row of rows.slice(0,12)) add(row?.sellerProductId);
+    }catch(error){
+      console.warn('쿠팡 상품명 이미지 검색 건너뜀:',error?.message||error);
+    }
+  }
+  return ids;
 }
 
 async function resolveCoupang(order,config){
   if(!config?.accessKey||!config?.secretKey) return '';
-  const sellerProductId=await coupangSellerProductId(order,config);
-  if(!sellerProductId) return '';
-  const pathName=`/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/${encodeURIComponent(sellerProductId)}`;
-  const body=await coupangGet(config,pathName);
-  // 상품조회 응답의 items[].images 중 REPRESENTATION만 사용합니다.
-  // contents/contentDetails의 상세설명·배너 이미지는 절대 선택하지 않습니다.
-  return coupangRepresentativeImage(body,order);
+  const candidates=await coupangSellerProductCandidates(order,config);
+  const pathBase='/v2/providers/seller_api/apis/api/v1/marketplace/seller-products';
+  for(const sellerProductId of candidates){
+    try{
+      const body=await coupangGet(config,`${pathBase}/${encodeURIComponent(sellerProductId)}`);
+      const image=coupangRepresentativeImage(body,order);
+      if(image) return image;
+    }catch(error){
+      console.warn(`쿠팡 등록상품 ${sellerProductId} 이미지 조회 건너뜀:`,error?.message||error);
+    }
+  }
+  return '';
 }
 
 async function resolveOpenGraph(url){
@@ -379,4 +443,8 @@ export async function resolveTelegramProductImage(order={},marketName='',options
   return url;
 }
 
-export const productImageTestHelpers={imageFromObject,publicProductUrl,cacheKey,findValues,isRejectedCoupangImageUrl,isTrustedCoupangDirectUrl,coupangImagesFromObject};
+export const productImageTestHelpers={
+  imageFromObject,publicProductUrl,cacheKey,findValues,isRejectedCoupangImageUrl,
+  isTrustedCoupangDirectUrl,coupangImagesFromObject,coupangImageEntryUrl,
+  coupangSellerProductCandidates,normalizedProductName
+};
