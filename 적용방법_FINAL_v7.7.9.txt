@@ -1,0 +1,12 @@
+FINAL v7.7.9 적용 방법
+
+1. 실행 중인 검은 창을 X로 닫습니다.
+2. 이 ZIP을 새 폴더에 압축 해제합니다.
+3. 압축을 푼 폴더의 내용물 전체를 기존 문서\GitHub\alldaypick-order-alert 폴더에 복사하고 모두 덮어씁니다.
+4. 기존 프로젝트의 .git 폴더, backend\.env.local, backend\firebase-service-account.json은 삭제하지 말고 그대로 유지합니다.
+5. GitHub Desktop에서 변경 파일을 확인합니다.
+6. Summary에 FINAL v7.7.9 전체 마켓 텔레그램 썸네일 보강 을 입력합니다.
+7. Commit to main을 누른 뒤 Push origin을 누릅니다.
+8. 2~5분 후 웹 상단에 FINAL v7.7.9가 표시되는지 확인합니다.
+9. 기존 프로젝트 폴더의 START_AGENT.cmd를 실행하고 검은 창을 계속 켜둡니다.
+10. 다음 신규주문 알림에서 실제 상품 대표 이미지가 오는지 마켓별로 확인합니다.

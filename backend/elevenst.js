@@ -417,7 +417,10 @@ function normalizeOrder(row) {
     sourceStatus: 'COMPLETE',
     activeState:true,
     productNo: first(row, ['prdNo', 'productNo']),
-    imageUrl: first(row, ['prdImgUrl','prdImg','productImageUrl','imageUrl','thumbUrl','thumbnailUrl']),
+    imageUrl: first(row, [
+      'prdImgUrl','prdImg','productImageUrl','representativeImageUrl','mainImageUrl',
+      'imageUrl','imgUrl','goodsImageUrl','thumbUrl','thumbnailUrl'
+    ]),
     sellerProductCode: first(row, [
       'sellerPrdCd',
       'sellerProductCode'

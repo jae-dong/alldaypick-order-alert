@@ -1,13 +1,11 @@
-FINAL v7.7.8 적용 방법
+FINAL v7.7.9 적용 방법
 
-1. 실행 중인 이전 검은 창은 X로 닫습니다. STOP_AGENT.cmd는 누르지 않아도 됩니다.
-2. ZIP 압축을 풉니다.
-3. 압축 안 alldaypick-order-alert 폴더의 내용물 전체를 복사합니다.
-4. 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
-5. 기존 .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
-6. GitHub Desktop Summary: FINAL v7.7.8 쇼핑몰 API 직접판정 선물대기 제외 썸네일 보강
-7. Commit to main -> Push origin
-8. 2~5분 후 웹 상단 FINAL v7.7.8를 확인합니다.
-9. 최종 프로젝트 폴더의 START_AGENT.cmd를 실행하고 검은 창을 계속 켜둡니다.
-10. 첫 수집 100% 완료 후 롯데온 주문·매출·발송대기와 쿠팡 교환요청을 확인합니다.
-11. 휴대폰 아이콘이 이전 그림이면 기존 홈 화면 아이콘을 삭제하고 웹주소를 다시 홈 화면에 추가합니다.
+1. 실행 중인 이전 검은 창은 X로 닫습니다.
+2. ZIP 압축을 새 폴더에 풉니다.
+3. 압축 안의 내용물 전체를 문서\GitHub\alldaypick-order-alert 안에 붙여넣고 모두 덮어씁니다.
+4. 기존 .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+5. GitHub Desktop Summary: FINAL v7.7.9 전체 마켓 텔레그램 썸네일 보강
+6. Commit to main -> Push origin
+7. 2~5분 후 웹 상단 FINAL v7.7.9를 확인합니다.
+8. 최종 프로젝트 폴더의 START_AGENT.cmd를 실행하고 검은 창을 계속 켜둡니다.
+9. 다음 신규주문에서 마켓별 실제 상품 대표 썸네일을 확인합니다.

@@ -12,6 +12,9 @@ assert.equal(normalizeImageUrl('/image/product/a.jpg'),'https://image.coupangcdn
 assert.equal(directOrderImage({thumbnailUrl:'https://img.example.com/thumb.jpg'}),'https://img.example.com/thumb.jpg');
 assert.equal(H.publicProductUrl({productNo:'123'},'11번가'),'https://www.11st.co.kr/products/123');
 assert.equal(H.publicProductUrl({productId:'456',vendorItemId:'789'},'쿠팡'),'https://www.coupang.com/vp/products/456?vendorItemId=789');
+assert.equal(H.publicProductUrl({channelProductNo:'100'},'스마트스토어'),'https://smartstore.naver.com/main/products/100');
+assert.equal(H.publicProductUrl({goodsNo:'200'},'G마켓'),'https://item.gmarket.co.kr/Item?goodscode=200');
+assert.equal(H.publicProductUrl({itemNo:'A300'},'옥션'),'https://itempage3.auction.co.kr/DetailView.aspx?itemno=A300');
 assert.equal(H.imageFromObject({originProduct:{images:{representativeImage:{url:'https://shop-phinf.pstatic.net/a.jpg'}}}}),'https://shop-phinf.pstatic.net/a.jpg');
 assert.equal(H.imageFromObject({content:'<div><img src=\"https://image.coupangcdn.com/vendor/a.jpg\"></div>'}),'https://image.coupangcdn.com/vendor/a.jpg');
 assert.deepEqual(H.findValues({data:{sellerProductId:123}},/^sellerProductId$/i),['123']);
@@ -51,7 +54,15 @@ assert.equal(
 
 assert.equal(
   H.coupangImageEntryUrl({imageType:'representation',cdnPath:'vendor_inventory/abc/main.jpg'}),
-  'https://image.coupangcdn.com/vendor_inventory/abc/main.jpg'
+  'https://thumbnail.coupangcdn.com/thumbnails/remote/q89/image/vendor_inventory/abc/main.jpg'
+);
+assert.equal(
+  H.coupangImageEntryUrl({
+    imageType:'representation',
+    vendorPath:'151009021007000006.jpg',
+    cdnPath:'vendor_inventory/images/2019/01/09/main.jpg'
+  }),
+  'https://thumbnail.coupangcdn.com/thumbnails/remote/q89/image/vendor_inventory/images/2019/01/09/main.jpg'
 );
 assert.equal(
   H.coupangImagesFromObject({images:[{imageOrder:0,imageType:'MAIN',cdnPath:'/image/product/image/vendoritem/main.jpg'}]}),

@@ -45,11 +45,12 @@ function asArray(value) {
 }
 
 function normalizeImageUrl(value){
-  let url=text(value).replaceAll('&amp;','&');
+  let url=text(value).replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\\u002f/gi,'/');
   if(!url) return '';
   if(url.startsWith('//')) url=`https:${url}`;
+  if(/^(?:contents|image|img|static)\.lotteon\.(?:com|net)\//i.test(url)) url=`https://${url}`;
   if(!/^https?:\/\//i.test(url)) return '';
-  return url;
+  try{return new URL(url).toString();}catch{return '';}
 }
 function productImageFromResponse(value,depth=0,parentKey=''){
   if(depth>10||value==null) return '';
@@ -63,11 +64,23 @@ function productImageFromResponse(value,depth=0,parentKey=''){
     return '';
   }
   if(Array.isArray(value)){
-    for(const item of value){const found=productImageFromResponse(item,depth+1,parentKey);if(found)return found;}
+    const ordered=[...value].sort((a,b)=>{
+      const score=item=>{
+        const type=String(item?.imgTypCd||item?.imageType||item?.imgType||item?.type||'').toUpperCase();
+        return /RPRS|REPRESENT|MAIN|THUMB|대표/.test(type)?100-Number(item?.sortSeq||item?.imgSeq||item?.order||0):0;
+      };
+      return score(b)-score(a);
+    });
+    for(const item of ordered){const found=productImageFromResponse(item,depth+1,parentKey);if(found)return found;}
     return '';
   }
   if(typeof value!=='object') return '';
-  for(const key of ['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','mainImageUrl','representativeImageUrl','thumbUrl','thumbnailUrl','image','images','imgList','spdImgList']){
+  for(const key of [
+    'rprsImgUrl','rprsImgFilePath','representativeImageUrl','repImgUrl','mainImageUrl','mainImgUrl',
+    'spdImgUrl','sitmImgUrl','prdImgUrl','productImageUrl','goodsImageUrl','imageUrl','imgUrl',
+    'imgFullPthNm','imgFullPath','imageFullPath','orgImgUrl','lrgImgUrl','thumbUrl','thumbnailUrl',
+    'rprsImg','repImg','mainImg','spdImg','sitmImg','prdImg','image','images','imageList','imgList','spdImgList','sitmImgList'
+  ]){
     if(value[key]!=null){const found=productImageFromResponse(value[key],depth+1,key);if(found)return found;}
   }
   for(const [key,item] of Object.entries(value)){
@@ -154,8 +167,9 @@ function scalarContext(node, inherited = {}) {
     'ifTypCd','ifTypNm','workTypCd','workTypNm','dvProcTypCd','dvProcTypNm',
     'ordDtlStsCd','ordDtlStsNm','dtlDlvStsCd','dtlDlvStsNm','deliveryStatus',
     'realPayAmt','payAmt','ordAmt','totalAmount','paymentAmount','salePrc','sellPrc',
-    'ordQty','qty','quantity','orderQuantity','spdImgUrl','prdImgUrl','productImageUrl',
-    'imageUrl','thumbUrl','thumbnailUrl','claimNo','claimId','returnNo','exchangeNo','cancelNo'
+    'ordQty','qty','quantity','orderQuantity','rprsImgUrl','rprsImgFilePath','repImgUrl','mainImgUrl',
+    'spdImgUrl','sitmImgUrl','prdImgUrl','productImageUrl','goodsImageUrl','imageUrl','imgUrl',
+    'imgFullPthNm','imgFullPath','thumbUrl','thumbnailUrl','claimNo','claimId','returnNo','exchangeNo','cancelNo'
   ];
   const context = { ...inherited };
   for (const key of keys) {
@@ -440,7 +454,11 @@ function normalizeOrder(row, sellerId) {
     sitmNo:first(row,['sitmNo','itemNo','skuNo']),
     productNo:first(row,['spdNo','prdNo','productNo','productId','sitmNo','itemNo','skuNo']),
     itemNo:first(row,['sitmNo','itemNo']),
-    imageUrl:first(row,['spdImgUrl','prdImgUrl','productImageUrl','imageUrl','thumbUrl','thumbnailUrl']),
+    imageUrl:first(row,[
+      'rprsImgUrl','rprsImgFilePath','repImgUrl','mainImgUrl','spdImgUrl','sitmImgUrl',
+      'prdImgUrl','productImageUrl','goodsImageUrl','imageUrl','imgUrl','imgFullPthNm',
+      'imgFullPath','thumbUrl','thumbnailUrl'
+    ]),
     product:
       first(row, [
         'spdNm',

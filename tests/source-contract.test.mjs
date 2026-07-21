@@ -49,7 +49,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.8'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.9'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -83,7 +83,7 @@ assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local ima
 assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
 const productImage=read('product-image.js');
 assert.match(productImage,/sellerProductName:searchName/,'Coupang thumbnails must recover sellerProductId by product-name search');
-assert.match(productImage,/telegram-product-image-cache-v8/,'Coupang negative thumbnail cache must be invalidated for the new resolver');
+assert.match(productImage,/telegram-product-image-cache-v9/,'Coupang negative thumbnail cache must be invalidated for the new resolver');
 assert.match(agent,/lotteonResolver:resolveLotteonProductImage/,'Lotteon thumbnail lookup must use the official product detail resolver');
 assert.match(agent,/source==='immediate'[\s\S]*cachedSmartstoreInquiryResult/,'Manual collection must skip slow Smartstore inquiry calls');
 assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');

@@ -35,7 +35,7 @@ import { syncCoupangInquiries } from './coupang-inquiries.js';
 import { migrateLegacyDocuments,getCachedDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 import { telegramOrderBody } from './telegram-format.js';
-import { resolveTelegramProductImage } from './product-image.js';
+import { resolveTelegramProductImage,invalidateTelegramProductImageCache } from './product-image.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -756,6 +756,10 @@ async function sendOrderTelegramAlert(
     }
   );
 
+  if(result.photoFailed&&photoUrl){
+    invalidateTelegramProductImageCache(order,marketName);
+  }
+
   if(result.sent){
     rememberTelegramAlert(order,marketName);
   }
@@ -807,30 +811,69 @@ function telegramPhotoFilename(contentType,url=''){
   return `product-thumbnail.${extension}`;
 }
 
+function imageContentTypeFromBytes(bytes){
+  const data=new Uint8Array(bytes);
+  if(data.length>=3&&data[0]===0xff&&data[1]===0xd8&&data[2]===0xff) return 'image/jpeg';
+  if(data.length>=8&&data[0]===0x89&&data[1]===0x50&&data[2]===0x4e&&data[3]===0x47) return 'image/png';
+  if(data.length>=6&&String.fromCharCode(...data.slice(0,6)).startsWith('GIF8')) return 'image/gif';
+  if(data.length>=12&&String.fromCharCode(...data.slice(0,4))==='RIFF'&&String.fromCharCode(...data.slice(8,12))==='WEBP') return 'image/webp';
+  return '';
+}
+
+function marketplaceReferer(photoUrl){
+  const host=new URL(photoUrl).hostname.toLowerCase();
+  if(host.includes('coupang')) return 'https://www.coupang.com/';
+  if(host.includes('pstatic')||host.includes('naver')) return 'https://smartstore.naver.com/';
+  if(host.includes('11st')) return 'https://www.11st.co.kr/';
+  if(host.includes('lotte')) return 'https://www.lotteon.com/';
+  if(host.includes('gmarket')) return 'https://item.gmarket.co.kr/';
+  if(host.includes('auction')) return 'https://itempage3.auction.co.kr/';
+  return '';
+}
+
 async function downloadTelegramPhoto(photoUrl){
   const parsed=new URL(photoUrl);
-  const response=await fetch(photoUrl,{
-    redirect:'follow',
-    signal:AbortSignal.timeout(20000),
-    headers:{
-      Accept:'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'Accept-Language':'ko-KR,ko;q=0.9,en;q=0.8',
-      'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36',
-      Referer:`${parsed.protocol}//${parsed.host}/`
+  const referers=[
+    marketplaceReferer(photoUrl),
+    `${parsed.protocol}//${parsed.host}/`,
+    ''
+  ].filter((value,index,array)=>array.indexOf(value)===index);
+  let lastError='';
+  for(const referer of referers){
+    try{
+      const headers={
+        Accept:'image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5',
+        'Accept-Language':'ko-KR,ko;q=0.9,en;q=0.8',
+        'Cache-Control':'no-cache',
+        'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36'
+      };
+      if(referer) headers.Referer=referer;
+      const response=await fetch(photoUrl,{
+        redirect:'follow',
+        signal:AbortSignal.timeout(20000),
+        headers
+      });
+      if(!response.ok) throw new Error(`상품 이미지 다운로드 HTTP ${response.status}`);
+      const bytes=await response.arrayBuffer();
+      if(!bytes.byteLength) throw new Error('상품 이미지 파일이 비어 있습니다.');
+      if(bytes.byteLength>9.5*1024*1024) throw new Error(`상품 이미지가 너무 큽니다: ${Math.ceil(bytes.byteLength/1024/1024)}MB`);
+      const declaredType=String(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+      const detectedType=imageContentTypeFromBytes(bytes);
+      const contentType=detectedType||(declaredType.startsWith('image/')?declaredType:'');
+      if(!['image/jpeg','image/jpg','image/png','image/webp','image/gif'].includes(contentType)){
+        throw new Error(`상품 이미지 형식 오류: ${declaredType||'unknown'}`);
+      }
+      return {
+        blob:new Blob([bytes],{type:contentType}),
+        filename:telegramPhotoFilename(contentType,response.url||photoUrl),
+        size:bytes.byteLength,
+        contentType
+      };
+    }catch(error){
+      lastError=error instanceof Error?error.message:String(error);
     }
-  });
-  if(!response.ok) throw new Error(`상품 이미지 다운로드 HTTP ${response.status}`);
-  const contentType=String(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
-  if(!contentType.startsWith('image/')) throw new Error(`상품 이미지 형식 오류: ${contentType||'unknown'}`);
-  const bytes=await response.arrayBuffer();
-  if(!bytes.byteLength) throw new Error('상품 이미지 파일이 비어 있습니다.');
-  if(bytes.byteLength>9.5*1024*1024) throw new Error(`상품 이미지가 너무 큽니다: ${Math.ceil(bytes.byteLength/1024/1024)}MB`);
-  return {
-    blob:new Blob([bytes],{type:contentType}),
-    filename:telegramPhotoFilename(contentType,response.url||photoUrl),
-    size:bytes.byteLength,
-    contentType
-  };
+  }
+  throw new Error(lastError||'상품 이미지 다운로드 실패');
 }
 
 async function telegramPhotoUpload(token,payload,photo,timeoutMs=30000){
@@ -1870,7 +1913,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.8',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.9',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1890,7 +1933,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.8',
+    version:'FINAL-7.7.9',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

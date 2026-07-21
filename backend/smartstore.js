@@ -24,7 +24,10 @@ async function jsonResponse(response,label){
   if(!response.ok){
     const invalid=invalidInputText(body);
     const detail=[body?.message||body?.code||text,invalid].filter(Boolean).join(' · ');
-    throw new Error(`${label} HTTP ${response.status}: ${detail}`);
+    const error=new Error(`${label} HTTP ${response.status}: ${detail}`);
+    error.status=response.status;
+    error.apiBody=body;
+    throw error;
   }
   return body;
 }
@@ -68,38 +71,56 @@ function rows(body){
 function detailRows(body){return rows(body);}
 function upper(...values){return values.filter(Boolean).join(' ').toUpperCase();}
 
-function firstImageUrl(value,depth=0){
-  if(depth>6||value==null) return '';
+function normalizeSmartstoreImageUrl(value){
+  let url=String(value||'').trim().replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\\u002f/gi,'/');
+  if(!url) return '';
+  if(url.startsWith('//')) url=`https:${url}`;
+  if(/^(?:shop-phinf|shopping-phinf|ssl\.pstatic|shopping\.phinf)\.pstatic\.net\//i.test(url)) url=`https://${url}`;
+  if(!/^https?:\/\//i.test(url)) return '';
+  try{return new URL(url).toString();}catch{return '';}
+}
+
+function firstImageUrl(value,depth=0,parentKey=''){
+  if(depth>9||value==null) return '';
   if(typeof value==='string'){
-    const text=value.trim();
-    if(/^https?:\/\//i.test(text)) return text;
-    if(text.startsWith('//')) return `https:${text}`;
+    const text=value.trim().replaceAll('\\/','/');
+    const html=text.match(/<img[^>]+(?:src|data-src|data-original)=["']([^"']+)["']/i);
+    if(html?.[1]) return normalizeSmartstoreImageUrl(html[1]);
+    const url=normalizeSmartstoreImageUrl(text);
+    if(!url) return '';
+    if(/image|img|thumb|photo|picture|representative/i.test(parentKey)) return url;
+    if(/\.(?:jpe?g|png|webp|gif)(?:[?#]|$)/i.test(url)) return url;
+    if(/(?:shop-phinf|shopping-phinf|ssl\.pstatic|shopping\.phinf)\.pstatic\.net$/i.test(new URL(url).hostname)) return url;
     return '';
   }
   if(Array.isArray(value)){
     for(const item of value){
-      const found=firstImageUrl(item,depth+1);
+      const found=firstImageUrl(item,depth+1,parentKey);
       if(found) return found;
     }
     return '';
   }
   if(typeof value!=='object') return '';
-  for(const key of ['representativeImage','representativeImageUrl','productImageUrl','imageUrl','thumbnailUrl','images','url']){
+  for(const key of ['representativeImage','representativeImageUrl','productImageUrl','imageUrl','thumbnailUrl','mainImageUrl','images','optionalImages']){
     if(value[key]!=null){
-      const found=firstImageUrl(value[key],depth+1);
+      const found=firstImageUrl(value[key],depth+1,key);
       if(found) return found;
     }
   }
+  if(value.url!=null&&/image|img|thumb|photo|picture|representative/i.test(parentKey)){
+    const found=firstImageUrl(value.url,depth+1,parentKey);
+    if(found) return found;
+  }
   for(const [key,item] of Object.entries(value)){
     if(!/image|thumb|photo/i.test(key)) continue;
-    const found=firstImageUrl(item,depth+1);
+    const found=firstImageUrl(item,depth+1,key);
     if(found) return found;
   }
   // 채널상품 조회 응답은 originProduct.images.representativeImage.url처럼
   // 이미지가 여러 단계의 일반 래퍼 안에 있으므로 나머지 객체도 제한 깊이 내에서 탐색합니다.
   for(const [key,item] of Object.entries(value)){
     if(/image|thumb|photo/i.test(key)||item==null||typeof item!=='object') continue;
-    const found=firstImageUrl(item,depth+1);
+    const found=firstImageUrl(item,depth+1,key);
     if(found) return found;
   }
   return '';
@@ -118,12 +139,30 @@ function productSearchRows(body){
 
 async function readSmartstoreChannelImage(token,channelProductNo){
   const body=await api(token,`/v2/products/channel-products/${encodeURIComponent(channelProductNo)}`);
-  return firstImageUrl(body?.data||body);
+  return {image:firstImageUrl(body?.data||body),body};
 }
 
 async function readSmartstoreOriginImage(token,originProductNo){
   const body=await api(token,`/v2/products/origin-products/${encodeURIComponent(originProductNo)}`);
-  return firstImageUrl(body?.data||body);
+  return {image:firstImageUrl(body?.data||body),body};
+}
+
+function collectProductNumbers(value,depth=0,result={channel:[],origin:[]}){
+  if(depth>10||value==null) return result;
+  if(Array.isArray(value)){
+    value.forEach(item=>collectProductNumbers(item,depth+1,result));
+    return result;
+  }
+  if(typeof value!=='object') return result;
+  for(const [key,item] of Object.entries(value)){
+    if(item!=null&&['string','number'].includes(typeof item)){
+      const text=String(item).trim();
+      if(/channelProduct(?:No|Id)$/i.test(key)&&text) result.channel.push(text);
+      if(/(?:origin|original)Product(?:No|Id)$/i.test(key)&&text) result.origin.push(text);
+    }
+    if(item&&typeof item==='object') collectProductNumbers(item,depth+1,result);
+  }
+  return result;
 }
 
 async function searchSmartstoreProduct(token,searchBody){
@@ -157,25 +196,42 @@ export async function resolveSmartstoreProductImage(config,orderOrProductNo){
 
   const token=await accessToken(config);
   const errors=[];
+  const discoveredChannelNos=[];
+  const discoveredOriginNos=[];
 
   for(const productNo of channelProductNos){
     try{
-      const image=await readSmartstoreChannelImage(token,productNo);
+      const {image,body}=await readSmartstoreChannelImage(token,productNo);
       if(image) return image;
-    }catch(error){errors.push(error);}
+      const found=collectProductNumbers(body);
+      discoveredChannelNos.push(...found.channel);
+      discoveredOriginNos.push(...found.origin);
+    }catch(error){
+      errors.push(error);
+      const found=collectProductNumbers(error?.apiBody);
+      discoveredChannelNos.push(...found.channel);
+      discoveredOriginNos.push(...found.origin);
+    }
   }
 
   for(const productNo of originProductNos){
     try{
-      const image=await readSmartstoreOriginImage(token,productNo);
+      const {image,body}=await readSmartstoreOriginImage(token,productNo);
       if(image) return image;
-    }catch(error){errors.push(error);}
+      const found=collectProductNumbers(body);
+      discoveredChannelNos.push(...found.channel);
+      discoveredOriginNos.push(...found.origin);
+    }catch(error){
+      errors.push(error);
+      const found=collectProductNumbers(error?.apiBody);
+      discoveredChannelNos.push(...found.channel);
+      discoveredOriginNos.push(...found.origin);
+    }
   }
 
   // 채널 상품이 그룹상품 전환 등으로 308/404가 된 경우 상품 목록 검색으로
   // 현재 채널상품번호와 원상품번호를 다시 찾아 대표 이미지를 조회합니다.
-  const discoveredChannelNos=[];
-  const discoveredOriginNos=[];
+  // 위 직접조회 응답/308 오류에 포함된 새 상품번호와 검색 API 결과를 합쳐 재조회합니다.
   if(channelProductNos.length){
     try{
       const body=await searchSmartstoreProduct(token,{
@@ -215,14 +271,16 @@ export async function resolveSmartstoreProductImage(config,orderOrProductNo){
   }
 
   for(const productNo of uniqueText(discoveredChannelNos)){
+    if(channelProductNos.includes(productNo)) continue;
     try{
-      const image=await readSmartstoreChannelImage(token,productNo);
+      const {image}=await readSmartstoreChannelImage(token,productNo);
       if(image) return image;
     }catch(error){errors.push(error);}
   }
   for(const productNo of uniqueText([...originProductNos,...discoveredOriginNos])){
+    if(originProductNos.includes(productNo)) continue;
     try{
-      const image=await readSmartstoreOriginImage(token,productNo);
+      const {image}=await readSmartstoreOriginImage(token,productNo);
       if(image) return image;
     }catch(error){errors.push(error);}
   }
@@ -768,7 +826,10 @@ export const smartstoreTestHelpers={
   inquiryDateOnly,
   customerInquiryProfiles,
   retireLegacySmartstoreInquiryCache,
-  isLegacyInquiryCacheStale
+  isLegacyInquiryCacheStale,
+  firstImageUrl,
+  collectProductNumbers,
+  normalizeSmartstoreImageUrl
 };
 
 export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){

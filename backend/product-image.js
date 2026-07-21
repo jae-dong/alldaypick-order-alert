@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 // 이전 버전에서 "이미지 없음"으로 저장된 음수 캐시를 재사용하지 않습니다.
-const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v8.json');
+const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v9.json');
 const POSITIVE_TTL_MS=30*24*60*60*1000;
 const NEGATIVE_TTL_MS=30*60*1000;
 let cache=null;
@@ -29,12 +29,30 @@ function saveCache(){
   }catch{}
 }
 
-export function normalizeImageUrl(value){
-  let url=String(value||'').trim().replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\u002F/gi,'/');
+function decodedImageText(value){
+  return String(value||'')
+    .trim()
+    .replaceAll('&amp;','&')
+    .replaceAll('&quot;','"')
+    .replaceAll('&#39;',"'")
+    .replace(/&#x2f;|&#47;/gi,'/')
+    .replaceAll('\\/','/')
+    .replace(/\\u002f/gi,'/')
+    .replace(/^['"]|['"]$/g,'');
+}
+
+export function normalizeImageUrl(value,baseUrl=''){
+  let url=decodedImageText(value);
   if(!url) return '';
   if(url.startsWith('//')) url=`https:${url}`;
   if(url.startsWith('/image/')) url=`https://image.coupangcdn.com${url}`;
   if(/^image\//i.test(url)) url=`https://image.coupangcdn.com/${url}`;
+  if(/^(?:shop-phinf|shopping-phinf|ssl\.pstatic|shopping\.phinf)\.pstatic\.net\//i.test(url)) url=`https://${url}`;
+  if(/^(?:image\d*[a-z]?|img\d*[a-z]?|thumbnail\d*|static)\.coupangcdn\.com\//i.test(url)) url=`https://${url}`;
+  if(/^(?:gdimg\.gmarket|image\.auction|image\d+\.auction|contents\.lotteon|static\.11st|cdn\.11st)\.(?:co\.kr|com|net)\//i.test(url)) url=`https://${url}`;
+  if(baseUrl&&!/^https?:\/\//i.test(url)){
+    try{url=new URL(url,baseUrl).toString();}catch{}
+  }
   if(!/^https?:\/\//i.test(url)) return '';
   try{
     const parsed=new URL(url);
@@ -48,7 +66,7 @@ export function normalizeImageUrl(value){
 function imageFromObject(value,depth=0,parentKey=''){
   if(depth>9||value==null) return '';
   if(typeof value==='string'){
-    const raw=value.trim().replaceAll('&amp;','&').replaceAll('\\/','/').replace(/\u002F/gi,'/');
+    const raw=decodedImageText(value);
     if((raw.startsWith('{')||raw.startsWith('['))&&raw.length<1000000){
       try{
         const parsed=JSON.parse(raw);
@@ -58,7 +76,7 @@ function imageFromObject(value,depth=0,parentKey=''){
     }
     const htmlPatterns=[
       /<img[^>]+(?:src|data-src|data-original)=["']([^"']+)["']/ig,
-      /(?:"|')?(?:imageUrl|representativeImageUrl|thumbnailUrl|vendorPath|cdnPath)(?:"|')?\s*[:=]\s*["']([^"']+)["']/ig
+      /(?:"|')?(?:imageUrl|representativeImageUrl|thumbnailUrl|mainImageUrl|prdImgUrl|spdImgUrl|goodsImage|vendorPath|cdnPath)(?:"|')?\s*[:=]\s*["']([^"']+)["']/ig
     ];
     for(const pattern of htmlPatterns){
       let match;
@@ -91,8 +109,9 @@ function imageFromObject(value,depth=0,parentKey=''){
 
   const preferred=[
     'representativeImage','representativeImageUrl','imageUrl','thumbnailUrl',
-    'productImageUrl','mainImageUrl','prdImgUrl','prdImg','thumbUrl',
-    'thumbnail','images','image','vendorPath','cdnPath','content','detailContent','htmlContent'
+    'productImageUrl','mainImageUrl','prdImgUrl','spdImgUrl','prdImg','thumbUrl',
+    'goodsImage','goodsImageUrl','mainImg','rprsImgUrl','repImgUrl','imgFullPthNm',
+    'thumbnail','images','image','imageList','imgList','vendorPath','cdnPath','content','detailContent','htmlContent'
   ];
   for(const key of preferred){
     if(value[key]!=null){
@@ -147,19 +166,29 @@ function isRejectedCoupangImageUrl(value){
 }
 
 function coupangImageEntryUrl(entry={}){
-  let raw=String(
-    entry.vendorPath||entry.cdnPath||entry.imageUrl||entry.thumbnailUrl||entry.productImageUrl||entry.url||''
-  ).trim().replaceAll('\\/','/').replace(/\u002F/gi,'/');
-  if(!raw) return '';
-  try{raw=decodeURIComponent(raw);}catch{}
-  // 쿠팡 상품조회 응답의 vendorPath/cdnPath는 프로토콜 없이 내려오는 경우가 많습니다.
-  if(raw.startsWith('//')) raw=`https:${raw}`;
-  if(raw.startsWith('/')) raw=`https://image.coupangcdn.com${raw}`;
-  if(!/^https?:\/\//i.test(raw)&&/^(?:image|vendor_inventory|product|retail|thumbnails)\//i.test(raw)){
-    raw=`https://image.coupangcdn.com/${raw}`;
+  // 상품조회 응답의 vendorPath는 파일명만 들어오는 사례가 많고 cdnPath는
+  // 실제 쿠팡 CDN 경로입니다. 따라서 cdnPath를 먼저 확인해야 합니다.
+  const candidates=[
+    entry.cdnPath,entry.vendorPath,entry.imageUrl,entry.thumbnailUrl,
+    entry.productImageUrl,entry.representativeImageUrl,entry.url
+  ];
+  for(const candidate of candidates){
+    let raw=decodedImageText(candidate);
+    if(!raw) continue;
+    try{raw=decodeURIComponent(raw);}catch{}
+    if(raw.startsWith('//')) raw=`https:${raw}`;
+    if(raw.startsWith('/')) raw=`https://image.coupangcdn.com${raw}`;
+    if(!/^https?:\/\//i.test(raw)&&/^image\//i.test(raw)) raw=`https://image.coupangcdn.com/${raw}`;
+    if(!/^https?:\/\//i.test(raw)&&/^(?:vendor_inventory|product|retail)\//i.test(raw)){
+      // cdnPath 예: vendor_inventory/images/... 는 /image/ 접두사가 있어야
+      // 공개 CDN 주소가 됩니다. 원격 썸네일 주소를 사용하면 용량도 안정적입니다.
+      raw=`https://thumbnail.coupangcdn.com/thumbnails/remote/q89/image/${raw.replace(/^\/+/, '')}`;
+    }
+    if(!/^https?:\/\//i.test(raw)&&/^thumbnails\//i.test(raw)) raw=`https://thumbnail.coupangcdn.com/${raw}`;
+    const url=normalizeImageUrl(raw);
+    if(url&&!isRejectedCoupangImageUrl(url)) return url;
   }
-  const url=normalizeImageUrl(raw);
-  return url&&!isRejectedCoupangImageUrl(url)?url:'';
+  return '';
 }
 
 function isTrustedCoupangDirectUrl(value){
@@ -376,24 +405,63 @@ async function resolveOpenGraph(url){
     /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
     /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i,
+    /<meta[^>]+itemprop=["']image["'][^>]+content=["']([^"']+)["']/i,
+    /<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i,
     /<img[^>]+(?:id|class)=["'][^"']*(?:product|main|representative)[^"']*["'][^>]+src=["']([^"']+)["']/i
   ];
   for(const pattern of patterns){
     const match=html.match(pattern);
-    if(match?.[1]) return normalizeImageUrl(match[1]);
+    if(match?.[1]){
+      const image=normalizeImageUrl(match[1],response.url||url);
+      if(image&&!isRejectedGenericImageUrl(image)) return image;
+    }
+  }
+  // 일부 마켓은 대표 이미지를 JSON-LD Product 데이터에만 넣습니다.
+  for(const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/ig)){
+    try{
+      const parsed=JSON.parse(match[1].trim());
+      const image=imageFromObject({image:parsed?.image,images:parsed?.images});
+      if(image&&!isRejectedGenericImageUrl(image)) return normalizeImageUrl(image,response.url||url);
+    }catch{}
   }
   return '';
+}
+
+function isRejectedGenericImageUrl(value){
+  const url=normalizeImageUrl(value);
+  if(!url) return true;
+  try{
+    const target=`${new URL(url).pathname}${new URL(url).search}`.toLowerCase();
+    return [
+      'favicon','logo','sprite','icon','blank.gif','spacer.gif','no_image','noimage',
+      'placeholder','loading.gif','common/banner','header/banner','footer/banner'
+    ].some(token=>target.includes(token));
+  }catch{return true;}
 }
 
 function cacheKey(order={},marketName=''){
   return [
     marketName,
-    order.sellerProductId||order.channelProductNo||order.productId||order.originProductNo||order.originalProductId||order.productNo||order.sellerProductCode||'',
+    order.sellerProductId||order.channelProductNo||order.productId||order.originProductNo||order.originalProductId||order.productNo||order.goodsNo||order.itemNo||order.spdNo||order.sellerProductCode||'',
     order.vendorItemId||order.orderProductSequence||order.productOrderId||order.orderNo||''
   ].join('|');
 }
 
+export function invalidateTelegramProductImageCache(order={},marketName=''){
+  const key=cacheKey(order,marketName);
+  const current=loadCache();
+  if(Object.prototype.hasOwnProperty.call(current,key)){
+    delete current[key];
+    saveCache();
+  }
+}
+
 function publicProductUrl(order={},marketName=''){
+  for(const key of ['productUrl','productPageUrl','mallProductUrl','detailUrl','itemUrl','goodsUrl','url']){
+    const direct=normalizeImageUrl(order?.[key]);
+    if(direct) return direct;
+  }
   if(marketName==='쿠팡'&&order.productId){
     const query=order.vendorItemId?`?vendorItemId=${encodeURIComponent(order.vendorItemId)}`:'';
     return `https://www.coupang.com/vp/products/${encodeURIComponent(order.productId)}${query}`;
@@ -401,8 +469,17 @@ function publicProductUrl(order={},marketName=''){
   if(marketName==='11번가'&&order.productNo){
     return `https://www.11st.co.kr/products/${encodeURIComponent(order.productNo)}`;
   }
+  if(marketName==='스마트스토어'&&(order.channelProductNo||order.productId||order.productNo)){
+    return `https://smartstore.naver.com/main/products/${encodeURIComponent(order.channelProductNo||order.productId||order.productNo)}`;
+  }
   if(marketName==='롯데온'&&(order.productNo||order.productId)){
     return `https://www.lotteon.com/p/product/${encodeURIComponent(order.productNo||order.productId)}`;
+  }
+  if(['G마켓','지마켓'].includes(marketName)&&(order.goodsNo||order.productNo||order.productId)){
+    return `https://item.gmarket.co.kr/Item?goodscode=${encodeURIComponent(order.goodsNo||order.productNo||order.productId)}`;
+  }
+  if(marketName==='옥션'&&(order.itemNo||order.productNo||order.productId)){
+    return `https://itempage3.auction.co.kr/DetailView.aspx?itemno=${encodeURIComponent(order.itemNo||order.productNo||order.productId)}`;
   }
   return '';
 }
@@ -446,5 +523,5 @@ export async function resolveTelegramProductImage(order={},marketName='',options
 export const productImageTestHelpers={
   imageFromObject,publicProductUrl,cacheKey,findValues,isRejectedCoupangImageUrl,
   isTrustedCoupangDirectUrl,coupangImagesFromObject,coupangImageEntryUrl,
-  coupangSellerProductCandidates,normalizedProductName
+  coupangSellerProductCandidates,normalizedProductName,isRejectedGenericImageUrl,resolveOpenGraph
 };
