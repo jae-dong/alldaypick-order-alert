@@ -633,18 +633,32 @@ function telegramAlertKey(order,marketName){
     ''
   ).trim();
 
+  // 같은 주문에서 취소/반품/교환/문의가 다시 접수될 수 있으므로
+  // 주문번호만으로 막지 않고 쇼핑몰이 제공한 요청 고유번호까지 사용합니다.
+  const eventId=String(
+    order?.claimId||
+    order?.inquiryId||
+    order?.questionId||
+    order?.cancelRequestId||
+    order?.returnRequestId||
+    order?.exchangeRequestId||
+    order?.receiptId||
+    ''
+  ).trim();
+
   return [
     marketName,
     type,
     orderNo,
-    itemNo
+    itemNo,
+    eventId
   ].join('|');
 }
 
 function rememberTelegramAlert(order,marketName){
   const key=telegramAlertKey(order,marketName);
 
-  if(!key||key.endsWith('||')){
+  if(!key||!telegramAlertType(order)){
     return;
   }
 
@@ -660,7 +674,7 @@ function telegramAlertAlreadySent(order,marketName){
 function shouldSendTelegramAlert(order,marketName,source='interval'){
   const type=telegramAlertType(order);
 
-  if(!['new_order','cancel','return','inquiry'].includes(type)){
+  if(!['new_order','cancel','return','exchange','inquiry'].includes(type)){
     return {
       send:false,
       reason:'unsupported'
@@ -1042,6 +1056,14 @@ function telegramAlertType(order){
   }
 
   if(
+    eventType==='exchange' ||
+    status==='exchange' ||
+    status==='exchange_request'
+  ){
+    return 'exchange';
+  }
+
+  if(
     eventType==='inquiry' ||
     status==='inquiry'
   ){
@@ -1065,6 +1087,10 @@ function telegramAlertTitle(order,marketName){
 
   if(type==='return'){
     return `↩️ ${marketName} 반품요청`;
+  }
+
+  if(type==='exchange'){
+    return `🔄 ${marketName} 교환요청`;
   }
 
   if(type==='inquiry'){
@@ -1266,7 +1292,7 @@ async function sendClaimPush(
   for(const claim of claims){
     const type=telegramAlertType(claim);
 
-    if(!['cancel','return','inquiry'].includes(type)){
+    if(!['cancel','return','exchange','inquiry'].includes(type)){
       continue;
     }
 
@@ -1468,6 +1494,43 @@ async function sendMarketplacePush(
 
 
 
+async function sendMarketplaceClaimPush(
+  changes,
+  marketName,
+  source='interval'
+){
+  let sent=0;
+  let failed=0;
+  let skipped=0;
+
+  for(const order of changes){
+    const type=telegramAlertType(order);
+
+    if(!['cancel','return','exchange','inquiry'].includes(type)){
+      continue;
+    }
+
+    const result=await sendOrderTelegramAlert(
+      order,
+      marketName,
+      source
+    );
+
+    sent+=result.sent||0;
+    failed+=result.failed||0;
+    skipped+=result.skipped||0;
+  }
+
+  return {
+    devices:0,
+    sent,
+    failed,
+    skipped,
+    channel:'telegram'
+  };
+}
+
+
 async function sendElevenstStatusPush(
   changes,
   source='interval'
@@ -1479,7 +1542,7 @@ async function sendElevenstStatusPush(
   for(const order of changes){
     const type=telegramAlertType(order);
 
-    if(!['cancel','return','inquiry'].includes(type)){
+    if(!['cancel','return','exchange','inquiry'].includes(type)){
       continue;
     }
 
@@ -1550,7 +1613,11 @@ async function syncElevenstSafe(source){
     );
 
     const statusPush=await sendElevenstStatusPush(
-      statusResult.changedOrders||[],
+      [
+        ...(result.createdClaims||[]),
+        ...(statusResult.createdClaims||[]),
+        ...(statusResult.changedOrders||[])
+      ],
       source
     );
 
@@ -1689,6 +1756,11 @@ async function syncSmartstoreSafe(source){
     }
 
     const push=await sendMarketplacePush(result.createdOrders||[],'스마트스토어',source);
+    const claimPush=await sendMarketplaceClaimPush(
+      result.createdClaims||[],
+      '스마트스토어',
+      source
+    );
     let inquirySent=0;
     for(const inquiry of inquiryResult.createdClaims||[]){
       const sentResult=await sendOrderTelegramAlert(inquiry,'스마트스토어',source);
@@ -1702,14 +1774,14 @@ async function syncSmartstoreSafe(source){
         lastResult:{
           found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
           inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,complete:inquiryResult.complete!==false},
-          push,inquirySent
+          push,claimPush,inquirySent
         }
       }
     },{merge:true});
 
     console.log(
       `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
-      `상태변경 ${result.statusChanged}, 미답변문의 ${inquiryResult.found||0}`+
+      `상태변경 ${result.statusChanged}, 요청알림 ${claimPush.sent||0}, 미답변문의 ${inquiryResult.found||0}`+
       `${inquiryResult.skipped?'(캐시)':''}, `+
       `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
@@ -1751,7 +1823,7 @@ async function sendLotteonStatusPush(
   for(const order of changes){
     const type=telegramAlertType(order);
 
-    if(!['cancel','return','inquiry'].includes(type)){
+    if(!['cancel','return','exchange','inquiry'].includes(type)){
       continue;
     }
 
@@ -1825,7 +1897,10 @@ async function syncLotteonSafe(source){
     );
 
     const statusPush=await sendLotteonStatusPush(
-      result.changedOrders||[],
+      [
+        ...(result.createdClaims||[]),
+        ...(result.changedOrders||[])
+      ],
       source
     );
 
@@ -1913,7 +1988,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.9',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.10',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -1933,7 +2008,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.9',
+    version:'FINAL-7.7.10',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -1979,7 +2054,7 @@ async function runTelegramTest(requestId=''){
       [
         '텔레그램 주문알림 연결이 정상입니다.',
         `테스트 시각: ${new Date().toLocaleString('ko-KR')}`,
-        '앞으로 신규주문·주문취소·반품요청·문의사항만 이 채팅으로 전송됩니다.'
+        '앞으로 신규주문·주문취소·반품요청·교환요청·문의사항만 이 채팅으로 전송됩니다.'
       ].join('\n'),
       {test:true}
     );
@@ -2346,7 +2421,7 @@ async function run(source){
       saveTelegramLedger();
 
       console.log(
-        '텔레그램 기준설정 완료 · 이후 새 주문만 알림'
+        '텔레그램 기준설정 완료 · 이후 새 주문·취소·반품·교환·문의만 알림'
       );
     }
   }catch(error){

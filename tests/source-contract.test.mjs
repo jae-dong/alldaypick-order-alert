@@ -49,7 +49,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.9'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.10'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -79,6 +79,13 @@ assert.match(agent,/quickCurrentCoupangSync/,'Manual collection must use the fas
 assert.match(agent,/refreshClaimsInBackground/,'Claims must continue in the background after current-order collection');
 assert.match(agent,/refreshCurrentOrdersInBackground/,'Deep current-order reconciliation must continue after fast button completion');
 assert.match(agent,/sendPhoto/,'Telegram new-order alerts must support product thumbnail photos');
+
+assert.match(agent,/eventType==='exchange'[\s\S]*return 'exchange'/,'Telegram alert type must include exchange requests');
+assert.match(agent,/교환요청/,'Telegram alert title and test text must include exchange requests');
+assert.match(agent,/order\?\.claimId[\s\S]*order\?\.inquiryId/,'Telegram duplicate prevention must include claim or inquiry IDs');
+assert.match(agent,/sendMarketplaceClaimPush\([\s\S]*result\.createdClaims\|\|\[\][\s\S]*'스마트스토어'/,'Smartstore created claims must be sent to Telegram');
+assert.match(agent,/statusResult\.createdClaims[\s\S]*statusResult\.changedOrders/,'11st newly created claims must be included in Telegram status alerts');
+assert.match(agent,/result\.createdClaims[\s\S]*result\.changedOrders[\s\S]*'롯데온'/,'Lotteon newly created claims must be included in Telegram status alerts');
 assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local image files with multipart form data');
 assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
 const productImage=read('product-image.js');

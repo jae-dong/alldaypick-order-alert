@@ -1,0 +1,12 @@
+FINAL v7.7.10 적용 방법
+
+1. 실행 중인 검은색 PC 수집기 창을 닫습니다.
+2. ZIP을 별도 폴더에 압축 해제합니다.
+3. 압축 해제된 파일을 현재 GitHub 프로젝트 폴더에 모두 복사하여 덮어씁니다.
+4. backend\.env.local, backend\firebase-service-account.json, .git 폴더는 삭제하지 않습니다.
+5. GitHub Desktop에서 현재 프로젝트 저장소를 선택합니다.
+6. Summary에 FINAL v7.7.10 전체 마켓 CS 텔레그램 알림 보강 을 입력합니다.
+7. Commit to main, Push origin 순서로 진행합니다.
+8. Render 배포 완료를 확인합니다.
+9. START_AGENT.cmd를 실행하고 검은 창을 계속 열어 둡니다.
+10. 웹앱을 새로고침한 뒤 FINAL v7.7.10 표시와 다음 신규 CS 요청 알림을 확인합니다.
