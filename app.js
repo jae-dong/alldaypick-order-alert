@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.14';
+const APP_VERSION='FINAL v7.7.15';
 const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1832,7 +1832,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '각 쇼핑몰 공식 API 직접검증 기준 · 실제 처리할 상품주문만 표시';
+      '송장 수가 아닌 상품주문 행 기준 · 합배송 상품도 각각 1건';
   }
 
   $('statusUpdated').textContent=
@@ -2993,7 +2993,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.14-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.15-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

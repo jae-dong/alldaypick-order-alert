@@ -68,13 +68,32 @@ console.log('state-engine tests passed');
 assert.equal(E.terminalClaim({eventType:'cancel',sourceStatus:'CANCEL_DONE'}),true);
 assert.equal(E.terminalClaim({eventType:'return',sourceStatus:'RETURN_REQUEST'}),false);
 
-// Pending workflow counters use each market's operational unit, while sales keep orderNo grouping.
+// Pending workflow counters use product-order lines, while sales amount keeps orderNo grouping.
+// A single combined-shipping invoice with two different products must count as two processed orders.
 const coupangBoxes=[
   {source:'coupang',market:'쿠팡',orderNo:'C100',shipmentBoxId:'B1',vendorItemId:'I1',lineKey:'coupang|C100|I1',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:00:00+09:00'},
   {source:'coupang',market:'쿠팡',orderNo:'C100',shipmentBoxId:'B2',vendorItemId:'I2',lineKey:'coupang|C100|I2',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:00:01+09:00'}
 ];
-assert.equal(E.pendingOrders(coupangBoxes,integrations).length,2,'two shipment boxes must be two dispatch tasks');
+assert.equal(E.pendingOrders(coupangBoxes,integrations).length,2,'two Coupang product-order lines must be two processing tasks');
 assert.equal(E.salesGroups(coupangBoxes,integrations).length,1,'the same order number must remain one sales order');
+
+const coupangCombinedShipping=[
+  {source:'coupang',market:'쿠팡',orderNo:'C200',shipmentBoxId:'SAME-BOX',vendorItemId:'ITEM-A',lineKey:'coupang|C200|ITEM-A',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:01:00+09:00'},
+  {source:'coupang',market:'쿠팡',orderNo:'C200',shipmentBoxId:'SAME-BOX',vendorItemId:'ITEM-B',lineKey:'coupang|C200|ITEM-B',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,sourceUpdatedAt:'2026-07-19T03:01:01+09:00'}
+];
+assert.equal(E.pendingOrders(coupangCombinedShipping,integrations).length,2,'one invoice with two different products must count as two product orders');
+assert.equal(E.salesUnits(coupangCombinedShipping,integrations).length,2,'today/month order count must use product-order lines, not shipmentBoxId');
+
+const coupangDuplicateLine=[
+  ...coupangCombinedShipping,
+  {...coupangCombinedShipping[0],sourceUpdatedAt:'2026-07-19T03:02:00+09:00'}
+];
+assert.equal(E.salesUnits(coupangDuplicateLine,integrations).length,2,'the same product-order line collected twice must be deduplicated');
+
+const coupangQuantityTwo=[
+  {source:'coupang',market:'쿠팡',orderNo:'C300',shipmentBoxId:'QTY-BOX',vendorItemId:'ITEM-Q',lineKey:'coupang|C300|ITEM-Q',eventType:'order',status:'shipping_wait',sourceStatus:'INSTRUCT',activeState:true,qty:2,sourceUpdatedAt:'2026-07-19T03:03:00+09:00'}
+];
+assert.equal(E.salesUnits(coupangQuantityTwo,integrations).length,1,'quantity two in one product-order line must remain one order count');
 
 // Naver PAYED becomes shipping-wait after seller confirmation.
 const naverConfirmed=[{
@@ -188,14 +207,14 @@ assert.equal(E.terminalClaim({source:'coupang',market:'쿠팡',eventType:'exchan
   assert.equal(E.openClaims(inquiryDocs,integrations)[0].id,'fresh-coupang-q');
 }
 
-// Sales order count uses each marketplace's official actionable work unit.
+// Sales order count uses each marketplace's product-order line, never invoice/shipment count.
 {
   const units=[
     {source:'coupang',market:'쿠팡',orderNo:'UNIT-C',shipmentBoxId:'BOX-1',vendorItemId:'A',eventType:'order',status:'shipping_wait',activeState:true,amount:1000,datetime:'2026-07-22T10:00:00+09:00'},
-    {source:'coupang',market:'쿠팡',orderNo:'UNIT-C',shipmentBoxId:'BOX-2',vendorItemId:'B',eventType:'order',status:'shipping_wait',activeState:true,amount:2000,datetime:'2026-07-22T10:01:00+09:00'},
+    {source:'coupang',market:'쿠팡',orderNo:'UNIT-C',shipmentBoxId:'BOX-1',vendorItemId:'B',eventType:'order',status:'shipping_wait',activeState:true,amount:2000,datetime:'2026-07-22T10:01:00+09:00'},
     {source:'smartstore',market:'스마트스토어',orderNo:'UNIT-N',productOrderId:'PO-1',eventType:'order',status:'new',activeState:true,amount:3000,datetime:'2026-07-22T10:02:00+09:00'},
     {source:'gmarket',market:'G마켓',orderNo:'EXCLUDED',eventType:'order',status:'new',activeState:true,amount:4000,datetime:'2026-07-22T10:03:00+09:00'}
   ];
   assert.equal(E.salesGroups(units,integrations).length,2,'sales amount grouping stays at marketplace order level');
-  assert.equal(E.salesUnits(units,integrations).length,3,'order count uses two Coupang shipment boxes plus one Smartstore product order');
+  assert.equal(E.salesUnits(units,integrations).length,3,'order count uses two Coupang product-order lines sharing one invoice plus one Smartstore product order');
 }

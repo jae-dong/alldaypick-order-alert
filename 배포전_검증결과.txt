@@ -1,4 +1,4 @@
-FINAL v7.7.14 배포 전 검증 결과
+FINAL v7.7.15 배포 전 검증 결과
 
 [통과] 전체 JavaScript/MJS 문법 검사
 [통과] package.json, package-lock.json, manifest.json JSON 검사
@@ -8,7 +8,7 @@ FINAL v7.7.14 배포 전 검증 결과
 - 스마트스토어 문의 및 선물 미수락 제외
 - 11번가 주문/클레임 상태
 - 롯데온 출고지시/배송진행 병합
-- 마켓별 주문 처리단위 집계
+- 발송처리 상품주문 행 단위 집계
 - G마켓·옥션 집계 제외
 - 텔레그램 형식 및 썸네일
 - 무료한도 캐시/쿼터 보호
@@ -19,6 +19,7 @@ FINAL v7.7.14 배포 전 검증 결과
 - firebase-service-account.json 미포함
 - node_modules 미포함
 - market-direct-audit.json 실행결과 미포함
+- .firestore-mirror-cache.json 실행 캐시 미포함
 
 [실계정 확인 필요]
 이 작업환경에서는 외부 쇼핑몰 API 네트워크에 접속할 수 없으므로 실제 판매자 계정 응답은 사용자 PC에서 START_AGENT.cmd 실행 후 생성되는 backend\market-direct-audit.json으로 최종 확인합니다.

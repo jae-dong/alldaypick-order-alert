@@ -278,19 +278,23 @@
   }
   function workUnitKey(item){
     const source=normalized(market(item)||item?.source);
+
+    // 주문 건수는 송장번호/배송묶음 수가 아니라 실제 상품주문 처리 단위로 셉니다.
+    // 한 구매자가 서로 다른 상품 2개를 합배송해 송장 1개를 사용하더라도
+    // 상품주문 행이 2개이면 주문 건수도 2건입니다. 동일 상품주문 행의 중복 수집만 제거합니다.
     if(source==='쿠팡'||normalized(item?.source)==='coupang'){
-      return `coupang|${normalized(item?.shipmentBoxId||orderNo(item))}`;
+      return `coupang-item|${normalized(lineKey(item))}`;
     }
     if(source==='스마트스토어'||normalized(item?.source)==='smartstore'){
-      return `smartstore|${normalized(item?.productOrderId||lineKey(item))}`;
+      return `smartstore-item|${normalized(item?.productOrderId||lineKey(item))}`;
     }
     if(source==='11번가'||normalized(item?.source)==='elevenst'){
-      return `elevenst|${normalized(orderNo(item))}|${normalized(item?.orderProductSequence||item?.ordPrdSeq||'item')}`;
+      return `elevenst-item|${normalized(orderNo(item))}|${normalized(item?.orderProductSequence||item?.ordPrdSeq||lineKey(item))}`;
     }
     if(source==='롯데온'||normalized(item?.source)==='lotteon'){
-      return `lotteon|${normalized(item?.orderItemId||item?.orderProductSequence||lineKey(item))}`;
+      return `lotteon-item|${normalized(item?.orderItemId||item?.orderProductSequence||lineKey(item))}`;
     }
-    return lineKey(item);
+    return `order-item|${normalized(lineKey(item))}`;
   }
   function pendingOrderUnits(items,integrations){
     const groups=new Map();
