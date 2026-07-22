@@ -305,7 +305,7 @@ dialog .modal{width:min(92vw,680px);max-height:86vh;overflow:auto;box-sizing:bor
 .market-unlinked-label{margin-left:6px;padding:2px 6px;border-radius:999px;background:#edf1f5;color:#74808d;font-size:10px;font-weight:800}
 
 
-/* FINAL v7.7.15 · 공식 API 직접검증 · 전체 가독성 확대 */
+/* FINAL v7.7.16 · 공식 API 직접검증 · 전체 가독성 확대 */
 body{font-size:16px;line-height:1.5}
 .brand-kicker,.section-kicker{font-size:12px}
 .brand-title{font-size:31px}

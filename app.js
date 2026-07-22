@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.15';
+const APP_VERSION='FINAL v7.7.16';
 const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -8,12 +8,12 @@ const fmt=n=>Number(n||0).toLocaleString('ko-KR')+'원';
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['elevenst','11번가'],['gmarket','G마켓'],['auction','옥션'],['lotteon','롯데온']];
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
-let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,collectUnsub=null;
-let monthOrderMap=new Map(),activeOrderMap=new Map();
+let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,unsubscribeSyncedOrders=null,collectUnsub=null;
+let monthOrderMap=new Map(),activeOrderMap=new Map(),syncedOrderMap=new Map();
 const PAGE_SIZE=40;
 
 function toast(text){const el=$('toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
-function dateValue(o){const v=o.datetime||o.createdAt?.toDate?.()?.toISOString?.()||o.updatedAt?.toDate?.()?.toISOString?.()||'';return String(v)}
+function dateValue(o){const v=o.metricDate||o.businessDate||o.orderDate||o.orderAt||o.orderedAt||o.paymentDate||o.paymentAt||o.paidAt||o.orderDateTime||o.paymentDateTime||o.datetime||o.createdAt?.toDate?.()?.toISOString?.()||o.updatedAt?.toDate?.()?.toISOString?.()||'';return String(v)}
 function orderDay(o){const d=new Date(dateValue(o));if(Number.isNaN(d.getTime()))return'';return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(d)}
 function todayKey(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date())}
 function monthKey(){return todayKey().slice(0,7)}
@@ -1322,13 +1322,107 @@ function engineLatestLines(){
   return lifecycleLatestLines();
 }
 
+function auditContainers(){
+  return [
+    ['쿠팡','coupang',integrations?.coupang?.lastResult?.fast?.directAudit],
+    ['쿠팡','coupang',integrations?.coupang?.lastResult?.slow?.directAudit],
+    ['스마트스토어','smartstore',integrations?.smartstore?.lastResult?.directAudit?.orders],
+    ['11번가','elevenst',integrations?.elevenst?.lastResult?.directAudit?.orders],
+    ['11번가','elevenst',integrations?.elevenst?.lastResult?.directAudit?.claimsStatus],
+    ['롯데온','lotteon',integrations?.lotteon?.lastResult?.directAudit]
+  ];
+}
+
+function integrationAuditOrderRows(){
+  const result=[];
+
+  auditContainers().forEach(([market,source,audit])=>{
+    if(!audit||!Array.isArray(audit.orderLines)) return;
+    const verifiedAt=audit.verifiedAt||new Date().toISOString();
+
+    audit.orderLines.forEach((row,index)=>{
+      const line=String(row?.line||row?.id||index);
+      const orderNo=String(row?.orderNo||row?.id||line);
+      const id=String(row?.id||`audit-${source}-${orderNo}-${line}`);
+      const datetime=row?.datetime||audit.checkedTo||verifiedAt;
+      const amount=Number(row?.amount||0);
+      const qty=Math.max(1,Number(row?.qty||1));
+
+      const item={
+        id,
+        source,
+        market,
+        eventType:'order',
+        workflowType:'order',
+        orderNo,
+        orderId:orderNo,
+        lineKey:`${source}|${orderNo}|${line}`,
+        qty,
+        amount:Number.isFinite(amount)&&amount>0?amount:0,
+        datetime,
+        metricDate:datetime,
+        orderDate:datetime,
+        paymentDate:datetime,
+        status:row?.status||'unknown',
+        sourceStatus:row?.sourceStatus||row?.status||'',
+        activeState:true,
+        syncedAt:verifiedAt,
+        sourceUpdatedAt:verifiedAt,
+        auditOnly:true,
+        giftPending:Boolean(row?.giftPending),
+        excludedFromMetrics:Boolean(row?.excludedFromMetrics)
+      };
+
+      if(source==='coupang') item.vendorItemId=line;
+      if(source==='smartstore') item.productOrderId=line;
+      if(source==='elevenst') item.orderProductSequence=line;
+      if(source==='lotteon') item.orderItemId=line;
+      result.push(item);
+    });
+  });
+
+  return result;
+}
+
+function metricOrders(){
+  const map=new Map();
+
+  integrationAuditOrderRows().forEach(item=>{
+    map.set(String(item.id),item);
+  });
+
+  orders.forEach(item=>{
+    const key=String(item?.id||'');
+    if(!key) return;
+    const audit=map.get(key)||{};
+    const merged={...audit,...item};
+    const existingAmount=engineAmount(item);
+    if(existingAmount<=0&&Number(audit.amount||0)>0){
+      merged.amount=Number(audit.amount||0);
+    }
+    if(!engineOrderDate(item).getTime()&&engineOrderDate(audit).getTime()){
+      merged.metricDate=audit.metricDate||audit.datetime;
+      merged.orderDate=audit.orderDate||audit.datetime;
+      merged.datetime=audit.datetime;
+    }
+    map.set(key,merged);
+  });
+
+  return [...map.values()];
+}
+
 function engineOrderDate(order){
   for(const value of [
+    order?.metricDate,
+    order?.businessDate,
     order?.orderDate,
     order?.orderAt,
     order?.orderedAt,
     order?.paymentDate,
     order?.paymentAt,
+    order?.paidAt,
+    order?.orderDateTime,
+    order?.paymentDateTime,
     order?.datetime,
     order?.createdAt
   ]){
@@ -1477,16 +1571,18 @@ function engineNormalGroups(){
 
     const explicit=explicitOrderTotalValue(line);
 
+    const lineValue=lineAmountValue(line);
+    if(lineValue>0){
+      group.lineAmount+=lineValue;
+    }
     if(explicit>0){
       group.explicitTotal=Math.max(group.explicitTotal,explicit);
-    }else{
-      group.lineAmount+=lineAmountValue(line);
     }
   });
 
   return [...groups.values()].map(group=>({
     ...group,
-    amount:Number(group.explicitTotal||0)||Number(group.lineAmount||0)
+    amount:Number(group.lineAmount||0)||Number(group.explicitTotal||0)
   }));
 }
 
@@ -1500,7 +1596,7 @@ function engineMonthGroups(){
     return [];
   }
   const month=monthKey();
-  return window.OrderStateEngine.salesGroups(orders,integrations)
+  return window.OrderStateEngine.salesGroups(metricOrders(),integrations)
     .filter(group=>String(group.day||'').slice(0,7)===month);
 }
 
@@ -1583,7 +1679,7 @@ function todayOrderGroups(){
     return [];
   }
   const today=todayKey();
-  return window.OrderStateEngine.salesGroups(orders,integrations)
+  return window.OrderStateEngine.salesGroups(metricOrders(),integrations)
     .filter(group=>group.day===today);
 }
 
@@ -1592,7 +1688,7 @@ function todayOrderUnits(){
     return todayOrderGroups();
   }
   const today=todayKey();
-  return window.OrderStateEngine.salesUnits(orders,integrations)
+  return window.OrderStateEngine.salesUnits(metricOrders(),integrations)
     .filter(unit=>unit.day===today);
 }
 
@@ -1601,7 +1697,7 @@ function monthOrderUnits(){
     return engineMonthGroups();
   }
   const month=monthKey();
-  return window.OrderStateEngine.salesUnits(orders,integrations)
+  return window.OrderStateEngine.salesUnits(metricOrders(),integrations)
     .filter(unit=>String(unit.day||'').slice(0,7)===month);
 }
 
@@ -2696,6 +2792,11 @@ function stopCloudListeners(){
     unsubscribeActiveOrders=null;
   }
 
+  if(unsubscribeSyncedOrders){
+    unsubscribeSyncedOrders();
+    unsubscribeSyncedOrders=null;
+  }
+
   if(integrationUnsubscribe){
     integrationUnsubscribe();
     integrationUnsubscribe=null;
@@ -2723,6 +2824,11 @@ function monthStartIso(){
 
 function refreshOrdersFromCloudMaps(){
   const merged=new Map(monthOrderMap);
+  // 일부 마켓은 상세/배송상태 응답에서 datetime이 비어 월 쿼리에서 빠질 수 있습니다.
+  // 이번 달에 다시 공식 API로 확인된 문서를 syncedAt 보조 구독으로 함께 합칩니다.
+  for(const [id,item] of syncedOrderMap){
+    merged.set(id,item);
+  }
   for(const [id,item] of activeOrderMap){
     merged.set(id,item);
   }
@@ -2801,14 +2907,29 @@ function startCloudListeners(){
       }
     );
 
+  unsubscribeSyncedOrders=db.collection('orders')
+    .where('syncedAt','>=',monthStartIso())
+    .orderBy('syncedAt','desc')
+    .limit(900)
+    .onSnapshot(
+      snapshot=>{
+        replaceSnapshotMap(syncedOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+      },
+      error=>{
+        console.warn('Synced order recovery listener error:',error);
+        // 보조 구독 실패는 기존 월/미완료 구독을 중단시키지 않습니다.
+      }
+    );
+
   integrationUnsubscribe=db.collection('system')
     .doc('integrations')
     .onSnapshot(
       snapshot=>{
         integrations=snapshot.exists?snapshot.data():{};
         saveCloudCache();
-        renderIntegrations();
-        renderMarkets();
+        // 공식 API 직접검증 orderLines가 갱신되면 오늘/월 주문·매출도 즉시 다시 계산합니다.
+        render();
       },
       error=>{
         console.error('Integration listener error:',error);
@@ -2993,7 +3114,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.15-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.16-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

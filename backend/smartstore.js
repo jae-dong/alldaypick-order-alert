@@ -372,7 +372,8 @@ function normalizeDetail(row){
     ),
     unitPrice:Number(productOrder.unitPrice||productOrder.salePrice||0),
     totalPaymentAmount:Number(productOrder.totalPaymentAmount||productOrder.paymentAmount||0),
-    datetime:order.paymentDate||productOrder.paymentDate||productOrder.orderDate||new Date().toISOString(),
+    datetime:order.paymentDate||productOrder.paymentDate||order.orderDate||productOrder.orderDate||new Date().toISOString(),
+    metricDate:order.paymentDate||productOrder.paymentDate||order.orderDate||productOrder.orderDate||'',
     orderDate:order.orderDate||productOrder.orderDate||'',paymentDate:order.paymentDate||productOrder.paymentDate||'',
     invoiceNumber:productOrder.trackingNumber||productOrder.invoiceNumber||'',
     deliveryCompanyName:productOrder.deliveryCompany||productOrder.deliveryMethod||'',
@@ -499,20 +500,30 @@ function productOrderIdOf(row){
   ).trim();
 }
 
+function kstStartOfDay(date=new Date()){
+  const day=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(date);
+  return new Date(`${day}T00:00:00+09:00`);
+}
+
 async function conditionProductOrderIds(token,from,to){
+  // 네이버 응답/권한 조합에 따라 결제일시와 주문일시 조회 결과가 달라질 수 있어
+  // 성공한 프로필을 모두 합칩니다. 첫 성공에서 바로 종료하지 않아 당일 상품주문 누락을 막습니다.
   const profiles=[
-    {includeTo:true,label:'기간 전체'},
-    {includeTo:false,label:'시작일 이후'}
+    {rangeType:'PAYED_DATETIME',includeTo:true,label:'결제일시 기간'},
+    {rangeType:'PAYED_DATETIME',includeTo:false,label:'결제일시 시작'},
+    {rangeType:'ORDER_DATETIME',includeTo:true,label:'주문일시 기간'},
+    {rangeType:'ORDER_DATETIME',includeTo:false,label:'주문일시 시작'}
   ];
+  const combined=new Set();
+  const succeeded=[];
   let lastError;
 
   for(const profile of profiles){
-    const ids=[];
     try{
       for(let page=1;page<=100;page+=1){
         const params=new URLSearchParams({
           from:iso(from),
-          rangeType:'PAYED_DATETIME',
+          rangeType:profile.rangeType,
           page:String(page),
           size:'300'
         });
@@ -525,20 +536,25 @@ async function conditionProductOrderIds(token,from,to){
         const parsed=conditionOrderPage(body);
         parsed.items.forEach(row=>{
           const id=productOrderIdOf(row);
-          if(id) ids.push(id);
+          if(id) combined.add(id);
         });
 
         if(!parsed.hasNext&&parsed.items.length<parsed.size) break;
         if(page<100) await sleep(350);
       }
-      return [...new Set(ids)];
+      succeeded.push(profile.label);
     }catch(error){
       lastError=error;
-      if(!badRequest(error)) throw error;
+      // 지원하지 않는 rangeType/형식은 보조 프로필만 건너뜁니다.
+      if(!badRequest(error)&&!String(error?.message||'').includes('HTTP 404')) throw error;
     }
+    await sleep(250);
   }
 
-  throw lastError||new Error('스마트스토어 조건형 주문조회 실패');
+  if(!succeeded.length){
+    throw lastError||new Error('스마트스토어 조건형 주문조회 실패');
+  }
+  return {ids:[...combined],profiles:succeeded};
 }
 
 async function changedProductOrderIds(token,from,to){
@@ -981,6 +997,7 @@ export const smartstoreTestHelpers={
   staleInquiryKindDocuments,
   conditionOrderPage,
   productOrderIdOf,
+  kstStartOfDay,
   retireLegacySmartstoreInquiryCache,
   isLegacyInquiryCacheStale,
   firstImageUrl,
@@ -995,6 +1012,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   const ranges=splitDateRange(from,now,23);
   const idSet=new Set();
   let conditionIds=0;
+  let conditionDiscoveryProfiles=[];
   let conditionDiscoveryComplete=false;
 
   for(const [index,range] of ranges.entries()){
@@ -1010,12 +1028,14 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     // 변경내역 API만으로 놓칠 수 있는 오늘 주문을 조건형 주문조회로 한 번 더 대조합니다.
     // 선물 수락 전 주문은 상세 정규화 단계에서 계속 집계 제외됩니다.
     try{
+      const dayFrom=kstStartOfDay(now);
       const discovered=await retry(
-        ()=>conditionProductOrderIds(token,from,now),
+        ()=>conditionProductOrderIds(token,dayFrom,now),
         '스마트스토어 오늘 주문 전체대조'
       );
-      discovered.forEach(id=>idSet.add(String(id)));
-      conditionIds=discovered.length;
+      discovered.ids.forEach(id=>idSet.add(String(id)));
+      conditionIds=discovered.ids.length;
+      conditionDiscoveryProfiles=discovered.profiles;
       conditionDiscoveryComplete=true;
     }catch(error){
       console.warn('스마트스토어 오늘 주문 전체대조 건너뜀:',error?.message||error);
@@ -1034,7 +1054,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     return {
       connected:true,found:0,created:0,existing:0,statusChanged:0,
       createdOrders:[],createdClaims:[],rangeCount:ranges.length,
-      conditionIds,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
+      conditionIds,conditionDiscoveryProfiles,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
       claimReconcile:{cancel:0,return:0,exchange:0},
       directAudit:{
         authority:'naver-commerce-order-api',
@@ -1076,7 +1096,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     createdOrders:saved.createdDocuments.filter(item=>item.eventType==='order'&&item.status==='new'),
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
     rangeCount:ranges.length,
-    conditionIds,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
+    conditionIds,conditionDiscoveryProfiles,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
     quota:{
       cloudReads:Number(saved.quota?.cloudReads||0)+claimQuota.cloudReads,
       cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,
@@ -1096,7 +1116,15 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
         exchange:documents.filter(item=>item.eventType==='exchange'&&item.activeState!==false).length
       },
       missingAmount:documents.filter(item=>item.eventType==='order'&&item.giftPending!==true&&Number(item.amount||0)<=0).length,
-      conditionDiscoveryComplete:Boolean(!reconcile||conditionDiscoveryComplete)
+      conditionIds,
+      conditionDiscoveryProfiles,
+      conditionDiscoveryComplete:Boolean(!reconcile||conditionDiscoveryComplete),
+      orderLines:documents.filter(item=>item.eventType==='order').slice(0,300).map(item=>({
+        id:item.id,orderNo:item.orderNo,line:item.productOrderId,
+        datetime:item.datetime,amount:Number(item.amount||0),qty:Number(item.qty||0),
+        status:item.status,sourceStatus:item.sourceStatus,
+        giftPending:Boolean(item.giftPending),excludedFromMetrics:Boolean(item.excludedFromMetrics)
+      }))
     }
   };
 }

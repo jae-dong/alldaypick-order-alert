@@ -92,7 +92,9 @@ function rowIdentity(row = {}) {
     first(row,['ordNo','orderNo','orderNumber']),
     first(row,['ordPrdSeq','orderProductSequence','prdSeq']),
     first(row,['prdNo','productNo']),
-    first(row,['prdNm','productName','prdName','itemName'])
+    first(row,['sellerPrdCd','sellerProductCode']),
+    first(row,['prdNm','productName','prdName','itemName']),
+    first(row,['optionNm','optionName','optNm','prdOptNm','selPrc'])
   ].join('|');
 }
 
@@ -381,12 +383,18 @@ function normalizeOrder(row) {
     'selPrc','salePrice','unitPrice','prdPrc','sellPrc','ordPrdPrc','itemPrice'
   ]));
 
+  // 상품주문 행 금액을 우선합니다. ordPayAmt/totalAmount는 주문 전체금액이
+  // 각 상품행에 반복될 수 있으므로 마지막 보조값으로만 사용합니다.
+  const lineAmount = number(first(row, [
+    'prdAmt','orderProductAmount','saleAmt','ordPrdAmt','itemAmount','productAmount'
+  ]));
   const amount =
+    lineAmount ||
+    unitPrice * quantity ||
     number(first(row, [
       'ordAmt','ordPayAmt','paymentAmount','totalAmount','payAmt',
-      'realPayAmt','totPayAmt','prdAmt','orderProductAmount','saleAmt'
-    ])) ||
-    unitPrice * quantity;
+      'realPayAmt','totPayAmt'
+    ]));
 
   const datetime = parseDate(
     first(row, [
@@ -417,6 +425,9 @@ function normalizeOrder(row) {
     unitPrice,
     orderTotalAmount:number(first(row,['ordPayAmt','totalAmount','payAmt','realPayAmt','totPayAmt'])),
     datetime,
+    metricDate:datetime,
+    orderDate:datetime,
+    paymentDate:datetime,
     status: 'new',
     statusLabel: '신규주문',
     sourceStatus: 'COMPLETE',
@@ -503,7 +514,12 @@ export async function syncElevenstOrders(
       missingAmount:orders.filter(item=>Number(item.amount||0)<=0).length,
       checkedFrom:from.toISOString(),
       checkedTo:now.toISOString(),
-      complete:true
+      complete:true,
+      orderLines:orders.slice(0,200).map(item=>({
+        id:item.id,orderNo:item.orderNo,line:item.orderProductSequence,
+        datetime:item.datetime,amount:Number(item.amount||0),qty:Number(item.qty||0),
+        status:item.status,sourceStatus:item.sourceStatus
+      }))
     }
   };
 }
@@ -824,10 +840,38 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
           checked+=1;
           const mapped=mapElevenOrderStatus(row,previous);
           const lineId=String(ordPrdSeq||previous.orderProductSequence||previous.productNo||'item');
+          const rowQty=number(first(row,['ordQty','qty','quantity']))||Number(previous.qty||1);
+          const rowUnitPrice=number(first(row,[
+            'selPrc','salePrice','unitPrice','prdPrc','sellPrc','ordPrdPrc','itemPrice'
+          ]));
+          const rowLineAmount=number(first(row,[
+            'prdAmt','orderProductAmount','saleAmt','ordPrdAmt','itemAmount','productAmount'
+          ]));
+          const rowTotalAmount=number(first(row,[
+            'ordAmt','ordPayAmt','paymentAmount','totalAmount','payAmt','realPayAmt','totPayAmt'
+          ]));
+          const resolvedAmount=
+            rowLineAmount||
+            rowUnitPrice*Math.max(1,rowQty)||
+            Number(previous.amount||0)||
+            rowTotalAmount;
+          const rawMetricDate=first(row,[
+            'ordDt','payDt','orderDate','paymentDate','createdAt'
+          ]);
+          const resolvedMetricDate=rawMetricDate
+            ?parseDate(rawMetricDate)
+            :(previous.metricDate||previous.orderDate||previous.paymentDate||previous.datetime||'');
+
           documents.push({
             ...previous,
             id:previous.id,eventType:'order',
             ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:'order'}),
+            product:first(row,['prdNm','productName','prdName','itemName'])||previous.product||'11번가 상품',
+            option:first(row,['optionNm','optionName','optNm','prdOptNm','selPrc'])||previous.option||'',
+            qty:Math.max(1,rowQty),
+            unitPrice:rowUnitPrice||Number(previous.unitPrice||0),
+            amount:resolvedAmount,
+            orderTotalAmount:rowTotalAmount||Number(previous.orderTotalAmount||0),
             status:mapped.status,statusLabel:mapped.statusLabel,
             sourceStatus:mapped.sourceStatus,
             activeState:['new','shipping_wait'].includes(mapped.status),
@@ -836,6 +880,10 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
             apiVerifiedOpen:['new','shipping_wait'].includes(mapped.status),
             invoiceNumber:first(row,['invoiceNo','trackingNumber','waybillNo','waybillNo'])||previous.invoiceNumber||'',
             deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
+            metricDate:resolvedMetricDate,
+            orderDate:previous.orderDate||resolvedMetricDate,
+            paymentDate:previous.paymentDate||resolvedMetricDate,
+            datetime:previous.datetime||resolvedMetricDate,
             statusInferred:Boolean(mapped.inferred),
             sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
           });
@@ -939,7 +987,13 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
         cancel:unique.filter(item=>item.eventType==='cancel'&&item.activeState!==false).length,
         return:unique.filter(item=>item.eventType==='return'&&item.activeState!==false).length,
         exchange:unique.filter(item=>item.eventType==='exchange'&&item.activeState!==false).length
-      }
+      },
+      orderLines:unique.filter(item=>item.eventType==='order').slice(0,300).map(item=>({
+        id:item.id,orderNo:item.orderNo,line:item.orderProductSequence,
+        datetime:item.metricDate||item.orderDate||item.paymentDate||item.datetime,
+        amount:Number(item.amount||0),qty:Number(item.qty||0),
+        status:item.status,sourceStatus:item.sourceStatus
+      }))
     }
   };
 }

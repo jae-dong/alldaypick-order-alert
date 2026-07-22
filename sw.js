@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.15-20260722-product-order-count-v1';
+const CACHE='alldaypick-final-v7.7.16-20260722-daily-order-amount-recovery-v1';
 const STATIC=[
   './',
   './index.html',

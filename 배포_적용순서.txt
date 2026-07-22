@@ -1,29 +1,25 @@
-FINAL v7.7.15 적용 방법
+FINAL v7.7.16 적용 방법
 
 1. 실행 중인 검은색 PC 수집기 창을 닫습니다.
-2. 받은 ZIP을 별도의 새 폴더에 압축 해제합니다.
+2. ZIP 파일을 새 폴더에 압축 해제합니다.
 3. GitHub Desktop에서 alldaypick-order-alert 저장소를 선택합니다.
-4. Repository → Show in Explorer를 눌러 기존 프로젝트 폴더를 엽니다.
-5. 압축을 푼 폴더 안의 파일을 기존 프로젝트 폴더에 모두 복사하고 덮어씁니다.
-6. 아래 기존 항목은 삭제하지 않습니다.
-   - .git
-   - backend\.env.local
-   - backend\firebase-service-account.json
+4. Repository > Show in Explorer를 눌러 실제 저장소 폴더를 엽니다.
+5. 압축 해제 폴더의 모든 내용을 저장소 폴더에 복사하고 덮어씁니다.
+6. 아래 항목은 삭제하거나 교체하지 않습니다.
+   .git
+   backend\.env.local
+   backend\firebase-service-account.json
 7. GitHub Desktop Summary에 아래 문구를 입력합니다.
-   FINAL v7.7.15 발송처리 상품주문 건수 기준
+   FINAL v7.7.16 오늘 상품주문·금액 누락 복구
 8. Commit to main을 누릅니다.
 9. Push origin을 누릅니다.
 10. Render에서 최신 커밋 배포 성공을 확인합니다.
-11. 기존 프로젝트 폴더의 START_AGENT.cmd를 실행합니다.
+11. 기존 저장소 폴더의 START_AGENT.cmd를 실행합니다.
 12. 아래 시작 문구를 확인합니다.
-    Starting ALLDAYPICK order agent v7.7.15 PRODUCT ORDER COUNT...
-13. 쿠팡·스마트스토어·11번가·롯데온 동기화 완료까지 기다립니다.
-14. 검은 창을 닫지 않고 계속 유지합니다.
-15. 웹앱에서 Ctrl+F5로 강력 새로고침합니다.
-16. 웹 상단 FINAL v7.7.15를 확인합니다.
-17. 마켓직접검증_결과열기.cmd를 실행해 API 직접조회 결과를 확인합니다.
-
-주의
-- G마켓·옥션은 API 승인 전이므로 미연동·집계 제외가 정상입니다.
-- 스마트스토어 선물하기 수락 전 주문이 신규 0건으로 제외되는 것은 정상입니다.
-- 문의 API가 429 제한에 걸리면 직접검증 대기로 표시되며, 반복 재시작하지 마십시오.
+    Starting ALLDAYPICK order agent v7.7.16 DAILY ORDER AMOUNT RECOVERY...
+13. 시작 동기화가 끝난 뒤 검은 창을 계속 켜 둡니다.
+14. 웹앱에서 Ctrl+F5로 강력 새로고침합니다.
+15. 상단 버전 FINAL v7.7.16을 확인합니다.
+16. 오늘 주문은 상품주문 행 기준으로 확인합니다.
+17. G마켓·옥션과 스마트스토어 선물하기 미수락 주문은 비교에서 제외합니다.
+18. 마켓직접검증_결과열기.cmd 또는 OPEN_MARKET_AUDIT.cmd를 실행해 직접검증 파일을 확인합니다.

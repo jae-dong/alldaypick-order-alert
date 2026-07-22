@@ -89,8 +89,19 @@ function normalize(sheets,requestedStatus){
     const [status,statusLabel]=MAP[sourceStatus]||[sourceStatus.toLowerCase(),sourceStatus];
     const items=Array.isArray(sheet.orderItems)?sheet.orderItems:[];
     for(const item of items){
-      const qty=Math.max(0,Number(item.shippingCount||0)-Number(item.cancelCount||0)-Number(item.holdCountForCancel||0));
+      const orderedQty=Math.max(1,Number(item.shippingCount||item.quantity||1));
+      const qty=Math.max(0,orderedQty-Number(item.cancelCount||0)-Number(item.holdCountForCancel||0));
       if(qty<=0) continue;
+      const itemOrderTotal=
+        money(item.orderPrice)||money(item.totalPrice)||
+        money(item.salesPrice)*orderedQty||
+        money(item.discountedPrice)*orderedQty||
+        money(item.unitPrice)*orderedQty;
+      const activeItemAmount=Math.round(
+        itemOrderTotal>0
+          ?itemOrderTotal*(qty/orderedQty)
+          :(money(item.salesPrice)||money(item.discountedPrice)||money(item.unitPrice))*qty
+      );
       const orderNo=String(sheet.orderId||'');
       const lineId=String(item.vendorItemId||item.sellerProductId||item.orderItemId||'item');
       if(!orderNo) continue;
@@ -108,15 +119,19 @@ function normalize(sheets,requestedStatus){
         phone:sheet.receiver?.safeNumber||sheet.receiver?.receiverNumber||'',
         address:[sheet.receiver?.addr1,sheet.receiver?.addr2].filter(Boolean).join(' '),
         deliveryMemo:sheet.deliveryMessage||'',
-        amount:Math.round(
-          money(item.orderPrice)||money(item.totalPrice)||money(item.salesPrice)||
-          money(item.discountedPrice)||money(item.unitPrice)*qty
+        amount:activeItemAmount,
+        unitPrice:Math.round(
+          money(item.unitPrice)||money(item.salesPrice)||money(item.discountedPrice)||
+          itemOrderTotal/orderedQty
         ),
-        unitPrice:Math.round(money(item.unitPrice)||money(item.salesPrice)||money(item.orderPrice)/Math.max(1,qty)),
+        originalQty:orderedQty,
+        cancelCount:Number(item.cancelCount||0),
+        holdCountForCancel:Number(item.holdCountForCancel||0),
         orderTotalAmount:Math.round(
           money(sheet.orderPrice)||money(sheet.totalPrice)||money(sheet.paymentAmount)||0
         ),
         datetime:sheet.orderedAt||sheet.paidAt||new Date().toISOString(),
+        metricDate:sheet.orderedAt||sheet.paidAt||'',
         orderDate:sheet.orderedAt||'',paymentDate:sheet.paidAt||'',
         status,statusLabel,sourceStatus,activeState:true,
         stateAuthority:'coupang-orders-api',
@@ -200,7 +215,12 @@ export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,re
       complete:Object.values(completeness).every(Boolean),
       completeness:{...completeness},
       normalizedRows:unique.length,
-      missingAmount:unique.filter(item=>Number(item.amount||0)<=0).length
+      missingAmount:unique.filter(item=>Number(item.amount||0)<=0).length,
+      orderLines:unique.slice(0,300).map(item=>({
+        id:item.id,orderNo:item.orderNo,line:item.vendorItemId,
+        datetime:item.datetime,amount:Number(item.amount||0),qty:Number(item.qty||0),
+        status:item.status,sourceStatus:item.sourceStatus
+      }))
     }
   };
 }

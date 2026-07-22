@@ -161,8 +161,9 @@ function scalarContext(node, inherited = {}) {
     'ordDtlSeq','ordItemSeq','itemSeq','prdSeq','orderItemSequence','orderDetailSequence',
     'spdNo','prdNo','productNo','itemNo','sitmNo','productId','skuNo',
     'spdNm','prdNm','productName','itemName','ordItemNm','sitmNm','productTitle',
-    'ordDttm','ordDt','payDttm','ifDttm','ifCreDttm','ifCrtDttm','regDttm','createdAt',
-    'orderDateTime','paymentDateTime','ordrNm','ordNm','buyerName','receiverName','rcvrNm',
+    'ordDttm','ordDt','ordCrtDttm','ordAcptDttm','orderDttm','payDttm','payCmptDttm',
+    'paymentDttm','ifDttm','ifCreDttm','ifCrtDttm','regDttm','createdAt',
+    'orderDateTime','paymentDateTime','saleDttm','reqDttm','ordrNm','ordNm','buyerName','receiverName','rcvrNm',
     'ordStsCd','ordStsNm','dlvStsCd','dlvStsNm','procStsCd','procStsNm',
     'ifTypCd','ifTypNm','workTypCd','workTypNm','dvProcTypCd','dvProcTypNm',
     'ordDtlStsCd','ordDtlStsNm','dtlDlvStsCd','dtlDlvStsNm','deliveryStatus',
@@ -404,26 +405,28 @@ function normalizeOrder(row, sellerId) {
     ])
   );
 
+  const lineAmount=numberValue(first(row,[
+    'orderProductAmount','saleAmt','itemAmount','productAmount','ordDtlAmt','sitmAmt','prdAmt'
+  ]));
   const amount =
+    lineAmount ||
+    unitPrice * qty ||
     numberValue(
       first(row, [
-        'realPayAmt',
-        'payAmt',
-        'ordAmt',
-        'totalAmount',
-        'paymentAmount',
-        'totPayAmt',
-        'ordPayAmt',
-        'saleAmt',
-        'orderProductAmount'
+        'realPayAmt','payAmt','ordAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt'
       ])
-    ) ||
-    unitPrice * qty;
+    );
 
   const claimId=first(row,['claimNo','claimId','returnNo','exchangeNo','cancelNo'])||`${orderNo}-${idPart}-${mapped.eventType}`;
   const documentId=mapped.eventType==='order'
     ?`lotteon-${orderNo}-${idPart}`
     :`lotteon-${mapped.eventType}-${claimId}`;
+
+  const metricDate=parseDate(first(row,[
+    'payDttm','payCmptDttm','paymentDttm','paymentDateTime',
+    'ordDttm','ordDt','ordCrtDttm','ordAcptDttm','orderDttm','orderDateTime',
+    'ifCreDttm','ifCrtDttm','regDttm','createdAt','ifDttm'
+  ]));
 
   const document={
     id: documentId,
@@ -501,20 +504,14 @@ function normalizeOrder(row, sellerId) {
     amount,
     unitPrice,
     orderTotalAmount:numberValue(first(row,['realPayAmt','payAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt'])),
-    datetime: parseDate(
-      first(row, [
-        'ordDttm',
-        'ordDt',
-        'payDttm',
-        'ifDttm',
-        'regDttm',
-        'createdAt',
-        'ifCreDttm',
-        'ifCrtDttm',
-        'ordCrtDttm',
-        'orderDateTime'
-      ])
-    ),
+    datetime:metricDate,
+    metricDate,
+    orderDate:parseDate(first(row,[
+      'ordDttm','ordDt','ordCrtDttm','ordAcptDttm','orderDttm','orderDateTime'
+    ]))||metricDate,
+    paymentDate:parseDate(first(row,[
+      'payDttm','payCmptDttm','paymentDttm','paymentDateTime'
+    ]))||metricDate,
     deliveryCompanyName: first(row, [
       'dlvCpnNm',
       'deliveryCompanyName',
@@ -845,7 +842,7 @@ function mergeOrderFields(base={},override={}){
   const merged={...base,...override};
   const preferBaseWhenMissing=[
     'product','option','imageUrl','buyer','phone','address','deliveryMemo',
-    'amount','unitPrice','orderTotalAmount','qty','datetime','spdNo','sitmNo',
+    'amount','unitPrice','orderTotalAmount','qty','datetime','metricDate','orderDate','paymentDate','spdNo','sitmNo',
     'productNo','itemNo','orderProductSequence'
   ];
   for(const key of preferBaseWhenMissing){
@@ -985,7 +982,12 @@ export async function syncLotteonOrders(
       },
       missingAmount:orders.filter(item=>item.eventType==='order'&&Number(item.amount||0)<=0).length,
       complete:Boolean(instructionComplete&&progressComplete),
-      queryErrors
+      queryErrors,
+      orderLines:orders.filter(item=>item.eventType==='order').slice(0,200).map(item=>({
+        id:item.id,orderNo:item.orderNo,line:item.orderProductSequence||item.sitmNo||item.itemNo,
+        datetime:item.datetime,amount:Number(item.amount||0),qty:Number(item.qty||0),
+        status:item.status,sourceStatus:item.sourceStatus,feed:item.sourceFeed
+      }))
     }
   };
 }

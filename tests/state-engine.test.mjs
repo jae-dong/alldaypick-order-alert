@@ -218,3 +218,23 @@ assert.equal(E.terminalClaim({source:'coupang',market:'쿠팡',eventType:'exchan
   assert.equal(E.salesGroups(units,integrations).length,2,'sales amount grouping stays at marketplace order level');
   assert.equal(E.salesUnits(units,integrations).length,3,'order count uses two Coupang product-order lines sharing one invoice plus one Smartstore product order');
 }
+
+// Product-line amounts win over a repeated order total so combined shipping is not overcounted.
+{
+  const lines=[
+    {source:'smartstore',market:'스마트스토어',orderNo:'AMT-1',productOrderId:'P1',eventType:'order',status:'delivered',activeState:false,amount:12000,orderTotalAmount:30000,metricDate:'2026-07-22T11:00:00+09:00'},
+    {source:'smartstore',market:'스마트스토어',orderNo:'AMT-1',productOrderId:'P2',eventType:'order',status:'delivered',activeState:false,amount:18000,orderTotalAmount:30000,metricDate:'2026-07-22T11:01:00+09:00'}
+  ];
+  assert.equal(E.salesUnits(lines,integrations).length,2);
+  assert.equal(E.salesGroups(lines,integrations)[0].amount,30000);
+  assert.equal(E.salesGroups(lines,integrations)[0].day,'2026-07-22');
+}
+
+// A repeated order total is used once only when the API provides no line amounts.
+{
+  const lines=[
+    {source:'lotteon',market:'롯데온',orderNo:'AMT-2',orderItemId:'L1',eventType:'order',status:'delivered',activeState:false,amount:0,orderTotalAmount:39250,metricDate:'2026-07-22T12:00:00+09:00'},
+    {source:'lotteon',market:'롯데온',orderNo:'AMT-2',orderItemId:'L2',eventType:'order',status:'delivered',activeState:false,amount:0,orderTotalAmount:39250,metricDate:'2026-07-22T12:01:00+09:00'}
+  ];
+  assert.equal(E.salesGroups(lines,integrations)[0].amount,39250);
+}

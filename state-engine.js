@@ -249,13 +249,20 @@
     const groups=new Map();
     for(const line of lines){
       const key=orderKey(line);
-      if(!groups.has(key))groups.set(key,{key,market:market(line),orderNo:orderNo(line),lines:[],qty:0,amount:0,explicitTotal:0,representative:line});
+      if(!groups.has(key))groups.set(key,{key,market:market(line),orderNo:orderNo(line),lines:[],qty:0,lineAmount:0,explicitTotal:0,representative:line});
       const group=groups.get(key);
       group.lines.push(line);
       group.qty+=Number(line?.qty||1);
+
+      // 오늘/월 매출은 상품주문 행의 실제 금액을 먼저 합산합니다.
+      // 주문 전체금액이 각 상품행에 반복되는 API가 많아 orderTotalAmount를 우선하면
+      // 합배송/복수상품 주문에서 과다 집계될 수 있습니다. 상품행 금액이 하나도 없을 때만
+      // 주문 전체금액을 보조값으로 사용합니다.
+      const lineValue=lineAmount(line);
+      if(lineValue>0)group.lineAmount+=lineValue;
       const explicit=explicitTotal(line);
       if(explicit>0)group.explicitTotal=Math.max(group.explicitTotal,explicit);
-      else group.amount+=lineAmount(line);
+
       const current=group.representative;
       const lineRank=statusRank(status(line));
       const currentRank=statusRank(status(current));
@@ -269,7 +276,7 @@
         ...representative,
         ...group,
         representative,
-        amount:group.explicitTotal||group.amount,
+        amount:group.lineAmount||group.explicitTotal,
         status:status(representative),
         eventType:'order',
         workflowType:'order'
@@ -336,7 +343,11 @@
     return out;
   }
   function orderDate(item){
-    const values=[item?.orderDate,item?.orderAt,item?.orderedAt,item?.paymentDate,item?.paymentAt,item?.datetime,item?.createdAt];
+    const values=[
+      item?.metricDate,item?.businessDate,item?.orderDate,item?.orderAt,item?.orderedAt,
+      item?.paymentDate,item?.paymentAt,item?.paidAt,item?.orderDateTime,
+      item?.paymentDateTime,item?.datetime,item?.createdAt
+    ];
     for(const value of values){const n=time(value);if(n)return new Date(n);}
     return new Date(0);
   }
