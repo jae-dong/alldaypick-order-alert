@@ -1,0 +1,16 @@
+FINAL v7.7.12 적용 방법
+
+1. 실행 중인 검은색 PC 수집기 창을 닫습니다.
+2. 압축파일을 새 폴더에 압축 해제합니다.
+3. GitHub Desktop에서 alldaypick-order-alert 저장소를 선택합니다.
+4. Repository → Show in Explorer를 눌러 기존 프로젝트 폴더를 엽니다.
+5. 압축 해제 폴더 안의 모든 파일을 기존 프로젝트 폴더에 복사하고 모두 덮어씁니다.
+6. .git, backend\.env.local, backend\firebase-service-account.json은 삭제하지 않습니다.
+7. GitHub Desktop Summary: FINAL v7.7.12 전체 텔레그램 썸네일·TOP20·금액연동·가독성 확대
+8. Commit to main → Push origin을 누릅니다.
+9. Render 배포 완료를 확인합니다.
+10. START_AGENT.cmd를 실행합니다.
+11. 검은 창에 Starting ALLDAYPICK order agent v7.7.12 TELEGRAM PHOTO TOP20 READABILITY...가 표시되는지 확인합니다.
+12. 웹앱을 Ctrl+F5로 강력 새로고침하고 FINAL v7.7.12를 확인합니다.
+13. 검은 창은 계속 켜 둡니다.
+14. 다음 신규주문·취소·반품·교환·문의에서 쇼핑몰명과 썸네일 전송 성공 로그를 확인합니다.

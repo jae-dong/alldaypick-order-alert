@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ALLDAYPICK ORDER AGENT v7.7.11 STATUS RECONCILIATION
+title ALLDAYPICK ORDER AGENT v7.7.12 TELEGRAM PHOTO TOP20 READABILITY
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -92,7 +92,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.11 STATUS RECONCILIATION...
+echo Starting ALLDAYPICK order agent v7.7.12 TELEGRAM PHOTO TOP20 READABILITY...
 echo Keep this window open.
 echo.
 call npm run agent

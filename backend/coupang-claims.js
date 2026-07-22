@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { enrichWithParentOrderContext } from './parent-order-context.js';
 
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -239,8 +240,9 @@ async function fetchExchangeRows(config,days=31,maxPages=10){
 }
 
 async function saveAndReconcile(db,eventType,documents,{from,complete,reconcile}){
-  const saved=await upsertDocuments(db,documents);
-  const open=documents.filter(item=>item.activeState!==false);
+  const enriched=await enrichWithParentOrderContext(db,documents,{source:'coupang'});
+  const saved=await upsertDocuments(db,enriched);
+  const open=enriched.filter(item=>item.activeState!==false);
   const result=reconcile?await reconcileOpenDocuments(db,{
     source:'coupang',eventType,currentIds:open.map(item=>item.id),from,complete,
     reason:'쿠팡 현재 미처리 목록에서 제외됨'

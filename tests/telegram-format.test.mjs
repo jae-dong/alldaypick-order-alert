@@ -50,4 +50,15 @@ const body=telegramOrderBody({
 assert.match(body,/🕒 주문일시: 2026-07-19 18:22/);
 assert.match(body,/🧾 주문번호: ORDER-1/);
 
+
+const fallbackBody=telegramOrderBody({
+  eventType:'order',
+  product:'금액 대체 상품',
+  qty:3,
+  amount:0,
+  orderTotalAmount:0,
+  unitPrice:7200
+});
+assert.match(fallbackBody,/💰 금액: 21,600원/,'Telegram amount must fall back to unit price × quantity');
+
 console.log('telegram-format tests passed');

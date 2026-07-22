@@ -108,8 +108,14 @@ function normalize(sheets,requestedStatus){
         phone:sheet.receiver?.safeNumber||sheet.receiver?.receiverNumber||'',
         address:[sheet.receiver?.addr1,sheet.receiver?.addr2].filter(Boolean).join(' '),
         deliveryMemo:sheet.deliveryMessage||'',
-        amount:Math.round(money(item.orderPrice)),
-        orderTotalAmount:Math.round(money(sheet.orderPrice||sheet.totalPrice||0)),
+        amount:Math.round(
+          money(item.orderPrice)||money(item.totalPrice)||money(item.salesPrice)||
+          money(item.discountedPrice)||money(item.unitPrice)*qty
+        ),
+        unitPrice:Math.round(money(item.unitPrice)||money(item.salesPrice)||money(item.orderPrice)/Math.max(1,qty)),
+        orderTotalAmount:Math.round(
+          money(sheet.orderPrice)||money(sheet.totalPrice)||money(sheet.paymentAmount)||0
+        ),
         datetime:sheet.orderedAt||sheet.paidAt||new Date().toISOString(),
         orderDate:sheet.orderedAt||'',paymentDate:sheet.paidAt||'',
         status,statusLabel,sourceStatus,activeState:true,

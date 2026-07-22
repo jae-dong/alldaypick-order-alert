@@ -208,6 +208,38 @@
     );
   }
   function statusRank(value){return {new:1,shipping_wait:2,delivering:3,delivered:4,purchase_confirmed:5,cancelled:6,returned:6}[value]||0;}
+  function moneyNumber(value){
+    if(value==null||value==='')return 0;
+    if(typeof value==='object'){
+      const amount=Number(value.units||0)+Number(value.nanos||0)/1e9;
+      return Number.isFinite(amount)&&amount>0?amount:0;
+    }
+    const amount=Number(String(value).replace(/[^0-9.-]/g,''));
+    return Number.isFinite(amount)&&amount>0?amount:0;
+  }
+  function firstPositive(values){
+    for(const value of values){const amount=moneyNumber(value);if(amount>0)return amount;}
+    return 0;
+  }
+  function lineAmount(line){
+    const direct=firstPositive([
+      line?.amount,line?.lineAmount,line?.lineTotalAmount,line?.itemAmount,
+      line?.productAmount,line?.salePrice,line?.totalProductAmount,
+      line?.ordAmt,line?.prdAmt,line?.saleAmt
+    ]);
+    if(direct>0)return direct;
+    const unit=firstPositive([
+      line?.unitPrice,line?.itemPrice,line?.orderItemUnitPrice,
+      line?.salePrc,line?.sellPrc,line?.selPrc,line?.price
+    ]);
+    return unit*Math.max(1,Number(line?.qty||line?.quantity||line?.ordQty||1));
+  }
+  function explicitTotal(line){
+    return firstPositive([
+      line?.orderTotalAmount,line?.totalAmount,line?.paymentAmount,
+      line?.totalPaymentAmount,line?.realPayAmt,line?.ordPayAmt,line?.payAmt
+    ]);
+  }
   function groupOrders(lines){
     const groups=new Map();
     for(const line of lines){
@@ -216,9 +248,9 @@
       const group=groups.get(key);
       group.lines.push(line);
       group.qty+=Number(line?.qty||1);
-      const explicit=Number(line?.orderTotalAmount||line?.totalAmount||line?.paymentAmount||0);
-      if(Number.isFinite(explicit)&&explicit>0)group.explicitTotal=Math.max(group.explicitTotal,explicit);
-      else group.amount+=Math.max(0,Number(line?.amount||line?.salePrice||0));
+      const explicit=explicitTotal(line);
+      if(explicit>0)group.explicitTotal=Math.max(group.explicitTotal,explicit);
+      else group.amount+=lineAmount(line);
       const current=group.representative;
       const lineRank=statusRank(status(line));
       const currentRank=statusRank(status(current));

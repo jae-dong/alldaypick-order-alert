@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.11-20260722-status-reconcile-v1';
+const CACHE='alldaypick-final-v7.7.12-20260722-telegram-photo-top20-readability-v1';
 const STATIC=[
   './',
   './index.html',

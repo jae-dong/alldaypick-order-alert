@@ -377,18 +377,16 @@ function normalizeOrder(row) {
     first(row, ['ordQty', 'qty', 'quantity'])
   ) || 1;
 
+  const unitPrice=number(first(row, [
+    'selPrc','salePrice','unitPrice','prdPrc','sellPrc','ordPrdPrc','itemPrice'
+  ]));
+
   const amount =
     number(first(row, [
-      'ordAmt',
-      'ordPayAmt',
-      'paymentAmount',
-      'totalAmount'
+      'ordAmt','ordPayAmt','paymentAmount','totalAmount','payAmt',
+      'realPayAmt','totPayAmt','prdAmt','orderProductAmount','saleAmt'
     ])) ||
-    number(first(row, [
-      'selPrc',
-      'salePrice',
-      'unitPrice'
-    ])) * quantity;
+    unitPrice * quantity;
 
   const datetime = parseDate(
     first(row, [
@@ -416,6 +414,8 @@ function normalizeOrder(row) {
     address,
     deliveryMemo,
     amount,
+    unitPrice,
+    orderTotalAmount:number(first(row,['ordPayAmt','totalAmount','payAmt','realPayAmt','totPayAmt'])),
     datetime,
     status: 'new',
     statusLabel: '신규주문',

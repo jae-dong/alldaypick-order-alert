@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { workflowFields } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { enrichWithParentOrderContext } from './parent-order-context.js';
 
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function signedDate(){return new Date().toISOString().split('.')[0].replaceAll(':','').replaceAll('-','').slice(2)+'Z';}
@@ -125,9 +126,10 @@ export async function syncCoupangInquiries(db,config,reconcile=false){
   }
 
   const unique=[...new Map(current.map(item=>[item.id,item])).values()];
-  const saved=await upsertDocuments(db,unique);
+  const enriched=await enrichWithParentOrderContext(db,unique,{source:'coupang'});
+  const saved=await upsertDocuments(db,enriched);
   const reconciled=reconcile?await reconcileOpenDocuments(db,{
-    source:'coupang',eventType:'inquiry',currentIds:unique.map(item=>item.id),from,complete,
+    source:'coupang',eventType:'inquiry',currentIds:enriched.map(item=>item.id),from,complete,
     reason:'쿠팡 문의 답변완료 또는 현재 미답변 목록에서 제외됨'
   }):{deactivated:0,skipped:true};
   return {...saved,createdClaims:saved.createdDocuments,changedClaims:saved.changedDocuments,deactivated:reconciled.deactivated||0,complete};

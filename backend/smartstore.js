@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
+import { enrichWithParentOrderContext } from './parent-order-context.js';
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -364,7 +365,13 @@ function normalizeDetail(row){
     phone:order.ordererTel||order.ordererTelephone||productOrder.shippingAddress?.tel1||productOrder.shippingAddress?.telephone1||productOrder.shippingAddress?.receiverTel||'',
     address:[productOrder.shippingAddress?.baseAddress,productOrder.shippingAddress?.detailedAddress].filter(Boolean).join(' '),
     deliveryMemo:productOrder.shippingAddress?.deliveryMemo||productOrder.deliveryMemo||'',
-    amount:Number(productOrder.totalPaymentAmount||productOrder.totalProductAmount||Number(productOrder.unitPrice||0)*Number(productOrder.quantity||1)||0),
+    amount:Number(
+      productOrder.totalPaymentAmount||productOrder.totalProductAmount||
+      productOrder.productOrderAmount||productOrder.paymentAmount||
+      Number(productOrder.unitPrice||productOrder.salePrice||0)*Number(productOrder.quantity||1)||0
+    ),
+    unitPrice:Number(productOrder.unitPrice||productOrder.salePrice||0),
+    totalPaymentAmount:Number(productOrder.totalPaymentAmount||productOrder.paymentAmount||0),
     datetime:order.paymentDate||productOrder.paymentDate||productOrder.orderDate||new Date().toISOString(),
     orderDate:order.orderDate||productOrder.orderDate||'',paymentDate:order.paymentDate||productOrder.paymentDate||'',
     invoiceNumber:productOrder.trackingNumber||productOrder.invoiceNumber||'',
@@ -762,11 +769,12 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   }
 
   const unique=[...new Map(documents.map(item=>[item.id,item])).values()];
-  const saved=await upsertDocuments(db,unique);
+  const enriched=await enrichWithParentOrderContext(db,unique,{source:'smartstore'});
+  const saved=await upsertDocuments(db,enriched);
   const reconciled=reconcile&&complete
     ?await reconcileOpenDocuments(db,{
         source:'smartstore',eventType:'inquiry',
-        currentIds:unique.filter(item=>item.activeState!==false).map(item=>item.id),
+        currentIds:enriched.filter(item=>item.activeState!==false).map(item=>item.id),
         from,complete:true,
         reason:'스마트스토어 답변완료 또는 현재 미답변 목록에서 제외됨'
       })

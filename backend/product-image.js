@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 // 이전 버전에서 "이미지 없음"으로 저장된 음수 캐시를 재사용하지 않습니다.
-const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v9.json');
+const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v10.json');
 const POSITIVE_TTL_MS=30*24*60*60*1000;
 const NEGATIVE_TTL_MS=30*60*1000;
 let cache=null;

@@ -401,7 +401,9 @@ function normalizeOrder(row, sellerId) {
       'salePrc',
       'sellPrc',
       'unitPrice',
-      'itemPrice'
+      'itemPrice',
+      'ordPrc',
+      'prdPrc'
     ])
   );
 
@@ -412,7 +414,11 @@ function normalizeOrder(row, sellerId) {
         'payAmt',
         'ordAmt',
         'totalAmount',
-        'paymentAmount'
+        'paymentAmount',
+        'totPayAmt',
+        'ordPayAmt',
+        'saleAmt',
+        'orderProductAmount'
       ])
     ) ||
     unitPrice * qty;
@@ -510,6 +516,8 @@ function normalizeOrder(row, sellerId) {
       'memo'
     ]),
     amount,
+    unitPrice,
+    orderTotalAmount:numberValue(first(row,['realPayAmt','payAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt'])),
     datetime: parseDate(
       first(row, [
         'ordDttm',

@@ -152,3 +152,23 @@ assert.equal(E.salesGroups(giftAccepted,integrations).length,1);
   const claims=E.openClaims([oldReceipt,recentReceipt],{coupang:{connected:true}});
   assert.equal(JSON.stringify(claims.map(item=>item.id)),JSON.stringify(['recent-coupang-exchange']),'Coupang RECEIPT older than the official 7-day current window must not remain in the current queue');
 }
+
+// A zero-valued total alias must not hide a valid line amount.
+{
+  const priced=[{
+    source:'coupang',market:'쿠팡',orderNo:'PRICE-1',vendorItemId:'P1',
+    eventType:'order',status:'new',activeState:true,
+    orderTotalAmount:0,amount:15900,qty:1,datetime:'2026-07-22T09:00:00+09:00'
+  }];
+  assert.equal(E.salesGroups(priced,integrations)[0].amount,15900);
+}
+
+// When only a unit price exists, the engine must calculate unit price × quantity.
+{
+  const priced=[{
+    source:'elevenst',market:'11번가',orderNo:'PRICE-2',orderProductSequence:'1',
+    eventType:'order',status:'shipping_wait',activeState:true,
+    amount:0,unitPrice:7200,qty:3,datetime:'2026-07-22T09:10:00+09:00'
+  }];
+  assert.equal(E.salesGroups(priced,integrations)[0].amount,21600);
+}

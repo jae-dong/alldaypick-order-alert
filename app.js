@@ -1,5 +1,5 @@
-const APP_VERSION='FINAL v7.7.11';
-const BUILD_DATE='2026-07-21';
+const APP_VERSION='FINAL v7.7.12';
+const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -523,24 +523,139 @@ function activeClaims(){
     .filter(isActiveClaimWork);
 }
 
+function moneyNumber(value){
+  if(value==null||value==='') return 0;
+  if(typeof value==='object'){
+    const number=Number(value.units||0)+Number(value.nanos||0)/1e9;
+    return Number.isFinite(number)&&number>0?number:0;
+  }
+  const number=Number(String(value).replace(/[^0-9.-]/g,''));
+  return Number.isFinite(number)&&number>0?number:0;
+}
+
+function firstPositiveAmount(values=[]){
+  for(const value of values){
+    const number=moneyNumber(value);
+    if(number>0) return number;
+  }
+  return 0;
+}
+
+function lineAmountValue(order){
+  const direct=firstPositiveAmount([
+    order?.amount,order?.lineAmount,order?.lineTotalAmount,
+    order?.itemAmount,order?.productAmount,order?.salePrice,
+    order?.totalProductAmount,order?.orderItemAmount,
+    order?.ordAmt,order?.prdAmt,order?.saleAmt
+  ]);
+  if(direct>0) return direct;
+
+  const unit=firstPositiveAmount([
+    order?.unitPrice,order?.itemPrice,order?.orderItemUnitPrice,
+    order?.salePrc,order?.sellPrc,order?.selPrc,order?.price
+  ]);
+  const qty=Math.max(1,Number(order?.qty||order?.quantity||order?.ordQty||1));
+  return unit>0?unit*qty:0;
+}
+
+function explicitOrderTotalValue(order){
+  return firstPositiveAmount([
+    order?.orderTotalAmount,order?.totalAmount,order?.paymentAmount,
+    order?.totalPaymentAmount,order?.realPayAmt,order?.ordPayAmt,
+    order?.payAmt,order?.settlementAmount
+  ]);
+}
+
 function orderAmountValue(order){
-  const candidates=[
-    order?.orderTotalAmount,
-    order?.totalAmount,
-    order?.paymentAmount,
-    order?.salePrice,
-    order?.amount
-  ];
+  return lineAmountValue(order)||explicitOrderTotalValue(order)||0;
+}
 
-  for(const value of candidates){
-    const number=Number(value);
+function allocatedGroupLineAmounts(group){
+  const lines=Array.isArray(group?.lines)?group.lines:[];
+  const known=lines.map(line=>lineAmountValue(line));
+  const knownTotal=known.reduce((sum,value)=>sum+value,0);
+  const groupTotal=Math.max(0,Number(group?.amount||0));
+  const remaining=Math.max(0,groupTotal-knownTotal);
+  const missingQty=lines.reduce((sum,line,index)=>
+    sum+(known[index]>0?0:Math.max(1,Number(line?.qty||1))),0
+  );
 
-    if(Number.isFinite(number)&&number>=0){
-      return number;
+  return lines.map((line,index)=>{
+    if(known[index]>0) return known[index];
+    if(remaining>0&&missingQty>0){
+      return Math.round(remaining*Math.max(1,Number(line?.qty||1))/missingQty);
     }
+    return lines.length===1?groupTotal:0;
+  });
+}
+
+function relatedOrderLine(order){
+  const event=String(order?.eventType||'order').toLowerCase();
+  if(event==='order') return order;
+  const source=String(order?.source||'').toLowerCase();
+  const market=String(order?.market||'');
+  const orderNo=String(order?.orderNo||order?.orderId||'').trim();
+  const ids=new Set([
+    order?.productOrderId,order?.vendorItemId,order?.orderItemId,
+    order?.orderProductSequence,order?.productNo,order?.productId,
+    order?.channelProductNo,order?.spdNo,order?.sitmNo,order?.itemNo,
+    order?.sellerProductId,order?.sellerProductCode
+  ].map(value=>String(value||'').trim()).filter(Boolean));
+  const product=String(order?.product||'').replace(/\s+/g,' ').trim().toLowerCase();
+
+  return latestOrderLines()
+    .map(candidate=>{
+      if(source&&String(candidate?.source||'').toLowerCase()!==source) return null;
+      if(!source&&market&&String(candidate?.market||'')!==market) return null;
+      const candidateOrderNo=String(candidate?.orderNo||candidate?.orderId||'').trim();
+      if(orderNo&&candidateOrderNo!==orderNo) return null;
+      let score=orderNo?1000:0;
+      for(const value of [
+        candidate?.productOrderId,candidate?.vendorItemId,candidate?.orderItemId,
+        candidate?.orderProductSequence,candidate?.productNo,candidate?.productId,
+        candidate?.channelProductNo,candidate?.spdNo,candidate?.sitmNo,candidate?.itemNo,
+        candidate?.sellerProductId,candidate?.sellerProductCode
+      ]){
+        if(ids.has(String(value||'').trim())) score+=150;
+      }
+      const candidateProduct=String(candidate?.product||'').replace(/\s+/g,' ').trim().toLowerCase();
+      if(product&&candidateProduct){
+        if(product===candidateProduct) score+=80;
+        else if(product.includes(candidateProduct)||candidateProduct.includes(product)) score+=25;
+      }
+      return {candidate,score};
+    })
+    .filter(item=>item&&item.score>0)
+    .sort((a,b)=>b.score-a.score)[0]?.candidate||null;
+}
+
+function allocatedAmountForOrderLine(line){
+  if(!line) return 0;
+  const key=orderGroupKey(line);
+  const group=groupOrderLines(
+    latestOrderLines().filter(candidate=>orderGroupKey(candidate)===key)
+  )[0];
+  if(!group) return explicitOrderTotalValue(line);
+  const amounts=allocatedGroupLineAmounts(group);
+  const index=group.lines.findIndex(candidate=>candidate.id===line.id);
+  if(index>=0&&Number(amounts[index]||0)>0) return Number(amounts[index]||0);
+  return group.lines.length===1?Number(group.amount||0):0;
+}
+
+function displayOrderAmount(order){
+  const direct=lineAmountValue(order);
+  if(direct>0) return direct;
+
+  if(String(order?.eventType||'order').toLowerCase()==='order'){
+    return allocatedAmountForOrderLine(order)||explicitOrderTotalValue(order)||0;
   }
 
-  return 0;
+  const related=relatedOrderLine(order);
+  if(related){
+    return lineAmountValue(related)||allocatedAmountForOrderLine(related)||explicitOrderTotalValue(related)||0;
+  }
+
+  return explicitOrderTotalValue(order)||0;
 }
 
 function groupOrderLines(lines){
@@ -566,19 +681,15 @@ function groupOrderLines(lines){
     group.lines.push(line);
     group.qty+=Number(line.qty||1);
 
-    const explicitTotal=Number(
-      line.orderTotalAmount||
-      line.totalAmount||
-      line.paymentAmount
-    );
+    const explicitTotal=explicitOrderTotalValue(line);
 
-    if(Number.isFinite(explicitTotal)&&explicitTotal>0){
+    if(explicitTotal>0){
       group.explicitTotal=Math.max(
         Number(group.explicitTotal||0),
         explicitTotal
       );
     }else{
-      group.amount+=orderAmountValue(line);
+      group.amount+=lineAmountValue(line);
     }
 
     if(
@@ -723,23 +834,7 @@ function canonicalOrderKey(order){
 }
 
 function canonicalOrderAmount(order){
-  const candidates=[
-    order?.orderTotalAmount,
-    order?.totalAmount,
-    order?.paymentAmount,
-    order?.salePrice,
-    order?.amount
-  ];
-
-  for(const value of candidates){
-    const number=Number(value);
-
-    if(Number.isFinite(number)&&number>=0){
-      return number;
-    }
-  }
-
-  return 0;
+  return lineAmountValue(order)||explicitOrderTotalValue(order)||0;
 }
 
 function canonicalNormalOrders(){
@@ -779,19 +874,15 @@ function canonicalOrderGroups(){
     group.lines.push(order);
     group.qty+=Number(order.qty||1);
 
-    const explicit=Number(
-      order.orderTotalAmount||
-      order.totalAmount||
-      order.paymentAmount
-    );
+    const explicit=explicitOrderTotalValue(order);
 
-    if(Number.isFinite(explicit)&&explicit>0){
+    if(explicit>0){
       group.explicitTotal=Math.max(
         group.explicitTotal,
         explicit
       );
     }else{
-      group.amount+=canonicalOrderAmount(order);
+      group.amount+=lineAmountValue(order);
     }
 
     const currentDate=canonicalOrderDate(order);
@@ -1265,18 +1356,7 @@ function engineOrderDay(order){
 }
 
 function engineAmount(order){
-  for(const value of [
-    order?.orderTotalAmount,
-    order?.totalAmount,
-    order?.paymentAmount,
-    order?.amount,
-    order?.salePrice
-  ]){
-    const number=Number(value);
-    if(Number.isFinite(number)&&number>=0) return number;
-  }
-
-  return 0;
+  return lineAmountValue(order)||explicitOrderTotalValue(order)||0;
 }
 
 function engineCompleted(order){
@@ -1331,19 +1411,15 @@ function historicalNormalGroups(){
       group.lines.push(line);
       group.qty+=Number(line.qty||1);
 
-      const explicit=Number(
-        line.orderTotalAmount||
-        line.totalAmount||
-        line.paymentAmount
-      );
+      const explicit=explicitOrderTotalValue(line);
 
-      if(Number.isFinite(explicit)&&explicit>0){
+      if(explicit>0){
         group.explicitTotal=Math.max(
           group.explicitTotal,
           explicit
         );
       }else{
-        group.lineAmount+=engineAmount(line);
+        group.lineAmount+=lineAmountValue(line);
       }
     });
 
@@ -1399,16 +1475,12 @@ function engineNormalGroups(){
     group.lines.push(line);
     group.qty+=Number(line.qty||1);
 
-    const explicit=Number(
-      line.orderTotalAmount||
-      line.totalAmount||
-      line.paymentAmount
-    );
+    const explicit=explicitOrderTotalValue(line);
 
-    if(Number.isFinite(explicit)&&explicit>0){
+    if(explicit>0){
       group.explicitTotal=Math.max(group.explicitTotal,explicit);
     }else{
-      group.lineAmount+=engineAmount(line);
+      group.lineAmount+=lineAmountValue(line);
     }
   });
 
@@ -1906,7 +1978,7 @@ function renderOrders(){
       <td data-label="상품명" class="product-cell">${isImportant(o)?'⭐ ':''}${escapeHtml(o.product||'상품명 없음')}${o.workflowNote?`<small style="display:block;color:var(--muted);margin-top:4px">${escapeHtml(o.workflowNote)}</small>`:''}</td>
       <td data-label="수량">${Number(o.qty||0)}</td>
       <td data-label="구매자">${escapeHtml(o.buyer||'')}</td>
-      <td data-label="금액">${fmt(o.amount)}</td>
+      <td data-label="금액">${fmt(displayOrderAmount(o))}</td>
       <td data-label="관리"><button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></td>
     </tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
 
@@ -1956,7 +2028,8 @@ function renderStats(){
   const products={};
 
   groups.forEach(group=>{
-    group.lines.forEach(line=>{
+    const allocated=allocatedGroupLineAmounts(group);
+    group.lines.forEach((line,index)=>{
       const name=line.product||'상품명 없음';
 
       if(!products[name]){
@@ -1969,7 +2042,7 @@ function renderStats(){
 
       products[name].orders.add(group.key);
       products[name].qty+=Number(line.qty||1);
-      products[name].sales+=orderAmountValue(line);
+      products[name].sales+=Number(allocated[index]||0);
     });
   });
 
@@ -2134,17 +2207,20 @@ function renderTodayAnalytics(){
   }).join('')||'<span class="analytics-empty">오늘 주문이 없습니다.</span>';
 
   const products={};
-  groups.forEach(group=>group.lines.forEach(line=>{
-    const name=line.product||'상품명 없음';
-    if(!products[name]) products[name]={orders:new Set(),qty:0,sales:0};
-    products[name].orders.add(group.key);
-    products[name].qty+=Number(line.qty||1);
-    products[name].sales+=engineAmount(line);
-  }));
+  groups.forEach(group=>{
+    const allocated=allocatedGroupLineAmounts(group);
+    group.lines.forEach((line,index)=>{
+      const name=line.product||'상품명 없음';
+      if(!products[name]) products[name]={orders:new Set(),qty:0,sales:0};
+      products[name].orders.add(group.key);
+      products[name].qty+=Number(line.qty||1);
+      products[name].sales+=Number(allocated[index]||0);
+    });
+  });
   const productRows=Object.entries(products)
     .map(([name,value])=>[name,{orders:value.orders.size,qty:value.qty,sales:value.sales}])
     .sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales)
-    .slice(0,10);
+    .slice(0,20);
   const maxProductScore=Math.max(1,...productRows.map(([,value])=>value.orders*1000000+value.sales));
   $('todayTopProducts').innerHTML=productRows.map(([name,value],index)=>{
     const score=value.orders*1000000+value.sales;
@@ -2205,7 +2281,7 @@ function openDetail(id){
     ['상태',labelFor(o)],['쇼핑몰',o.market||''],['주문번호',o.orderNo||''],
     ['상품명',o.product||''],['옵션',o.option||''],['수량',Number(o.qty||0)],
     ['구매자',o.buyer||''],['연락처',o.phone||''],['주소',o.address||''],
-    ['배송메모',o.deliveryMemo||''],['금액',fmt(o.amount)],
+    ['배송메모',o.deliveryMemo||''],['금액',fmt(displayOrderAmount(o))],
     ['주문시간',dateValue(o).replace('T',' ').slice(0,19)],
     ['택배사',o.deliveryCompanyName||''],['운송장번호',o.invoiceNumber||''],
     ['사유',o.reason||''],['상세사유',o.reasonDetail||'']
@@ -2895,7 +2971,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.11-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.12-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

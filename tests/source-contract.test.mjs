@@ -49,7 +49,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.11'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.12'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -90,9 +90,16 @@ assert.match(agent,/statusResult\.createdClaims[\s\S]*statusResult\.changedOrder
 assert.match(agent,/result\.createdClaims[\s\S]*result\.changedOrders[\s\S]*'롯데온'/,'Lotteon newly created claims must be included in Telegram status alerts');
 assert.match(agent,/new FormData\(\)/,'Telegram thumbnails must upload local image files with multipart form data');
 assert.match(agent,/downloadTelegramPhoto/,'Telegram thumbnails must be downloaded by the PC agent before upload');
+
+const parentContext=read('parent-order-context.js');
+assert.match(coupangClaims,/enrichWithParentOrderContext/,'Coupang claims must persist parent-order image and amount context');
+assert.match(coupangInquiries,/enrichWithParentOrderContext/,'Coupang inquiries must persist parent-order image and amount context');
+assert.match(smartstore,/enrichWithParentOrderContext/,'Smartstore inquiries must persist parent-order image and amount context when an order is identifiable');
+assert.match(parentContext,/activeOnly:false,hydrate:false/,'Parent-order enrichment must use the free-tier local mirror cache');
+
 const productImage=read('product-image.js');
 assert.match(productImage,/sellerProductName:searchName/,'Coupang thumbnails must recover sellerProductId by product-name search');
-assert.match(productImage,/telegram-product-image-cache-v9/,'Coupang negative thumbnail cache must be invalidated for the new resolver');
+assert.match(productImage,/telegram-product-image-cache-v10/,'Coupang negative thumbnail cache must be invalidated for the new resolver');
 assert.match(agent,/lotteonResolver:resolveLotteonProductImage/,'Lotteon thumbnail lookup must use the official product detail resolver');
 assert.match(agent,/source==='immediate'[\s\S]*cachedSmartstoreInquiryResult/,'Manual collection must skip slow Smartstore inquiry calls');
 assert.match(agent,/Promise\.all\(jobs\.map/,'Manual current-market collection must run connected markets in parallel');
@@ -106,5 +113,18 @@ assert.match(startCmd,/Stopping previous ALLDAYPICK agent automatically/,'START_
 assert.match(startCmd,/Removing a stale ALLDAYPICK agent lock/,'START_AGENT must automatically remove stale locks');
 assert.match(coupangClaims,/where\('activeState','==',true\)/,'Coupang exchange cleanup must inspect all active legacy aliases');
 assert.match(coupangClaims,/value==='쿠팡'/,'Coupang exchange cleanup must recognize Korean source aliases');
+
+
+assert.match(agent,/enrichTelegramProductContext/,'All Telegram alert types must link to their parent order for product image and amount');
+assert.doesNotMatch(agent,/telegramAlertType\(order\)==='new_order'\)\{[\s\S]*resolveTelegramProductImage/,'Thumbnail lookup must not be restricted to new orders');
+assert.match(agent,/photoLogLabel:`\$\{marketName\}/,'Thumbnail logs must include the marketplace and alert type');
+assert.match(app,/slice\(0,20\)/,'Today product ranking must show TOP 20');
+assert.match(app,/allocatedGroupLineAmounts/,'Product sales must allocate an order total when line prices are missing');
+assert.match(app,/displayOrderAmount\(o\)/,'Current order list must use the enriched display amount');
+assert.match(app,/function firstPositiveAmount/,'Zero-valued amount aliases must not hide a later valid amount');
+const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+assert.match(index,/오늘 판매 TOP 20/,'Today analytics heading must say TOP 20');
+const styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
+assert.match(styles,/FINAL v7\.7\.12 · 전체 가독성 확대/,'Readability overrides must be included');
 
 console.log('source-contract tests passed');

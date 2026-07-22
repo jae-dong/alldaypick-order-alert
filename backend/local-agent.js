@@ -728,6 +728,143 @@ function shouldSendTelegramAlert(order,marketName,source='interval'){
   };
 }
 
+const TELEGRAM_PARENT_ORDER_CACHE_TTL_MS=60*1000;
+const telegramParentOrderCache=new Map();
+
+function telegramSourceKey(order={},marketName=''){
+  const direct=String(order?.source||'').trim().toLowerCase();
+  if(direct) return direct;
+  return {
+    '쿠팡':'coupang',
+    '스마트스토어':'smartstore',
+    '11번가':'elevenst',
+    '롯데온':'lotteon',
+    'G마켓':'gmarket',
+    '옥션':'auction'
+  }[marketName]||'';
+}
+
+function telegramPositiveMoney(...values){
+  for(const value of values.flat(Infinity)){
+    if(value==null||value==='') continue;
+    let number;
+    if(typeof value==='object'&&value){
+      number=Number(value.units||0)+Number(value.nanos||0)/1e9;
+    }else{
+      number=Number(String(value).replace(/[^0-9.-]/g,''));
+    }
+    if(Number.isFinite(number)&&number>0) return Math.round(number);
+  }
+  return 0;
+}
+
+function telegramIdentityValues(order={}){
+  return [
+    order.productOrderId,order.vendorItemId,order.orderItemId,
+    order.orderProductSequence,order.productNo,order.productId,
+    order.channelProductNo,order.originProductNo,order.originalProductId,
+    order.spdNo,order.sitmNo,order.itemNo,order.goodsNo,
+    order.sellerProductId,order.sellerProductCode,order.externalVendorSkuCode
+  ].map(value=>String(value||'').trim()).filter(Boolean);
+}
+
+function telegramNormalizedProduct(value=''){
+  return String(value||'').toLowerCase().replace(/\s+/g,' ').replace(/[^0-9a-z가-힣 ]/g,'').trim();
+}
+
+function telegramRelatedScore(alert={},candidate={}){
+  let score=0;
+  const alertOrderNo=String(alert.orderNo||alert.orderId||'').trim();
+  const candidateOrderNo=String(candidate.orderNo||candidate.orderId||'').trim();
+  if(alertOrderNo&&candidateOrderNo){
+    if(alertOrderNo!==candidateOrderNo) return -1;
+    score+=1000;
+  }
+
+  const left=new Set(telegramIdentityValues(alert));
+  const right=telegramIdentityValues(candidate);
+  for(const value of right){
+    if(left.has(value)) score+=150;
+  }
+
+  const alertProduct=telegramNormalizedProduct(alert.product);
+  const candidateProduct=telegramNormalizedProduct(candidate.product);
+  if(alertProduct&&candidateProduct){
+    if(alertProduct===candidateProduct) score+=80;
+    else if(alertProduct.includes(candidateProduct)||candidateProduct.includes(alertProduct)) score+=30;
+  }
+
+  if(score<=0) return 0;
+  const candidateTime=Date.parse(candidate.sourceUpdatedAt||candidate.syncedAt||candidate.datetime||0)||0;
+  return score+Math.min(20,Math.floor(candidateTime/1e12));
+}
+
+async function telegramSourceOrders(source){
+  if(!source) return [];
+  const cached=telegramParentOrderCache.get(source);
+  if(cached&&Date.now()-cached.checkedAt<TELEGRAM_PARENT_ORDER_CACHE_TTL_MS){
+    return cached.orders;
+  }
+  const result=await getCachedDocuments(db,{
+    source,eventType:'order',activeOnly:false,hydrate:false
+  });
+  const sourceOrders=result.documents||[];
+  telegramParentOrderCache.set(source,{orders:sourceOrders,checkedAt:Date.now()});
+  return sourceOrders;
+}
+
+async function enrichTelegramProductContext(order={},marketName=''){
+  const type=telegramAlertType(order);
+  if(type==='new_order'){
+    return {
+      ...order,
+      amount:telegramPositiveMoney(
+        order.amount,order.salePrice,order.itemAmount,order.lineAmount,
+        order.orderTotalAmount,order.totalAmount,order.paymentAmount,
+        order.totalPaymentAmount,order.realPayAmt,order.ordPayAmt,order.payAmt,
+        telegramPositiveMoney(order.unitPrice,order.itemPrice,order.salePrc,order.sellPrc)*Math.max(1,Number(order.qty||1))
+      )
+    };
+  }
+
+  const source=telegramSourceKey(order,marketName);
+  let parent=null;
+  try{
+    const candidates=await telegramSourceOrders(source);
+    parent=candidates
+      .map(candidate=>({candidate,score:telegramRelatedScore(order,candidate)}))
+      .filter(item=>item.score>0)
+      .sort((a,b)=>b.score-a.score)[0]?.candidate||null;
+  }catch(error){
+    console.warn('텔레그램 원주문 연결 생략:',error?.message||error);
+  }
+
+  if(!parent) return {...order};
+
+  const merged={...parent,...order};
+  const fillFields=[
+    'product','option','buyer','phone','address','deliveryMemo','imageUrl',
+    'productOrderId','vendorItemId','orderItemId','orderProductSequence',
+    'productNo','productId','channelProductNo','originProductNo','originalProductId',
+    'spdNo','sitmNo','itemNo','goodsNo','sellerProductId','sellerProductCode',
+    'externalVendorSkuCode','productUrl','productPageUrl','mallProductUrl','detailUrl'
+  ];
+  for(const field of fillFields){
+    if((merged[field]==null||String(merged[field]).trim()==='')&&parent[field]!=null){
+      merged[field]=parent[field];
+    }
+  }
+
+  merged.amount=telegramPositiveMoney(
+    order.amount,order.salePrice,order.itemAmount,order.lineAmount,
+    parent.amount,parent.salePrice,parent.itemAmount,parent.lineAmount,
+    parent.orderTotalAmount,parent.totalAmount,parent.paymentAmount
+  );
+  if(!Number(order.qty||0)&&Number(parent.qty||0)>0) merged.qty=parent.qty;
+  merged.telegramParentOrderId=parent.id||'';
+  return merged;
+}
+
 async function sendOrderTelegramAlert(
   order,
   marketName,
@@ -749,29 +886,31 @@ async function sendOrderTelegramAlert(
     };
   }
 
-  let photoUrl='';
-  if(telegramAlertType(order)==='new_order'){
-    photoUrl=await resolveTelegramProductImage(order,marketName,{
-      coupangConfig:marketName==='쿠팡'?coupang():null,
-      smartstoreConfig:marketName==='스마트스토어'?smartstoreConfig():null,
-      smartstoreResolver:resolveSmartstoreProductImage,
-      lotteonConfig:marketName==='롯데온'?lotteonConfigFromEnv():null,
-      lotteonResolver:resolveLotteonProductImage
-    });
-  }
+  // 신규주문뿐 아니라 취소·반품·교환·문의도 원주문과 연결해
+  // 동일 상품의 실제 대표 썸네일과 상품금액을 함께 전송합니다.
+  const alertOrder=await enrichTelegramProductContext(order,marketName);
+  const alertType=telegramAlertType(order);
+  const photoUrl=await resolveTelegramProductImage(alertOrder,marketName,{
+    coupangConfig:marketName==='쿠팡'?coupang():null,
+    smartstoreConfig:marketName==='스마트스토어'?smartstoreConfig():null,
+    smartstoreResolver:resolveSmartstoreProductImage,
+    lotteonConfig:marketName==='롯데온'?lotteonConfigFromEnv():null,
+    lotteonResolver:resolveLotteonProductImage
+  });
 
   const result=await sendTelegram(
     telegramAlertTitle(order,marketName),
-    telegramOrderBody(order),
+    telegramOrderBody(alertOrder),
     {
       attempts:2,
       alert:true,
-      photoUrl
+      photoUrl,
+      photoLogLabel:`${marketName} ${alertType||'알림'}`
     }
   );
 
   if(result.photoFailed&&photoUrl){
-    invalidateTelegramProductImageCache(order,marketName);
+    invalidateTelegramProductImageCache(alertOrder,marketName);
   }
 
   if(result.sent){
@@ -926,6 +1065,8 @@ async function sendTelegram(title,body,options={}){
   const attempts=Math.max(1,Number(options.attempts||3));
   const text=`${title}\n\n${body}`;
   const photoUrl=String(options.photoUrl||'').trim();
+  const photoLogLabel=String(options.photoLogLabel||'').trim();
+  const photoLogPrefix=photoLogLabel?`[${photoLogLabel}] `:'';
   let lastError='';
   let photoFailed=false;
 
@@ -940,7 +1081,7 @@ async function sendTelegram(title,body,options={}){
       // PC 수집기가 이미지를 내려받은 뒤 실제 파일로 업로드합니다.
       const photo=await downloadTelegramPhoto(photoUrl);
       await telegramPhotoUpload(token,photoPayload,photo,30000);
-      console.log(`텔레그램 상품 썸네일 전송 성공 · ${Math.ceil(photo.size/1024)}KB`);
+      console.log(`${photoLogPrefix}텔레그램 상품 썸네일 전송 성공 · ${Math.ceil(photo.size/1024)}KB`);
       await db.collection('system').doc('agent').set({
         telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
         telegramLastError:'',telegramCheckedAt:new Date().toISOString()
@@ -948,13 +1089,13 @@ async function sendTelegram(title,body,options={}){
       return {enabled:true,sent:1,failed:0,withPhoto:true,uploaded:true};
     }catch(uploadError){
       lastError=uploadError instanceof Error?uploadError.message:String(uploadError);
-      console.warn('텔레그램 썸네일 파일 업로드 실패 · URL 전송 재시도:',lastError);
+      console.warn(`${photoLogPrefix}텔레그램 썸네일 파일 업로드 실패 · URL 전송 재시도:`,lastError);
       try{
         await telegramApiRequest(token,'sendPhoto',{
           ...photoPayload,
           photo:photoUrl
         },20000);
-        console.log('텔레그램 상품 썸네일 URL 전송 성공');
+        console.log(`${photoLogPrefix}텔레그램 상품 썸네일 URL 전송 성공`);
         await db.collection('system').doc('agent').set({
           telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
           telegramLastError:'',telegramCheckedAt:new Date().toISOString()
@@ -963,11 +1104,11 @@ async function sendTelegram(title,body,options={}){
       }catch(error){
         photoFailed=true;
         lastError=error instanceof Error?error.message:String(error);
-        console.warn('텔레그램 썸네일 전송 실패 · 텍스트로 재전송:',lastError);
+        console.warn(`${photoLogPrefix}텔레그램 썸네일 전송 실패 · 텍스트로 재전송:`,lastError);
       }
     }
   }else if(options.alert){
-    console.log('텔레그램 상품 썸네일 주소 없음 · 텍스트 알림 전송');
+    console.log(`${photoLogPrefix}텔레그램 상품 썸네일 주소 없음 · 텍스트 알림 전송`);
   }
 
   for(let attempt=1;attempt<=attempts;attempt+=1){
@@ -1988,7 +2129,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.11',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.12',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2008,7 +2149,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.11',
+    version:'FINAL-7.7.12',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

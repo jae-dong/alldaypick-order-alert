@@ -97,13 +97,43 @@ export function formatTelegramOrderDate(order){
   return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
 }
 
+function positiveMoney(...values){
+  for(const value of values.flat(Infinity)){
+    if(value==null||value==='') continue;
+    let number;
+    if(typeof value==='object'&&value){
+      number=Number(value.units||0)+Number(value.nanos||0)/1e9;
+    }else{
+      number=Number(String(value).replace(/[^0-9.-]/g,''));
+    }
+    if(Number.isFinite(number)&&number>0) return Math.round(number);
+  }
+  return 0;
+}
+
+function telegramAmount(order={}){
+  const direct=positiveMoney(
+    order.amount,order.lineAmount,order.lineTotalAmount,order.itemAmount,
+    order.productAmount,order.salePrice,order.totalProductAmount,
+    order.orderTotalAmount,order.totalAmount,order.paymentAmount,
+    order.totalPaymentAmount,order.realPayAmt,order.ordPayAmt,order.payAmt
+  );
+  if(direct>0) return direct;
+  const unit=positiveMoney(
+    order.unitPrice,order.itemPrice,order.orderItemUnitPrice,
+    order.salePrc,order.sellPrc,order.selPrc,order.price
+  );
+  return unit*Math.max(1,Number(order.qty||order.quantity||1));
+}
+
 export function telegramOrderBody(order){
   const orderedAt=formatTelegramOrderDate(order);
+  const amount=telegramAmount(order);
   const lines=[
     `📦 ${String(order?.product||'상품명 없음').replace(/\s+/g,' ').trim()}`,
     order?.option?`⚙️ 옵션: ${order.option}`:'',
     `🔢 수량: ${Number(order?.qty||1)}개`,
-    `💰 금액: ${Number(order?.amount||0).toLocaleString('ko-KR')}원`,
+    `💰 금액: ${Number(amount||0).toLocaleString('ko-KR')}원`,
     order?.buyer?`👤 구매자: ${order.buyer}`:'',
     order?.orderNo?`🧾 주문번호: ${order.orderNo}`:'',
     orderedAt?`🕒 주문일시: ${orderedAt}`:'',
@@ -113,3 +143,5 @@ export function telegramOrderBody(order){
 
   return lines.join('\n');
 }
+
+export const telegramFormatTestHelpers={positiveMoney,telegramAmount};

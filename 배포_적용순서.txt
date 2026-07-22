@@ -1,26 +1,19 @@
-FINAL v7.7.11 적용 방법
+FINAL v7.7.12 적용 방법
 
-1. 현재 실행 중인 검은색 PC 수집기 창을 X로 닫습니다.
+1. 현재 실행 중인 검은색 PC 수집기 창을 닫습니다.
 2. 다운로드한 ZIP을 새 폴더에 압축 해제합니다.
-3. GitHub Desktop을 열고 alldaypick-order-alert 저장소를 선택합니다.
-4. Repository > Show in Explorer를 눌러 실제 저장소 폴더를 엽니다.
-5. 압축을 푼 FINAL v7.7.11 폴더 안의 내용물을 기존 저장소 폴더에 전부 복사하고 모두 덮어씁니다.
-6. 아래 기존 항목은 반드시 유지합니다.
-   - .git 폴더
-   - backend\.env.local
-   - backend\firebase-service-account.json
-7. GitHub Desktop Changes에서 변경 파일을 확인합니다.
-8. Summary에 아래 문구를 입력합니다.
-   FINAL v7.7.11 주문·CS 상태정합성 보강
-9. Commit to main을 누른 뒤 Push origin을 누릅니다.
-10. Render를 열어 최신 커밋 배포가 성공했는지 확인합니다.
-11. 기존 프로젝트 폴더에서 START_AGENT.cmd를 실행합니다.
-12. 검은 창에 아래 문구가 표시되는지 확인합니다.
-    Starting ALLDAYPICK order agent v7.7.11 STATUS RECONCILIATION...
-13. 빠른 시작수집이 끝나도 창을 닫지 말고 아래 문구까지 기다립니다.
-    쿠팡 백그라운드 전체상태 보정 완료
-14. 웹앱을 강력 새로고침합니다.
-    PC: Ctrl+F5
-    모바일: 브라우저 새로고침 후에도 이전 버전이면 사이트 데이터/캐시를 삭제하고 다시 접속
-15. 웹 상단 FINAL v7.7.11을 확인합니다.
-16. 쇼핑몰별 신규·발송·취소·반품·교환 수치와 다음 실제 텔레그램 알림을 확인합니다.
+3. GitHub Desktop에서 alldaypick-order-alert 저장소를 선택합니다.
+4. Repository → Show in Explorer를 눌러 기존 프로젝트 폴더를 엽니다.
+5. 압축 해제 폴더 안의 모든 파일을 기존 프로젝트 폴더에 복사하고 모두 덮어씁니다.
+6. .git, backend\.env.local, backend\firebase-service-account.json은 삭제하지 않습니다.
+7. GitHub Desktop Summary에 아래 문구를 입력합니다.
+   FINAL v7.7.12 전체 텔레그램 썸네일·TOP20·금액연동·가독성 확대
+8. Commit to main을 누른 뒤 Push origin을 누릅니다.
+9. Render에서 최신 커밋 배포 성공을 확인합니다.
+10. 기존 프로젝트 폴더의 START_AGENT.cmd를 실행합니다.
+11. 검은 창에 아래 문구가 표시되는지 확인합니다.
+    Starting ALLDAYPICK order agent v7.7.12 TELEGRAM PHOTO TOP20 READABILITY...
+12. 검은 창을 닫지 않고 계속 켜 둡니다.
+13. 웹앱을 Ctrl+F5로 강력 새로고침합니다.
+14. 웹 상단 FINAL v7.7.12와 오늘 판매 TOP 20을 확인합니다.
+15. 다음 신규주문·취소·반품·교환·문의에서 사진과 금액이 같이 오는지 확인합니다.
