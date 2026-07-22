@@ -49,7 +49,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.10'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.11'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -78,6 +78,8 @@ assert.match(app,/where\('activeState','==',true\)/,'Web app must separately sub
 assert.match(agent,/quickCurrentCoupangSync/,'Manual collection must use the fast current-status Coupang path');
 assert.match(agent,/refreshClaimsInBackground/,'Claims must continue in the background after current-order collection');
 assert.match(agent,/refreshCurrentOrdersInBackground/,'Deep current-order reconciliation must continue after fast button completion');
+assert.match(agent,/const statuses=\[\.\.\.FAST,\.\.\.SLOW\]/,'Deep Coupang reconciliation must include delivery-progress and completed states');
+assert.match(agent,/refreshCurrentOrdersInBackground\('startup'\)/,'Startup must launch a deep Coupang status reconciliation');
 assert.match(agent,/sendPhoto/,'Telegram new-order alerts must support product thumbnail photos');
 
 assert.match(agent,/eventType==='exchange'[\s\S]*return 'exchange'/,'Telegram alert type must include exchange requests');

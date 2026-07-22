@@ -68,3 +68,13 @@ try{
 }
 
 console.log('elevenst status tests passed');
+
+assert.equal(H.mapElevenClaim({ordCnDtsNm:'취소요청',ordCnDtsSeq:'C-1'}).eventType,'cancel');
+assert.equal(H.mapElevenClaim({ordCnDtsNm:'취소요청'}).terminal,false);
+assert.equal(H.mapElevenClaim({ordPrdStatNm:'취소완료'}).eventType,'cancel','cancelled order status must create a cancel event even without claimType');
+assert.equal(H.mapElevenClaim({ordPrdStatNm:'취소완료'}).terminal,true);
+assert.equal(H.mapElevenClaim({claimKind:'RETURN',claimStatusNm:'반품접수'}).eventType,'return');
+assert.equal(H.mapElevenClaim({exchReqYn:'Y',ordCnDtsNm:'교환요청'}).eventType,'exchange');
+const claimRows=H.collectRows({response:{order:{ordNo:'700',products:{product:{ordPrdSeq:'1',ordCnDtsNm:'취소요청',ordCnDtsSeq:'C700'}}}}});
+assert.equal(claimRows.length,1,'11st claim-only fields must be preserved by the XML row collector');
+assert.equal(H.mapElevenClaim(claimRows[0]).eventType,'cancel');

@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.10';
+const APP_VERSION='FINAL v7.7.11';
 const BUILD_DATE='2026-07-21';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1756,27 +1756,30 @@ function renderMarkets(){
     const data=today[name]||{};
     const connected=Boolean(integrations[key]?.connected);
 
+    const metric=value=>connected?Number(value||0):'<span class="market-unlinked">-</span>';
     return `
       <tr
-        class="market-row ${activeMarket===name?'selected':''}"
+        class="market-row ${activeMarket===name?'selected':''} ${connected?'':'market-row-unlinked'}"
         data-market="${name}"
       >
         <td>
           <span class="market-name">
             <span class="market-dot ${connected?'ok':''}"></span>
             ${name}
+            ${connected?'':'<small class="market-unlinked-label">미연동</small>'}
           </span>
         </td>
         <td class="order-sales-cell">
-          <strong>${Number(data.orders||0)}</strong>
-          <small>${fmt(data.sales||0)}</small>
+          ${connected
+            ?`<strong>${Number(data.orders||0)}</strong><small>${fmt(data.sales||0)}</small>`
+            :'<strong class="market-unlinked">-</strong><small>집계 제외</small>'}
         </td>
-        <td>${Number(data.new||0)}</td>
-        <td>${Number(data.shipping_wait||0)}</td>
-        <td>${Number(data.cancel||0)}</td>
-        <td>${Number(data.return||0)}</td>
-        <td>${Number(data.exchange||0)}</td>
-        <td>${Number(data.inquiry||0)}</td>
+        <td>${metric(data.new)}</td>
+        <td>${metric(data.shipping_wait)}</td>
+        <td>${metric(data.cancel)}</td>
+        <td>${metric(data.return)}</td>
+        <td>${metric(data.exchange)}</td>
+        <td>${metric(data.inquiry)}</td>
       </tr>
     `;
   }).join('');
@@ -1799,12 +1802,14 @@ function renderMarkets(){
     };
   });
 
+  const excluded=disconnectedMarketNames();
   $('marketUpdated').textContent=
     `오늘 ${todayKey()} 00:00부터 · `+
     new Date().toLocaleTimeString(
       'ko-KR',
       {hour:'2-digit',minute:'2-digit'}
-    );
+    )+
+    (excluded.length?` · 미연동 집계 제외 ${excluded.join(', ')}`:'');
 }
 function filteredOrders(){
   const q=$('searchInput').value.trim().toLowerCase();
@@ -2890,7 +2895,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.10-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.11-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
-import { upsertDocuments } from './order-store.js';
+import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
 
 const API_BASE = 'https://openapi.lotteon.com';
 const ORDER_PATH =
@@ -740,6 +740,7 @@ async function queryPathWindows(config, apiPath, windows) {
   const requestBodies=[];
   const errors=[];
   let rawRows=0;
+  let acceptedWindows=0;
 
   for (const window of windows) {
     const base14={srchStrtDt:formatDate(window.from),srchEndDt:formatDate(window.to)};
@@ -787,34 +788,43 @@ async function queryPathWindows(config, apiPath, windows) {
       }
     }
 
+    if(accepted) acceptedWindows+=1;
     if(!accepted&&errors.length){
       console.warn('롯데온 조회 형식 재시도:',errors.at(-1));
     }
   }
-  return {responses,requestBodies,rawRows,errors};
+  return {
+    responses,requestBodies,rawRows,errors,
+    acceptedWindows,totalWindows:windows.length,
+    complete:windows.length===0||acceptedWindows===windows.length,
+    from:windows[0]?.from||null,
+    to:windows.at(-1)?.to||null
+  };
 }
 
 async function queryOrderInstructions(config, minutes, {repair=false}={}) {
-  // 출고지시 API는 연동완료된 주문을 더 이상 주지 않을 수 있으므로,
-  // 시작/수동수집에서는 배송상태 API도 함께 조회해 현재 상품준비 건을 복구합니다.
+  // 출고지시 목록만 보면 이미 처리된 주문이 로컬 캐시에 계속 남을 수 있습니다.
+  // 매 주기 배송진행상태를 함께 조회해 현재 상태로 덮어쓰고, 목록에서 사라진
+  // 미처리 주문은 안전하게 종료 처리합니다.
   const effectiveMinutes=Math.max(Number(minutes||0),(repair?7:3)*24*60);
   const windows=splitDateWindows(effectiveMinutes,3*24*60);
   const instructions=await queryPathWindows(config,ORDER_PATH,windows);
-  let progress={responses:[],requestBodies:[],rawRows:0,errors:[]};
-
-  if(repair||instructions.rawRows===0){
-    progress=await queryPathWindows(config,PROGRESS_PATH,windows);
-  }
+  const progress=await queryPathWindows(config,PROGRESS_PATH,windows);
 
   const responses=[...instructions.responses,...progress.responses];
-  if(!responses.length&&[...instructions.errors,...progress.errors].length){
-    throw new Error(`롯데온 주문조회 실패: ${[...instructions.errors,...progress.errors].slice(-4).join(' / ')}`);
+  const errors=[...instructions.errors,...progress.errors];
+  if(!responses.length&&errors.length){
+    throw new Error(`롯데온 주문조회 실패: ${errors.slice(-4).join(' / ')}`);
   }
   return {
     responses,
     requestBodies:[...instructions.requestBodies,...progress.requestBodies],
     instructionRows:instructions.rawRows,
-    progressRows:progress.rawRows
+    progressRows:progress.rawRows,
+    instructionComplete:instructions.complete,
+    progressComplete:progress.complete,
+    reconciliationFrom:progress.from||instructions.from||null,
+    queryErrors:errors
   };
 }
 
@@ -844,7 +854,11 @@ export async function syncLotteonOrders(
     responses,
     requestBodies,
     instructionRows,
-    progressRows
+    progressRows,
+    instructionComplete,
+    progressComplete,
+    reconciliationFrom,
+    queryErrors
   } = await queryOrderInstructions(config, minutes, { repair });
 
   const rows = responses.flatMap(response => collectRecords(response));
@@ -855,6 +869,22 @@ export async function syncLotteonOrders(
       .map(order => [order.id, order])
   ).values()];
 
+  const saved=await saveOrders(db,orders);
+  const currentOpenOrderIds=orders
+    .filter(item=>item.eventType==='order'&&item.activeState!==false&&['new','shipping_wait'].includes(item.status))
+    .map(item=>item.id);
+
+  // 배송진행 API의 모든 날짜 구간이 정상 응답한 경우에만 캐시 정리를 수행합니다.
+  // 부분 오류가 난 주기에는 기존 주문을 닫지 않아 오탐을 방지합니다.
+  const reconciliation=await reconcileOpenDocuments(db,{
+    source:'lotteon',
+    eventType:'order',
+    currentIds:currentOpenOrderIds,
+    from:reconciliationFrom,
+    complete:Boolean(progressComplete),
+    reason:'롯데온 현재 출고/배송진행 목록에서 제외됨'
+  });
+
   return {
     connected: true,
     requestBody: requestBodies[requestBodies.length - 1] || null,
@@ -862,8 +892,18 @@ export async function syncLotteonOrders(
     rawRows: rows.length,
     instructionRows,
     progressRows,
+    instructionComplete,
+    progressComplete,
+    queryErrors,
     repairDiscovery: repair,
-    ...(await saveOrders(db, orders))
+    ...saved,
+    deactivatedOrders:Number(reconciliation.deactivated||0),
+    reconciliation,
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+Number(reconciliation.quota?.cloudReads||0),
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(reconciliation.quota?.cloudWrites||0),
+      cacheHits:Number(saved.quota?.cacheHits||0)
+    }
   };
 }
 
@@ -925,4 +965,4 @@ export async function saveLotteonError(
   }, { merge: true });
 }
 
-export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows,productImageFromResponse,lotteonRowIdentity};
+export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows,productImageFromResponse,lotteonRowIdentity,queryPathWindows,queryOrderInstructions};

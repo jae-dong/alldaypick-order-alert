@@ -1988,7 +1988,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.10',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.11',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2008,7 +2008,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.10',
+    version:'FINAL-7.7.11',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2168,20 +2168,57 @@ async function syncCoupangCurrentSafe(source='immediate'){
 }
 
 
-function refreshCurrentOrdersInBackground(){
+function refreshCurrentOrdersInBackground(source='immediate'){
   if(backgroundCurrentOrdersRunning||inQuotaCooldown()) return;
   backgroundCurrentOrdersRunning=true;
   setTimeout(async()=>{
     try{
-      const days=Math.max(14,Math.min(31,Number(process.env.MANUAL_DEEP_LOOKBACK_DAYS||31)));
-      const maxPages=Math.max(5,Math.min(15,Number(process.env.MANUAL_DEEP_MAX_PAGES||10)));
-      const result=await withTimeout('쿠팡 백그라운드 현재상태 보정',pollCoupangStatuses(db,coupang(),{
-        statuses:FAST,days,maxPages,reconcile:true
-      }),240000);
+      const startup=source==='startup';
+      const days=Math.max(
+        7,
+        Math.min(
+          31,
+          Number(
+            startup
+              ?process.env.STARTUP_DEEP_LOOKBACK_DAYS||14
+              :process.env.MANUAL_DEEP_LOOKBACK_DAYS||31
+          )
+        )
+      );
+      const maxPages=Math.max(
+        5,
+        Math.min(
+          15,
+          Number(
+            startup
+              ?process.env.STARTUP_DEEP_MAX_PAGES||8
+              :process.env.MANUAL_DEEP_MAX_PAGES||10
+          )
+        )
+      );
+      const statuses=[...FAST,...SLOW];
+      const result=await withTimeout(
+        '쿠팡 백그라운드 전체상태 보정',
+        pollCoupangStatuses(db,coupang(),{
+          statuses,days,maxPages,reconcile:true
+        }),
+        300000
+      );
       await saveIntegration(result,null);
-      console.log(`쿠팡 백그라운드 상태보정 완료: 신규 ${result.counts?.ACCEPT||0}, 발송대기 ${result.counts?.INSTRUCT||0}`);
+      const deactivated=statuses.reduce(
+        (sum,status)=>sum+Number(result.counts?.[`${status}_DEACTIVATED`]||0),
+        0
+      );
+      console.log(
+        `쿠팡 백그라운드 전체상태 보정 완료: `+
+        `신규 ${result.counts?.ACCEPT||0}, `+
+        `발송대기 ${result.counts?.INSTRUCT||0}, `+
+        `배송진행 ${Number(result.counts?.DEPARTURE||0)+Number(result.counts?.DELIVERING||0)}, `+
+        `배송완료 ${result.counts?.FINAL_DELIVERY||0}, `+
+        `종료정리 ${deactivated} · ${days}일 조회`
+      );
     }catch(error){
-      if(!markQuotaCooldown(error)) console.error('백그라운드 주문 상태보정 실패:',error?.message||error);
+      if(!markQuotaCooldown(error)) console.error('백그라운드 주문 전체상태 보정 실패:',error?.message||error);
     }finally{
       backgroundCurrentOrdersRunning=false;
     }
@@ -2224,7 +2261,7 @@ async function runImmediateMarketCollection(summary){
   if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
   summary.claims={background:true};
   await updateCollectProgress('immediate',95,'현재 주문 반영 완료');
-  refreshCurrentOrdersInBackground();
+  refreshCurrentOrdersInBackground('immediate');
   refreshClaimsInBackground('immediate');
 }
 
@@ -2423,6 +2460,7 @@ async function run(source){
       console.log(
         '텔레그램 기준설정 완료 · 이후 새 주문·취소·반품·교환·문의만 알림'
       );
+      refreshCurrentOrdersInBackground('startup');
     }
   }catch(error){
     const message=error instanceof Error?error.message:String(error);

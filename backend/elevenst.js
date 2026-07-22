@@ -70,7 +70,12 @@ function scalarOrderContext(node, inherited = {}) {
     'deliveryStatusName','deliveryStateName','procStatNm','invoiceNo','trackingNumber',
     'waybillNo','dlvNo','sellerPrdCd','sellerProductCode','prdImgUrl','prdImg',
     'productImageUrl','imageUrl','thumbUrl','thumbnailUrl','claimNo','claimId',
-    'claimSeq','ordCnDtsSeq','claimReason','claimRsn','reason','reasonText'
+    'claimSeq','ordCnDtsSeq','claimType','claimNm','claimKind','claimStatus',
+    'claimStatusNm','claimProcStatus','ordCnDtsCd','ordCnDtsNm','ordCnDtsStat',
+    'ordCnDtsStsCd','ordCnDtsStsNm','ordCnDtsProcCd','ordCnDtsProcNm',
+    'cnclReqYn','cancelReqYn','rtnReqYn','returnReqYn','exchReqYn','exchangeReqYn',
+    'claimReason','claimRsn','reason','reasonText','ordCnDtsRsn','ordCnDtsRsnNm',
+    'cancelReason','returnReason','exchangeReason','claimDate','claimDt','requestDate'
   ];
   const context = { ...inherited };
   for (const key of keys) {
@@ -587,19 +592,61 @@ function mapElevenOrderStatus(row={},previous={}){
   };
 }
 
+function claimText(row={}){
+  const values=[
+    first(row,['claimType','claimNm','claimKind','claimCode','claimCd']),
+    first(row,['claimStatus','claimStatusNm','claimProcStatus','claimProcStatusNm']),
+    first(row,['ordCnDtsCd','ordCnDtsNm','ordCnDtsStat','ordCnDtsStsCd','ordCnDtsStsNm']),
+    first(row,['ordCnDtsProcCd','ordCnDtsProcNm','ordCnDtsRsn','ordCnDtsRsnNm']),
+    first(row,['cancelStatus','cancelStatusNm','returnStatus','returnStatusNm','exchangeStatus','exchangeStatusNm']),
+    first(row,['cnclReqYn','cancelReqYn','rtnReqYn','returnReqYn','exchReqYn','exchangeReqYn'])
+  ];
+
+  // 11번가 XML 계약은 응답 버전에 따라 클레임 필드명이 달라질 수 있습니다.
+  // 취소/반품/교환과 직접 관련된 스칼라 필드는 이름을 제한해 보조 신호로 사용합니다.
+  for(const [key,value] of Object.entries(row||{})){
+    if(!/(?:claim|cancel|cncl|return|rtn|exchange|exch|ordcndts|취소|반품|교환)/i.test(key)) continue;
+    if(value==null||['string','number','boolean'].includes(typeof value)) values.push(text(value));
+    else if(typeof value==='object'&&value['#text']!=null) values.push(text(value['#text']));
+  }
+  return values.filter(Boolean).join(' ').toUpperCase();
+}
+
+function claimTerminalText(value=''){
+  const raw=String(value||'').toUpperCase();
+  const tokens=raw.split(/[^A-Z0-9_가-힣]+/).filter(Boolean);
+  return [
+    'COMPLETE','COMPLETED','DONE','CLOSED','FINISH','FINISHED',
+    'REJECT','REJECTED','WITHDRAW','WITHDRAWN','CANCELLED','CANCELED'
+  ].some(token=>tokens.includes(token))||[
+    '처리완료','취소완료','반품완료','교환완료','요청철회','철회','거부','종결'
+  ].some(token=>raw.includes(token));
+}
+
 function mapElevenClaim(row={}){
-  const value=[
-    first(row,['claimType','claimNm','claimKind']),
-    first(row,['claimStatus','claimStatusNm','claimProcStatus'])
-  ].filter(Boolean).join(' ').toUpperCase();
+  const explicit=claimText(row);
+  const orderState=statusText(row);
+  const value=explicit||orderState;
   let eventType='';
-  if(value.includes('EXCHANGE')||value.includes('교환')) eventType='exchange';
-  else if(value.includes('RETURN')||value.includes('반품')) eventType='return';
-  else if(value.includes('CANCEL')||value.includes('취소')) eventType='cancel';
+  if(value.includes('EXCHANGE')||value.includes('EXCH')||value.includes('교환')) eventType='exchange';
+  else if(value.includes('RETURN')||value.includes('RTN')||value.includes('반품')) eventType='return';
+  else if(value.includes('CANCEL')||value.includes('CNCL')||value.includes('취소')) eventType='cancel';
   if(!eventType) return null;
+
+  // 명시적인 클레임 필드가 없어도 주문 상태가 취소완료로 바뀌면 취소 알림 문서는 생성합니다.
+  // 이렇게 해야 11번가에서 별도 claimType을 생략한 응답도 텔레그램에서 누락되지 않습니다.
+  const terminal=claimTerminalText(value);
   return {
-    eventType,sourceStatus:value,status:`${eventType}_request`,
-    statusLabel:eventType==='cancel'?'주문취소':eventType==='return'?'반품요청':'교환요청'
+    eventType,
+    sourceStatus:value,
+    terminal,
+    inferredFromOrderStatus:!explicit,
+    status:terminal
+      ?(eventType==='cancel'?'cancelled':eventType==='return'?'returned':'exchanged')
+      :`${eventType}_request`,
+    statusLabel:terminal
+      ?(eventType==='cancel'?'취소완료':eventType==='return'?'반품완료':'교환완료')
+      :(eventType==='cancel'?'주문취소':eventType==='return'?'반품요청':'교환요청')
   };
 }
 
@@ -638,7 +685,7 @@ function collectRows(node,depth=0,inherited={}){
   const recordSignal=Boolean(
     ordPrdSeq||statusText(context)||
     first(context,['invoiceNo','trackingNumber','waybillNo','waybillNo'])||
-    first(context,['claimType','claimNm','claimKind','claimStatus','claimStatusNm','claimProcStatus'])
+    claimText(context)
   );
   if(!recordSignal) return [];
   return [{...context,ordNo,ordPrdSeq}];
@@ -674,6 +721,7 @@ async function fetchStatusRows(config,batch){
       first(row,['ordNo','orderNo']),
       first(row,['ordPrdSeq','orderProductSequence','prdSeq']),
       statusText(row),
+      claimText(row),
       first(row,['invoiceNo','trackingNumber','waybillNo'])
     ].join('|');
     unique.set(key,row);
@@ -777,7 +825,10 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
 
           const claim=mapElevenClaim(row);
           if(claim){
-            const claimId=first(row,['claimNo','claimId','claimSeq','ordCnDtsSeq'])||`${ordNo}-${lineId}-${claim.eventType}`;
+            const claimId=first(row,[
+              'claimNo','claimId','claimSeq','ordCnDtsSeq','cancelNo','returnNo','exchangeNo',
+              'cnclNo','rtnNo','exchNo'
+            ])||`${ordNo}-${lineId}-${claim.eventType}`;
             const claimDocument={
               ...previous,
               id:`elevenst-${claim.eventType}-${claimId}`,
@@ -785,15 +836,18 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
               ...workflowFields({source:'elevenst',orderNo:ordNo,lineId,eventType:claim.eventType,claimId}),
               claimId,status:claim.status,statusLabel:claim.statusLabel,
               sourceStatus:claim.sourceStatus,claimStatus:claim.sourceStatus,
+              claimInferredFromOrderStatus:Boolean(claim.inferredFromOrderStatus),
               reason:first(row,['claimReason','claimRsn','reason','reasonText','ordCnDtsRsn','ordCnDtsRsnNm','cancelReason','returnReason','exchangeReason']),
               reasonDetail:first(row,['claimReasonDetail','reasonDetail','reasonEtc','ordCnDtsRsnDetail','ordCnDtsRsnDtl']),
-              claimRequestedAt:first(row,['claimDate','claimDt','requestDate'])||new Date().toISOString(),
+              claimRequestedAt:parseDate(first(row,[
+                'claimDate','claimDt','requestDate','ordCnDtsDt','ordCnDtsDttm','cancelDate','returnDate','exchangeDate'
+              ]))||previous.datetime||new Date().toISOString(),
               sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
             };
-            claimDocument.activeState=!isClaimTerminal(claimDocument);
+            claimDocument.activeState=claim.terminal?false:!isClaimTerminal(claimDocument);
             if(!claimDocument.activeState){
               claimDocument.status=claim.eventType==='cancel'?'cancelled':claim.eventType==='return'?'returned':'exchanged';
-              claimDocument.statusLabel='처리완료';
+              claimDocument.statusLabel=claim.eventType==='cancel'?'취소완료':claim.eventType==='return'?'반품완료':'교환완료';
             }
             documents.push(claimDocument);
           }
@@ -858,5 +912,5 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
 }
 
 export const elevenstTestHelpers={collectOrderRows,
-  mapElevenOrderStatus,collectRows,statusText,fetchStatusRows,statusRefreshDocuments
+  mapElevenOrderStatus,mapElevenClaim,claimText,collectRows,statusText,fetchStatusRows,statusRefreshDocuments
 };

@@ -1,8 +1,11 @@
-올데이픽 주문알림 FINAL v7.7.10 바로 실행
+올데이픽 주문알림 FINAL v7.7.11 바로 실행
 
 1. 기존 검은 창을 닫습니다.
-2. 파일을 기존 프로젝트 폴더에 덮어씁니다.
-3. GitHub Desktop에서 Commit 후 Push origin 합니다.
-4. 웹 버전 v7.7.10를 확인합니다.
-5. START_AGENT.cmd를 실행합니다.
-6. 첫 수집이 100% 완료된 후 화면을 새로고침합니다.
+2. 압축파일의 내용물을 기존 GitHub 저장소 폴더에 전부 덮어씁니다.
+3. backend\.env.local, backend\firebase-service-account.json, .git은 유지합니다.
+4. GitHub Desktop Summary에 FINAL v7.7.11 주문·CS 상태정합성 보강을 입력합니다.
+5. Commit to main > Push origin을 누릅니다.
+6. Render 배포 성공을 확인합니다.
+7. START_AGENT.cmd를 실행하고 검은 창을 계속 켜 둡니다.
+8. 쿠팡 백그라운드 전체상태 보정 완료 문구가 나온 뒤 웹앱을 Ctrl+F5로 새로고침합니다.
+9. 웹 버전 FINAL v7.7.11과 쇼핑몰별 수치를 확인합니다.

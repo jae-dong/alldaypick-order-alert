@@ -135,7 +135,20 @@
         item?.sourceStatus||
         item?.status
       ).toUpperCase();
-      if(['RECEIPT','PROGRESS','접수','진행'].includes(exchangeState))return false;
+
+      // 쿠팡 교환 목록 API의 조회 계약은 접수일 기준 최대 7일 범위입니다.
+      // RECEIPT가 7일 넘게 한 번도 갱신되지 않은 과거 캐시는 현재 처리 큐에서만 제외합니다.
+      // 원문 문서는 삭제하지 않으므로 전체 기록에서는 계속 확인할 수 있습니다.
+      if(exchangeState==='RECEIPT'||exchangeState==='접수'){
+        const businessTimes=[
+          item?.modifiedAt,item?.claimRequestedAt,item?.datetime,
+          item?.requestDate,item?.receiptDate
+        ].map(time).filter(Boolean);
+        const lastBusinessTime=businessTimes.length?Math.max(...businessTimes):0;
+        if(lastBusinessTime&&Date.now()-lastBusinessTime>7*24*60*60*1000)return true;
+        return false;
+      }
+      if(exchangeState==='PROGRESS'||exchangeState==='진행')return false;
       return true;
     }
 

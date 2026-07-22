@@ -299,3 +299,7 @@ dialog .modal{width:min(92vw,680px);max-height:86vh;overflow:auto;box-sizing:bor
   dialog .modal{width:100%;max-height:84dvh;padding:16px;border-radius:22px 22px 14px 14px}
   dialog .modal-actions,dialog .note-actions{display:grid;grid-template-columns:1fr}.modal-actions .btn,.note-actions .btn{width:100%;min-height:46px}
 }
+.market-row-unlinked{background:#f8fafc;color:#7b8794}
+.market-row-unlinked:hover{background:#f4f7fa}
+.market-unlinked{color:#9aa6b2;font-weight:700}
+.market-unlinked-label{margin-left:6px;padding:2px 6px;border-radius:999px;background:#edf1f5;color:#74808d;font-size:10px;font-weight:800}

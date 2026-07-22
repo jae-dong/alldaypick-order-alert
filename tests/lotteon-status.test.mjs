@@ -32,3 +32,21 @@ assert.equal(progressRows[0].orderNumber,'LO-200');
 assert.equal(progressRows[0].productId,'P-1');
 assert.equal(H.normalizeOrder(progressRows[0],'SELLER').status,'shipping_wait');
 console.log('lotteon status tests passed');
+
+{
+  const originalFetch=globalThis.fetch;
+  const calls=[];
+  globalThis.fetch=async (url,options={})=>{
+    calls.push(String(url));
+    return new Response(JSON.stringify({returnCode:'0000',data:[]}),{status:200,headers:{'content-type':'application/json'}});
+  };
+  try{
+    const result=await H.queryOrderInstructions({apiKey:'test',sellerId:'SELLER'},30,{repair:false});
+    assert.equal(result.instructionComplete,true);
+    assert.equal(result.progressComplete,true);
+    assert.ok(calls.some(url=>url.includes('SellerDeliveryOrdersSearch')));
+    assert.ok(calls.some(url=>url.includes('SellerDeliveryProgressStateSearch')),'progress API must run every cycle to remove stale shipping rows');
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+}

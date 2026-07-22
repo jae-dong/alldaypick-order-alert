@@ -139,3 +139,16 @@ const giftAccepted=[{
 }];
 assert.equal(E.pendingItems(giftAccepted,integrations).length,1);
 assert.equal(E.salesGroups(giftAccepted,integrations).length,1);
+
+{
+  const oldReceipt={
+    id:'old-coupang-exchange',source:'coupang',market:'쿠팡',eventType:'exchange',activeState:true,
+    exchangeStatus:'RECEIPT',claimId:'OLD',claimRequestedAt:new Date(Date.now()-8*24*60*60*1000).toISOString()
+  };
+  const recentReceipt={
+    id:'recent-coupang-exchange',source:'coupang',market:'쿠팡',eventType:'exchange',activeState:true,
+    exchangeStatus:'RECEIPT',claimId:'NEW',claimRequestedAt:new Date(Date.now()-2*24*60*60*1000).toISOString()
+  };
+  const claims=E.openClaims([oldReceipt,recentReceipt],{coupang:{connected:true}});
+  assert.equal(JSON.stringify(claims.map(item=>item.id)),JSON.stringify(['recent-coupang-exchange']),'Coupang RECEIPT older than the official 7-day current window must not remain in the current queue');
+}
