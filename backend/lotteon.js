@@ -378,10 +378,12 @@ function normalizeOrder(row, sellerId) {
     'orderDetailSequence'
   ]);
 
+  // 출고지시와 배송진행 API가 서로 다른 deliveryNo를 줄 수 있으므로
+  // 주문상세순번/상품번호를 먼저 사용해 동일 상품행의 문서 ID를 안정화합니다.
   const idPart =
-    deliveryNo ||
     sequence ||
-    first(row, ['sitmNo','spdNo','prdNo','productNo','itemNo','productId','skuNo']) ||
+    first(row, ['sitmNo','itemNo','skuNo','spdNo','prdNo','productNo','productId']) ||
+    deliveryNo ||
     'item';
 
   const mapped = statusInfo(row);
@@ -433,6 +435,7 @@ function normalizeOrder(row, sellerId) {
     source: 'lotteon',
     market: '롯데온',
     sellerId,
+    sourceFeed:first(row,['__lotteonFeed'])||'unknown',
     eventType: mapped.eventType,
     ...workflowFields({source:'lotteon',orderNo,lineId:idPart,eventType:mapped.eventType,claimId}),
     status: mapped.status,
@@ -826,6 +829,8 @@ async function queryOrderInstructions(config, minutes, {repair=false}={}) {
   }
   return {
     responses,
+    instructionResponses:instructions.responses,
+    progressResponses:progress.responses,
     requestBodies:[...instructions.requestBodies,...progress.requestBodies],
     instructionRows:instructions.rawRows,
     progressRows:progress.rawRows,
@@ -834,6 +839,59 @@ async function queryOrderInstructions(config, minutes, {repair=false}={}) {
     reconciliationFrom:progress.from||instructions.from||null,
     queryErrors:errors
   };
+}
+
+function lotteonWorkflowKey(order={}){
+  if(order.eventType&&order.eventType!=='order'){
+    return `claim|${order.eventType}|${order.claimId||order.id}`;
+  }
+  const line=order.orderProductSequence||order.sitmNo||order.itemNo||order.spdNo||order.productNo||order.deliveryNo||order.product||'item';
+  return `order|${order.orderNo||''}|${line}`;
+}
+
+function lotteonStatusRank(order={}){
+  const rank={
+    new:1,shipping_wait:2,delivering:3,delivered:4,purchase_confirmed:5,
+    cancel_request:6,return_request:6,exchange_request:6,
+    cancelled:7,returned:7,exchanged:7
+  };
+  return rank[String(order.status||'')]||0;
+}
+
+function mergeOrderFields(base={},override={}){
+  const merged={...base,...override};
+  const preferBaseWhenMissing=[
+    'product','option','imageUrl','buyer','phone','address','deliveryMemo',
+    'amount','unitPrice','orderTotalAmount','qty','datetime','spdNo','sitmNo',
+    'productNo','itemNo','orderProductSequence'
+  ];
+  for(const key of preferBaseWhenMissing){
+    const value=override[key];
+    const missing=value==null||value===''||(typeof value==='number'&&value<=0)||
+      (key==='product'&&value==='롯데온 상품');
+    if(missing&&base[key]!=null&&base[key]!=='') merged[key]=base[key];
+  }
+  return merged;
+}
+
+function mergeLotteonOrders(instructionOrders=[],progressOrders=[]){
+  const merged=new Map();
+  for(const order of instructionOrders){
+    merged.set(lotteonWorkflowKey(order),order);
+  }
+  for(const order of progressOrders){
+    const key=lotteonWorkflowKey(order);
+    const previous=merged.get(key);
+    if(!previous){
+      merged.set(key,order);
+      continue;
+    }
+    const previousTime=new Date(previous.sourceUpdatedAt||previous.syncedAt||0).getTime()||0;
+    const currentTime=new Date(order.sourceUpdatedAt||order.syncedAt||0).getTime()||0;
+    const preferCurrent=currentTime>=previousTime||lotteonStatusRank(order)>=lotteonStatusRank(previous);
+    merged.set(key,preferCurrent?mergeOrderFields(previous,order):mergeOrderFields(order,previous));
+  }
+  return [...merged.values()];
 }
 
 async function saveOrders(db,orders){
@@ -860,6 +918,8 @@ export async function syncLotteonOrders(
 
   const {
     responses,
+    instructionResponses,
+    progressResponses,
     requestBodies,
     instructionRows,
     progressRows,
@@ -869,13 +929,28 @@ export async function syncLotteonOrders(
     queryErrors
   } = await queryOrderInstructions(config, minutes, { repair });
 
-  const rows = responses.flatMap(response => collectRecords(response));
-  const orders = [...new Map(
-    rows
-      .map(row => normalizeOrder(row, config.sellerId))
+  const instructionRaw=(instructionResponses||[])
+    .flatMap(response=>collectRecords(response))
+    .map(row=>({...row,__lotteonFeed:'instruction'}));
+  const progressRaw=(progressResponses||[])
+    .flatMap(response=>collectRecords(response))
+    .map(row=>({...row,__lotteonFeed:'progress'}));
+  const instructionOrders=[...new Map(
+    instructionRaw
+      .map(row=>normalizeOrder(row,config.sellerId))
       .filter(Boolean)
-      .map(order => [order.id, order])
+      .map(order=>[lotteonWorkflowKey(order),order])
   ).values()];
+  const progressOrders=[...new Map(
+    progressRaw
+      .map(row=>normalizeOrder(row,config.sellerId))
+      .filter(Boolean)
+      .map(order=>[lotteonWorkflowKey(order),order])
+  ).values()];
+  // 출고지시 API는 발송 이후에도 출고지시 상태를 계속 반환할 수 있으므로
+  // 동일 상품행은 배송진행 API의 최신 상태를 우선합니다.
+  const orders=mergeLotteonOrders(instructionOrders,progressOrders);
+  const rows=[...instructionRaw,...progressRaw];
 
   const saved=await saveOrders(db,orders);
   const currentOpenOrderIds=orders
@@ -973,4 +1048,4 @@ export async function saveLotteonError(
   }, { merge: true });
 }
 
-export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows,productImageFromResponse,lotteonRowIdentity,queryPathWindows,queryOrderInstructions};
+export const lotteonTestHelpers={collectRecords,statusInfo,normalizeOrder,splitDateWindows,productImageFromResponse,lotteonRowIdentity,lotteonWorkflowKey,mergeLotteonOrders,queryPathWindows,queryOrderInstructions};

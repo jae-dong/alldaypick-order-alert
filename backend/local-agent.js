@@ -1908,13 +1908,18 @@ async function syncSmartstoreSafe(source){
       inquirySent+=sentResult.sent||0;
     }
 
+    const smartstoreConditionLabel=result.conditionDiscoveryAttempted
+      ?(result.conditionDiscoveryComplete?String(result.conditionIds||0):'실패')
+      :'정기생략';
+
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',connected:true,lastRun:new Date().toISOString(),
-        message:`정상 조회 · 주문문서 ${result.found} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}${inquiryResult.skipped?'(캐시)':''}`,
+        message:`정상 조회 · 주문문서 ${result.found} · 오늘전체대조 ${smartstoreConditionLabel} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}${inquiryResult.skipped?'(캐시)':''} · 문의정리 ${inquiryResult.deactivated||0}`,
         lastResult:{
           found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
-          inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,complete:inquiryResult.complete!==false},
+          conditionIds:result.conditionIds||0,conditionDiscoveryComplete:result.conditionDiscoveryComplete===true,
+          inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,deactivated:inquiryResult.deactivated||0,complete:inquiryResult.complete!==false},
           push,claimPush,inquirySent
         }
       }
@@ -1922,8 +1927,9 @@ async function syncSmartstoreSafe(source){
 
     console.log(
       `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
+      `오늘전체대조 ${smartstoreConditionLabel}, `+
       `상태변경 ${result.statusChanged}, 요청알림 ${claimPush.sent||0}, 미답변문의 ${inquiryResult.found||0}`+
-      `${inquiryResult.skipped?'(캐시)':''}, `+
+      `${inquiryResult.skipped?'(캐시)':''}, 문의정리 ${inquiryResult.deactivated||0}, `+
       `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
 
@@ -2055,7 +2061,8 @@ async function syncLotteonSafe(source){
       `신규 ${result.created}, `+
       `상태변경 ${result.statusChanged}, `+
       `신규푸시 ${push.sent}, `+
-      `상태푸시 ${statusPush.sent} · 출고지시 ${result.instructionRows||0} · 배송상태 ${result.progressRows||0} · ${quotaLog(result)}`
+      `상태푸시 ${statusPush.sent} · 출고지시 ${result.instructionRows||0} · 배송상태 ${result.progressRows||0} · `+
+      `잔존정리 ${result.deactivatedOrders||0} · ${quotaLog(result)}`
     );
 
     return result;
@@ -2129,7 +2136,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.12',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.13',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2149,7 +2156,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.12',
+    version:'FINAL-7.7.13',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

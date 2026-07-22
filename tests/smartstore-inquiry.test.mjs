@@ -113,3 +113,25 @@ const giftReceived=H.normalizeDetail({
 assert.equal(giftReceived.status,'new');
 assert.equal(giftReceived.activeState,true);
 assert.equal(giftReceived.excludedFromMetrics,false);
+
+const conditionPage=H.conditionOrderPage({
+  data:{
+    contents:[{productOrderId:'P-100'},{productOrder:{productOrderId:'P-101'}}],
+    pagination:{page:1,size:300,hasNext:false}
+  }
+});
+assert.equal(conditionPage.items.length,2);
+assert.equal(conditionPage.hasNext,false);
+assert.equal(H.productOrderIdOf(conditionPage.items[0]),'P-100');
+assert.equal(H.productOrderIdOf(conditionPage.items[1]),'P-101');
+
+const staleInquiryCandidates=H.staleInquiryKindDocuments([
+  {id:'product-old',source:'smartstore',eventType:'inquiry',inquiryKind:'product',activeState:true,inquiryAt:'2026-07-22T01:00:00+09:00'},
+  {id:'product-current',source:'smartstore',eventType:'inquiry',inquiryKind:'product',activeState:true,inquiryAt:'2026-07-22T02:00:00+09:00'},
+  {id:'customer-old',source:'smartstore',eventType:'inquiry',inquiryKind:'customer',activeState:true,inquiryAt:'2026-07-22T01:00:00+09:00'}
+],{
+  kind:'product',
+  currentIds:['product-current'],
+  from:new Date('2026-07-22T00:00:00+09:00')
+});
+assert.deepEqual(staleInquiryCandidates.map(item=>item.id),['product-old']);

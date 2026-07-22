@@ -472,6 +472,75 @@ async function retry(task,label){
     try{return await task();}catch(error){if(!rateLimited(error)||attempt>=delays.length) throw error;console.warn(`${label} 요청 제한 · ${delays[attempt]/1000}초 뒤 재시도`);await sleep(delays[attempt]);}
   }
 }
+function conditionOrderPage(body){
+  const root=(body?.data&&typeof body.data==='object'&&!Array.isArray(body.data))
+    ?body.data
+    :body;
+  const items=[
+    root?.contents,root?.content,root?.items,
+    body?.contents,body?.content,body?.items
+  ].find(Array.isArray)||[];
+  const pagination=root?.pagination||body?.pagination||{};
+  return {
+    items,
+    page:Number(pagination.page??root?.page??1)||1,
+    size:Number(pagination.size??root?.size??300)||300,
+    hasNext:pagination.hasNext===true||root?.hasNext===true
+  };
+}
+
+function productOrderIdOf(row){
+  return String(
+    row?.productOrderId||
+    row?.productOrder?.productOrderId||
+    row?.productOrderInfo?.productOrderId||
+    row?.productOrderDetail?.productOrderId||
+    ''
+  ).trim();
+}
+
+async function conditionProductOrderIds(token,from,to){
+  const profiles=[
+    {includeTo:true,label:'기간 전체'},
+    {includeTo:false,label:'시작일 이후'}
+  ];
+  let lastError;
+
+  for(const profile of profiles){
+    const ids=[];
+    try{
+      for(let page=1;page<=100;page+=1){
+        const params=new URLSearchParams({
+          from:iso(from),
+          rangeType:'PAYED_DATETIME',
+          page:String(page),
+          size:'300'
+        });
+        if(profile.includeTo) params.set('to',iso(to));
+
+        const body=await api(
+          token,
+          `/v1/pay-order/seller/product-orders?${params}`
+        );
+        const parsed=conditionOrderPage(body);
+        parsed.items.forEach(row=>{
+          const id=productOrderIdOf(row);
+          if(id) ids.push(id);
+        });
+
+        if(!parsed.hasNext&&parsed.items.length<parsed.size) break;
+        if(page<100) await sleep(350);
+      }
+      return [...new Set(ids)];
+    }catch(error){
+      lastError=error;
+      if(!badRequest(error)) throw error;
+    }
+  }
+
+  throw lastError||new Error('스마트스토어 조건형 주문조회 실패');
+}
+
 async function changedProductOrderIds(token,from,to){
   const ids=[];
   let nextFrom=new Date(from);
@@ -732,11 +801,60 @@ async function fetchCustomerInquiries(token,days){
   }
   return {items:all,complete};
 }
+function inquiryBusinessTime(item){
+  const value=item?.sourceUpdatedAt||item?.inquiryAt||item?.datetime||item?.createdAt||0;
+  const time=new Date(value).getTime();
+  return Number.isFinite(time)?time:0;
+}
+
+function staleInquiryKindDocuments(documents,{kind,currentIds,from}){
+  const current=new Set((currentIds||[]).map(String));
+  const cutoff=new Date(from||0).getTime();
+  return (documents||[]).filter(item=>
+    item?.source==='smartstore'&&
+    item?.eventType==='inquiry'&&
+    item?.activeState!==false&&
+    String(item?.inquiryKind||'')===String(kind)&&
+    (!cutoff||!inquiryBusinessTime(item)||inquiryBusinessTime(item)>=cutoff)&&
+    !current.has(String(item?.id||''))
+  );
+}
+
+async function reconcileInquiryKind(db,{kind,currentIds,from,complete}){
+  if(!complete) return {deactivated:0,skipped:true,quota:{cloudReads:0,cloudWrites:0,cacheHits:0}};
+  const cached=await getCachedDocuments(db,{
+    source:'smartstore',eventType:'inquiry',activeOnly:true,hydrate:false
+  });
+  const stale=staleInquiryKindDocuments(cached.documents,{kind,currentIds,from});
+  if(!stale.length){
+    return {
+      deactivated:0,skipped:false,
+      quota:{cloudReads:Number(cached.quota?.cloudReads||0),cloudWrites:0,cacheHits:Number(cached.quota?.cacheHits||0)}
+    };
+  }
+  const now=new Date().toISOString();
+  const resolved=stale.map(item=>({
+    ...item,
+    answered:true,
+    activeState:false,
+    status:'answered',
+    statusLabel:'답변완료',
+    sourceStatus:'ANSWERED_OR_REMOVED',
+    inquiryStatus:'ANSWERED_OR_REMOVED',
+    resolvedAt:now,
+    resolvedReason:`스마트스토어 ${kind==='product'?'상품':'고객'}문의 현재 미답변 목록에서 제외됨`,
+    syncedAt:now
+  }));
+  const saved=await upsertDocuments(db,resolved);
+  return {...saved,deactivated:resolved.length,skipped:false};
+}
+
 export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   const token=await accessToken(config);
   const documents=[];
   const errors=[];
-  let complete=true;
+  let productComplete=false;
+  let customerComplete=false;
   let rateLimitedResult=false;
   const days=reconcile?90:7;
   const from=new Date(Date.now()-days*86400000);
@@ -744,12 +862,12 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
 
   try{
     const product=await fetchProductInquiries(token,days);
-    complete=complete&&product.complete;
+    productComplete=Boolean(product.complete);
     documents.push(
       ...product.items.map(row=>inquiryDoc(row,'product')).filter(Boolean)
     );
   }catch(error){
-    complete=false;
+    productComplete=false;
     rateLimitedResult=rateLimitedResult||rateLimited(error);
     errors.push(`상품문의: ${error.message}`);
     console.warn('스마트스토어 상품문의 조회 건너뜀:',error.message);
@@ -757,12 +875,12 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
 
   try{
     const customer=await fetchCustomerInquiries(token,days);
-    complete=complete&&customer.complete;
+    customerComplete=Boolean(customer.complete);
     documents.push(
       ...customer.items.map(row=>inquiryDoc(row,'customer')).filter(Boolean)
     );
   }catch(error){
-    complete=false;
+    customerComplete=false;
     rateLimitedResult=rateLimitedResult||rateLimited(error);
     errors.push(`고객문의: ${error.message}`);
     console.warn('스마트스토어 고객문의 조회 건너뜀:',error.message);
@@ -771,25 +889,36 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
   const unique=[...new Map(documents.map(item=>[item.id,item])).values()];
   const enriched=await enrichWithParentOrderContext(db,unique,{source:'smartstore'});
   const saved=await upsertDocuments(db,enriched);
-  const reconciled=reconcile&&complete
-    ?await reconcileOpenDocuments(db,{
-        source:'smartstore',eventType:'inquiry',
-        currentIds:enriched.filter(item=>item.activeState!==false).map(item=>item.id),
-        from,complete:true,
-        reason:'스마트스토어 답변완료 또는 현재 미답변 목록에서 제외됨'
+  const productReconciled=reconcile
+    ?await reconcileInquiryKind(db,{
+        kind:'product',
+        currentIds:enriched.filter(item=>item.inquiryKind==='product'&&item.activeState!==false).map(item=>item.id),
+        from,complete:productComplete
       })
-    :{deactivated:0,skipped:true};
+    :{deactivated:0,skipped:true,quota:{}};
+  const customerReconciled=reconcile
+    ?await reconcileInquiryKind(db,{
+        kind:'customer',
+        currentIds:enriched.filter(item=>item.inquiryKind==='customer'&&item.activeState!==false).map(item=>item.id),
+        from,complete:customerComplete
+      })
+    :{deactivated:0,skipped:true,quota:{}};
+  const complete=productComplete&&customerComplete;
 
   return {
     ...saved,createdClaims:saved.createdDocuments,
     changedClaims:saved.changedDocuments,
-    deactivated:reconciled.deactivated||0,
-    quota:{
-      cloudReads:Number(saved.quota?.cloudReads||0)+Number(reconciled.quota?.cloudReads||0),
-      cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(reconciled.quota?.cloudWrites||0),
-      cacheHits:Number(saved.quota?.cacheHits||0)
+    deactivated:Number(productReconciled.deactivated||0)+Number(customerReconciled.deactivated||0),
+    inquiryReconcile:{
+      product:Number(productReconciled.deactivated||0),
+      customer:Number(customerReconciled.deactivated||0)
     },
-    complete,days,rateLimited:rateLimitedResult,errors
+    quota:{
+      cloudReads:Number(saved.quota?.cloudReads||0)+Number(productReconciled.quota?.cloudReads||0)+Number(customerReconciled.quota?.cloudReads||0),
+      cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(productReconciled.quota?.cloudWrites||0)+Number(customerReconciled.quota?.cloudWrites||0),
+      cacheHits:Number(saved.quota?.cacheHits||0)+Number(productReconciled.quota?.cacheHits||0)+Number(customerReconciled.quota?.cacheHits||0)
+    },
+    complete,productComplete,customerComplete,days,rateLimited:rateLimitedResult,errors
   };
 }
 
@@ -833,6 +962,9 @@ export const smartstoreTestHelpers={
   inquiryIso,
   inquiryDateOnly,
   customerInquiryProfiles,
+  staleInquiryKindDocuments,
+  conditionOrderPage,
+  productOrderIdOf,
   retireLegacySmartstoreInquiryCache,
   isLegacyInquiryCacheStale,
   firstImageUrl,
@@ -846,6 +978,8 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   const from=new Date(now.getTime()-minutes*60000);
   const ranges=splitDateRange(from,now,23);
   const idSet=new Set();
+  let conditionIds=0;
+  let conditionDiscoveryComplete=false;
 
   for(const [index,range] of ranges.entries()){
     const ids=await retry(
@@ -857,6 +991,20 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
   }
 
   if(reconcile){
+    // 변경내역 API만으로 놓칠 수 있는 오늘 주문을 조건형 주문조회로 한 번 더 대조합니다.
+    // 선물 수락 전 주문은 상세 정규화 단계에서 계속 집계 제외됩니다.
+    try{
+      const discovered=await retry(
+        ()=>conditionProductOrderIds(token,from,now),
+        '스마트스토어 오늘 주문 전체대조'
+      );
+      discovered.forEach(id=>idSet.add(String(id)));
+      conditionIds=discovered.length;
+      conditionDiscoveryComplete=true;
+    }catch(error){
+      console.warn('스마트스토어 오늘 주문 전체대조 건너뜀:',error?.message||error);
+    }
+
     // Include both open orders and open claims. A return/exchange can remain open
     // after the normal order has already left the shipping workflow.
     const cached=await getCachedDocuments(db,{source:'smartstore',activeOnly:true});
@@ -870,6 +1018,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     return {
       connected:true,found:0,created:0,existing:0,statusChanged:0,
       createdOrders:[],createdClaims:[],rangeCount:ranges.length,
+      conditionIds,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
       claimReconcile:{cancel:0,return:0,exchange:0}
     };
   }
@@ -902,6 +1051,7 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
     createdOrders:saved.createdDocuments.filter(item=>item.eventType==='order'&&item.status==='new'),
     createdClaims:saved.createdDocuments.filter(item=>item.eventType!=='order'),
     rangeCount:ranges.length,
+    conditionIds,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
     quota:{
       cloudReads:Number(saved.quota?.cloudReads||0)+claimQuota.cloudReads,
       cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,

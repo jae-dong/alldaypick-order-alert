@@ -17,6 +17,9 @@ assert.match(smartstore,/answered:'false'/,'Naver customer inquiries must reques
 assert.match(smartstore,/page:String\(page\)[\s\S]*pgae:String\(page\)/,'Naver customer inquiry paging must support both documented and gateway-compatible page keys');
 assert.match(smartstore,/row\.inquiryNo/,'Naver customer inquiry IDs must use inquiryNo');
 assert.match(smartstore,/row\.inquiryRegistrationDateTime/,'Naver customer inquiry timestamps must use the documented field');
+assert.match(smartstore,/\/v1\/pay-order\/seller\/product-orders\?\$\{params\}/,'Naver startup repair must cross-check condition-based product orders');
+assert.match(smartstore,/conditionDiscoveryComplete/,'Naver condition-order cross-check result must be reported');
+assert.match(smartstore,/reconcileInquiryKind/,'Naver product and customer inquiries must reconcile independently');
 
 const coupangInquiries=read('coupang-inquiries.js');
 assert.match(coupangInquiries,/answeredType:'NOANSWER'/,'Coupang product inquiries must request unanswered items');
@@ -35,6 +38,8 @@ assert.match(lotteon,/status: 'shipping_wait'/,'Lotteon delivery instructions mu
 assert.match(lotteon,/function scalarContext/,'Lotteon nested response rows must inherit parent order fields');
 assert.match(lotteon,/SellerDeliveryProgressStateSearch/,'Lotteon repair must also query current delivery progress');
 assert.match(lotteon,/instructionRows[\s\S]*progressRows/,'Lotteon sync must report instruction and progress discovery separately');
+assert.match(lotteon,/mergeLotteonOrders/,'Lotteon progress rows must override stale delivery-instruction rows');
+assert.match(lotteon,/orderProductSequence\|\|order\.sitmNo/,'Lotteon order identity must prefer stable line identifiers');
 
 const elevenst=read('elevenst.js');
 assert.match(elevenst,/String\(item\.eventType\|\|'order'\)==='order'/,'11st order status refresh must not treat claim documents as orders');
@@ -49,7 +54,7 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.12'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.13'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -125,6 +130,6 @@ assert.match(app,/function firstPositiveAmount/,'Zero-valued amount aliases must
 const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 assert.match(index,/오늘 판매 TOP 20/,'Today analytics heading must say TOP 20');
 const styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-assert.match(styles,/FINAL v7\.7\.12 · 전체 가독성 확대/,'Readability overrides must be included');
+assert.match(styles,/FINAL v7\.7\.13 · 전체 가독성 확대/,'Readability overrides must be included');
 
 console.log('source-contract tests passed');

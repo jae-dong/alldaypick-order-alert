@@ -50,3 +50,18 @@ console.log('lotteon status tests passed');
     globalThis.fetch=originalFetch;
   }
 }
+
+const instructionOrder=H.normalizeOrder({
+  __lotteonFeed:'instruction',ordNo:'LO-MERGE',ordDtlSeq:'1',dlvNo:'D-OLD',sitmNo:'S-10',
+  spdNm:'상태대조 상품',ordQty:2,payAmt:22000,dlvStsNm:'출고지시',ordDttm:'20260722090000'
+},'SELLER');
+const deliveredOrder=H.normalizeOrder({
+  __lotteonFeed:'progress',ordNo:'LO-MERGE',ordDtlSeq:'1',dlvNo:'D-NEW',sitmNo:'S-10',
+  dlvStsNm:'배송완료',updDttm:'20260722130000'
+},'SELLER');
+assert.equal(instructionOrder.id,deliveredOrder.id,'stable order line ID must not depend on changing delivery number');
+const mergedOrders=H.mergeLotteonOrders([instructionOrder],[deliveredOrder]);
+assert.equal(mergedOrders.length,1);
+assert.equal(mergedOrders[0].status,'delivered','progress state must override stale instruction state');
+assert.equal(mergedOrders[0].amount,22000,'instruction amount must be preserved when progress payload omits price');
+assert.equal(mergedOrders[0].product,'상태대조 상품','instruction product name must be preserved');

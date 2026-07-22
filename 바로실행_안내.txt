@@ -1,10 +1,11 @@
-올데이픽 주문알림 FINAL v7.7.12 바로 실행
+올데이픽 주문알림 FINAL v7.7.13 바로 실행
 
-1. 기존 검은 창을 닫습니다.
-2. 압축파일 내용물을 기존 GitHub 저장소 폴더에 모두 덮어씁니다.
-3. backend\.env.local, backend\firebase-service-account.json, .git은 유지합니다.
-4. GitHub Desktop Summary: FINAL v7.7.12 전체 텔레그램 썸네일·TOP20·금액연동·가독성 확대
-5. Commit to main → Push origin을 누릅니다.
-6. Render 배포 성공을 확인합니다.
-7. START_AGENT.cmd를 실행하고 검은 창을 계속 켜 둡니다.
-8. 웹앱을 Ctrl+F5로 새로고침하고 FINAL v7.7.12를 확인합니다.
+1. 현재 검은색 수집기 창을 닫습니다.
+2. ZIP을 새 폴더에 압축 해제합니다.
+3. 압축 해제한 파일을 기존 GitHub 프로젝트 폴더에 모두 덮어씁니다.
+4. .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+5. GitHub Desktop Summary: FINAL v7.7.13 스마트스토어·롯데온 상태정합성 보강
+6. Commit to main → Push origin을 누릅니다.
+7. Render 배포 완료를 확인합니다.
+8. START_AGENT.cmd를 실행하고 창을 계속 켜 둡니다.
+9. 웹앱을 Ctrl+F5로 새로고침하고 FINAL v7.7.13을 확인합니다.
