@@ -8,7 +8,7 @@ export const DIRECT_AUDIT_PATH=path.join(BACKEND_DIR,'market-direct-audit.json')
 function defaultAudit(){
   return {
     schemaVersion:1,
-    appVersion:'FINAL v7.7.16',
+    appVersion:'FINAL v7.7.17',
     generatedAt:'',
     basis:'각 쇼핑몰 공식 API 직접조회',
     excludedMarkets:{

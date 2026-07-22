@@ -92,15 +92,19 @@ function normalize(sheets,requestedStatus){
       const orderedQty=Math.max(1,Number(item.shippingCount||item.quantity||1));
       const qty=Math.max(0,orderedQty-Number(item.cancelCount||0)-Number(item.holdCountForCancel||0));
       if(qty<=0) continue;
-      const itemOrderTotal=
+      // 쿠팡 주문 API의 orderPrice는 상품가×주문수량이고 discountPrice는
+      // 해당 상품행에 적용된 할인액입니다. 오늘 매출은 할인 전 판매가가 아니라
+      // 실제 결제기준 상품금액으로 집계해야 하므로 할인액을 한 번 차감합니다.
+      const grossItemAmount=
         money(item.orderPrice)||money(item.totalPrice)||
         money(item.salesPrice)*orderedQty||
-        money(item.discountedPrice)*orderedQty||
         money(item.unitPrice)*orderedQty;
+      const itemDiscount=Math.max(0,money(item.discountPrice)||money(item.discountAmount));
+      const netItemAmount=Math.max(0,grossItemAmount-itemDiscount);
       const activeItemAmount=Math.round(
-        itemOrderTotal>0
-          ?itemOrderTotal*(qty/orderedQty)
-          :(money(item.salesPrice)||money(item.discountedPrice)||money(item.unitPrice))*qty
+        netItemAmount>0
+          ?netItemAmount*(qty/orderedQty)
+          :(money(item.salesPrice)||money(item.unitPrice))*qty
       );
       const orderNo=String(sheet.orderId||'');
       const lineId=String(item.vendorItemId||item.sellerProductId||item.orderItemId||'item');
@@ -121,10 +125,11 @@ function normalize(sheets,requestedStatus){
         deliveryMemo:sheet.deliveryMessage||'',
         amount:activeItemAmount,
         unitPrice:Math.round(
-          money(item.unitPrice)||money(item.salesPrice)||money(item.discountedPrice)||
-          itemOrderTotal/orderedQty
+          activeItemAmount/Math.max(1,qty)||money(item.unitPrice)||money(item.salesPrice)
         ),
         originalQty:orderedQty,
+        grossItemAmount:Math.round(grossItemAmount),
+        discountAmount:Math.round(itemDiscount),
         cancelCount:Number(item.cancelCount||0),
         holdCountForCancel:Number(item.holdCountForCancel||0),
         orderTotalAmount:Math.round(
@@ -235,3 +240,5 @@ export async function pollCoupang(db,config,minutes=30){
     reconcile:false
   });
 }
+
+export const coupangTestHelpers={normalize};

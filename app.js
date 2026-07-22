@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.16';
+const APP_VERSION='FINAL v7.7.17';
 const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1411,26 +1411,32 @@ function metricOrders(){
   return [...map.values()];
 }
 
+function encodedOrderBusinessDate(order){
+  const raw=String(order?.orderNo||order?.orderId||'');
+  const match=raw.match(/(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])/);
+  if(!match) return new Date(0);
+  const date=new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00+09:00`);
+  return Number.isNaN(date.getTime())?new Date(0):date;
+}
+
 function engineOrderDate(order){
+  const encoded=encodedOrderBusinessDate(order);
+  const source=String(order?.source||order?.market||'').toLowerCase();
+  if((source==='elevenst'||source==='11번가')&&encoded.getTime()) return encoded;
   for(const value of [
-    order?.metricDate,
-    order?.businessDate,
-    order?.orderDate,
-    order?.orderAt,
-    order?.orderedAt,
-    order?.paymentDate,
-    order?.paymentAt,
-    order?.paidAt,
-    order?.orderDateTime,
-    order?.paymentDateTime,
-    order?.datetime,
-    order?.createdAt
+    order?.metricDate,order?.businessDate,order?.orderDate,order?.orderAt,order?.orderedAt,
+    order?.paymentDate,order?.paymentAt,order?.paidAt,order?.orderDateTime,order?.paymentDateTime
   ]){
     if(!value) continue;
     const date=value?.toDate?value.toDate():new Date(value);
     if(!Number.isNaN(date.getTime())) return date;
   }
-
+  if(encoded.getTime()) return encoded;
+  for(const value of [order?.datetime,order?.createdAt]){
+    if(!value) continue;
+    const date=value?.toDate?value.toDate():new Date(value);
+    if(!Number.isNaN(date.getTime())) return date;
+  }
   return new Date(0);
 }
 
@@ -3114,7 +3120,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.16-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.17-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

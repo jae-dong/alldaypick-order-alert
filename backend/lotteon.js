@@ -27,8 +27,21 @@ function text(value) {
   return '';
 }
 
+function normalizedFieldName(value='') {
+  return String(value||'').toLowerCase().replace(/[^a-z0-9가-힣]/g,'');
+}
+
 function first(object, keys) {
-  return text(value(object, keys));
+  const direct=text(value(object, keys));
+  if(direct) return direct;
+  if(!object||typeof object!=='object') return '';
+  const wanted=new Set(keys.map(normalizedFieldName));
+  for(const [key,raw] of Object.entries(object)){
+    if(!wanted.has(normalizedFieldName(key))) continue;
+    const result=text(raw);
+    if(result) return result;
+  }
+  return '';
 }
 
 function numberValue(value) {
@@ -37,6 +50,27 @@ function numberValue(value) {
   );
 
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function deepNumberByKeys(root,keys,maxDepth=8) {
+  const wanted=new Set(keys.map(normalizedFieldName));
+  const queue=[{value:root,depth:0}];
+  const seen=new Set();
+  while(queue.length){
+    const current=queue.shift();
+    const node=current.value;
+    if(!node||typeof node!=='object'||current.depth>maxDepth||seen.has(node)) continue;
+    seen.add(node);
+    for(const [key,raw] of Object.entries(node)){
+      const normalized=normalizedFieldName(key);
+      if(wanted.has(normalized)){
+        const amount=numberValue(raw);
+        if(amount>0) return amount;
+      }
+      if(raw&&typeof raw==='object') queue.push({value:raw,depth:current.depth+1});
+    }
+  }
+  return 0;
 }
 
 function asArray(value) {
@@ -394,28 +428,24 @@ function normalizeOrder(row, sellerId) {
       ])
     ) || 1;
 
-  const unitPrice = numberValue(
-    first(row, [
-      'salePrc',
-      'sellPrc',
-      'unitPrice',
-      'itemPrice',
-      'ordPrc',
-      'prdPrc'
-    ])
-  );
-
-  const lineAmount=numberValue(first(row,[
-    'orderProductAmount','saleAmt','itemAmount','productAmount','ordDtlAmt','sitmAmt','prdAmt'
-  ]));
-  const amount =
-    lineAmount ||
-    unitPrice * qty ||
-    numberValue(
-      first(row, [
-        'realPayAmt','payAmt','ordAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt'
-      ])
-    );
+  const unitPriceKeys=[
+    'salePrc','sellPrc','unitPrice','itemPrice','ordPrc','prdPrc','salePrice','sellPrice'
+  ];
+  const lineAmountKeys=[
+    'orderProductAmount','saleAmt','itemAmount','productAmount','ordDtlAmt','sitmAmt','prdAmt',
+    'ordItemAmt','orderItemAmount','totSaleAmt','saleAmount','sitmOrdAmt','ordDtlPayAmt'
+  ];
+  const totalAmountKeys=[
+    'realPayAmt','payAmt','ordAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt',
+    'totOrdAmt','orderAmount','paymentAmt','finalPayAmt','totalPayAmount'
+  ];
+  const unitPrice =
+    numberValue(first(row,unitPriceKeys))||deepNumberByKeys(row,unitPriceKeys);
+  const lineAmount=
+    numberValue(first(row,lineAmountKeys))||deepNumberByKeys(row,lineAmountKeys);
+  const orderTotalAmount=
+    numberValue(first(row,totalAmountKeys))||deepNumberByKeys(row,totalAmountKeys);
+  const amount = lineAmount || unitPrice * qty || orderTotalAmount;
 
   const claimId=first(row,['claimNo','claimId','returnNo','exchangeNo','cancelNo'])||`${orderNo}-${idPart}-${mapped.eventType}`;
   const documentId=mapped.eventType==='order'
@@ -503,7 +533,7 @@ function normalizeOrder(row, sellerId) {
     ]),
     amount,
     unitPrice,
-    orderTotalAmount:numberValue(first(row,['realPayAmt','payAmt','totalAmount','paymentAmount','totPayAmt','ordPayAmt'])),
+    orderTotalAmount,
     datetime:metricDate,
     metricDate,
     orderDate:parseDate(first(row,[

@@ -342,13 +342,26 @@
     }
     return out;
   }
+  function encodedOrderDate(item){
+    const raw=orderNo(item);
+    const match=String(raw||'').match(/(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])/);
+    if(!match)return new Date(0);
+    const date=new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00+09:00`);
+    return Number.isNaN(date.getTime())?new Date(0):date;
+  }
   function orderDate(item){
-    const values=[
+    const encoded=encodedOrderDate(item);
+    const source=normalized(item?.source||market(item));
+    // 11번가 과거 상태문서 일부는 상태조회 시각이 주문일시 필드에 남아 있습니다.
+    // 주문번호에 YYYYMMDD가 있으면 공식 주문번호 날짜를 우선해 당일 상품행을 복구합니다.
+    if((source==='elevenst'||source==='11번가')&&encoded.getTime())return encoded;
+    const businessValues=[
       item?.metricDate,item?.businessDate,item?.orderDate,item?.orderAt,item?.orderedAt,
-      item?.paymentDate,item?.paymentAt,item?.paidAt,item?.orderDateTime,
-      item?.paymentDateTime,item?.datetime,item?.createdAt
+      item?.paymentDate,item?.paymentAt,item?.paidAt,item?.orderDateTime,item?.paymentDateTime
     ];
-    for(const value of values){const n=time(value);if(n)return new Date(n);}
+    for(const value of businessValues){const n=time(value);if(n)return new Date(n);}
+    if(encoded.getTime())return encoded;
+    for(const value of [item?.datetime,item?.createdAt]){const n=time(value);if(n)return new Date(n);}
     return new Date(0);
   }
   function salesGroups(items,integrations){

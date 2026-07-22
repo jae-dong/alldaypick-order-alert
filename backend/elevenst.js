@@ -33,6 +33,10 @@ function text(value) {
   return '';
 }
 
+function normalizedFieldName(value='') {
+  return String(value||'').toLowerCase().replace(/[^a-z0-9가-힣]/g,'');
+}
+
 function first(object, names) {
   for (const name of names) {
     if (object && object[name] != null) {
@@ -40,7 +44,13 @@ function first(object, names) {
       if (value !== '') return value;
     }
   }
-
+  if(!object||typeof object!=='object') return '';
+  const wanted=new Set(names.map(normalizedFieldName));
+  for(const [key,raw] of Object.entries(object)){
+    if(!wanted.has(normalizedFieldName(key))) continue;
+    const value=text(raw);
+    if(value!=='') return value;
+  }
   return '';
 }
 
@@ -64,7 +74,8 @@ function scalarOrderContext(node, inherited = {}) {
     'recvAddr','rcvrAddr','addr','receiverAddress','recvAddrDetail','rcvrAddrDtl',
     'addrDetail','receiverAddressDetail','dlvMemo','deliveryMemo','memo','ordQty',
     'qty','quantity','ordAmt','ordPayAmt','paymentAmount','totalAmount','salePrice',
-    'unitPrice','ordDt','payDt','orderDate','paymentDate','createdAt','ordPrdStat',
+    'unitPrice','prdAmt','ordPrdAmt','orderProductAmount','itemAmount','productAmount',
+    'payAmt','realPayAmt','totPayAmt','saleAmt','ordPrdPrc','prdPrc','sellPrc','ordDt','payDt','orderDate','paymentDate','createdAt','ordPrdStat',
     'ordStat','orderStatus','status','ordPrdStatNm','ordStatNm','orderStatusName',
     'statusName','dlvStat','deliveryStatus','deliveryState','procStat','dlvStatNm',
     'deliveryStatusName','deliveryStateName','procStatNm','invoiceNo','trackingNumber',
@@ -78,10 +89,14 @@ function scalarOrderContext(node, inherited = {}) {
     'cancelReason','returnReason','exchangeReason','claimDate','claimDt','requestDate'
   ];
   const context = { ...inherited };
-  for (const key of keys) {
-    const candidate = node?.[key];
+  const canonical=new Map(keys.map(key=>[normalizedFieldName(key),key]));
+  for (const [rawKey,candidate] of Object.entries(node||{})) {
+    const key=canonical.get(normalizedFieldName(rawKey));
+    if (!key) continue;
     if (candidate != null && ['string','number','boolean'].includes(typeof candidate)) {
       context[key] = candidate;
+    }else if(candidate&&typeof candidate==='object'&&candidate['#text']!=null){
+      context[key]=candidate['#text'];
     }
   }
   return context;
@@ -124,6 +139,16 @@ function collectOrderRows(node, depth = 0, inherited = {}) {
     if (visited.has(key) || child == null || typeof child !== 'object') continue;
     rows.push(...collectOrderRows(child, depth + 1, context));
   }
+
+  // 일부 응답은 상품행 값이 현재 노드에 있고 주소/상태 같은 자식 노드가 따로 있습니다.
+  // 이전 로직은 자식이 하나라도 있으면 현재 상품행을 버려 당일 주문이 누락될 수 있었습니다.
+  const parentOrderNo=first(merged,['ordNo','orderNo','orderNumber']);
+  const parentProductSignal=first(merged,[
+    'ordPrdSeq','orderProductSequence','prdSeq','prdNo','productNo',
+    'prdNm','productName','prdName','itemName','ordQty','qty','quantity',
+    'prdAmt','ordPrdAmt','orderProductAmount','itemAmount','saleAmt','selPrc'
+  ]);
+  if(parentOrderNo&&parentProductSignal) rows.push(merged);
 
   // Header + product-line XML responses are merged through inherited context.
   // Prefer leaf rows so one response containing several products never collapses to the first row.
@@ -188,6 +213,19 @@ function parseDate(value) {
   return Number.isNaN(date.getTime())
     ? new Date().toISOString()
     : date.toISOString();
+}
+
+function dateFromOrderNumber(orderNo='') {
+  const match=String(orderNo||'').match(/(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])/);
+  if(!match) return '';
+  const value=`${match[1]}-${match[2]}-${match[3]}T12:00:00+09:00`;
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?'':date.toISOString();
+}
+
+function orderMetricDate(row={},orderNo='') {
+  const raw=first(row,['ordDt','payDt','orderDate','paymentDate','createdAt','ordDttm','payDttm']);
+  return raw?parseDate(raw):(dateFromOrderNumber(orderNo)||new Date().toISOString());
 }
 
 function configFromEnv(env = process.env) {
@@ -396,15 +434,7 @@ function normalizeOrder(row) {
       'realPayAmt','totPayAmt'
     ]));
 
-  const datetime = parseDate(
-    first(row, [
-      'ordDt',
-      'payDt',
-      'orderDate',
-      'paymentDate',
-      'createdAt'
-    ])
-  );
+  const datetime = orderMetricDate(row,orderNo);
 
   return {
     id: `elevenst-${orderNo}-${itemKey}`,
@@ -836,6 +866,24 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
         // 일부 11번가 응답은 ordPrdSeq 형식이 기존 주문 문서와 다르게 내려옵니다.
         // 주문번호가 일치하면 해당 주문의 모든 상품줄에 같은 현재 상태를 적용합니다.
         const matches=exactMatches.length?exactMatches:orderMatches;
+        // 상태 API가 기존 캐시에 없던 상품행을 함께 돌려주는 경우도 새 주문문서로 복구합니다.
+        // 이전에는 previous가 없으면 해당 행 전체를 버려 오늘 상품주문 수가 부족해졌습니다.
+        if(!matches.length){
+          const discovered=normalizeOrder(row);
+          if(discovered){
+            const mapped=mapElevenOrderStatus(row,discovered);
+            documents.push({
+              ...discovered,
+              status:mapped.status,statusLabel:mapped.statusLabel,sourceStatus:mapped.sourceStatus,
+              activeState:['new','shipping_wait'].includes(mapped.status),
+              stateAuthority:'elevenst-status-api-discovery',
+              stateVerifiedAt:new Date().toISOString(),
+              apiVerifiedOpen:['new','shipping_wait'].includes(mapped.status),
+              sourceUpdatedAt:new Date().toISOString(),syncedAt:new Date().toISOString()
+            });
+            checked+=1;
+          }
+        }
         for(const previous of matches){
           checked+=1;
           const mapped=mapElevenOrderStatus(row,previous);
@@ -860,7 +908,7 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
           ]);
           const resolvedMetricDate=rawMetricDate
             ?parseDate(rawMetricDate)
-            :(previous.metricDate||previous.orderDate||previous.paymentDate||previous.datetime||'');
+            :(previous.metricDate||previous.orderDate||previous.paymentDate||previous.datetime||dateFromOrderNumber(ordNo)||'');
 
           documents.push({
             ...previous,
@@ -999,5 +1047,5 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
 }
 
 export const elevenstTestHelpers={collectOrderRows,
-  mapElevenOrderStatus,mapElevenClaim,claimText,collectRows,statusText,fetchStatusRows,statusRefreshDocuments
+  mapElevenOrderStatus,mapElevenClaim,claimText,collectRows,statusText,fetchStatusRows,statusRefreshDocuments,dateFromOrderNumber,orderMetricDate
 };

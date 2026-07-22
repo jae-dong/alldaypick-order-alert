@@ -478,21 +478,27 @@ function conditionOrderPage(body){
     ?body.data
     :body;
   const items=[
-    root?.contents,root?.content,root?.items,
-    body?.contents,body?.content,body?.items
+    Array.isArray(body?.data)?body.data:null,
+    root?.contents,root?.content,root?.items,root?.productOrders,root?.productOrderList,
+    body?.contents,body?.content,body?.items,body?.productOrders,body?.productOrderList
   ].find(Array.isArray)||[];
   const pagination=root?.pagination||body?.pagination||{};
+  const page=Number(pagination.page??pagination.pageNumber??root?.page??root?.pageNumber??1)||1;
+  const size=Number(pagination.size??pagination.pageSize??root?.size??root?.pageSize??300)||300;
+  const totalPages=Number(pagination.totalPages??root?.totalPages??0)||0;
+  const last=pagination.last??root?.last;
   return {
-    items,
-    page:Number(pagination.page??root?.page??1)||1,
-    size:Number(pagination.size??root?.size??300)||300,
-    hasNext:pagination.hasNext===true||root?.hasNext===true
+    items,page,size,
+    hasNext:
+      pagination.hasNext===true||root?.hasNext===true||
+      last===false||(totalPages>0&&page<totalPages)
   };
 }
 
 function productOrderIdOf(row){
+  if(typeof row==='string'||typeof row==='number') return String(row).trim();
   return String(
-    row?.productOrderId||
+    row?.productOrderId||row?.id||
     row?.productOrder?.productOrderId||
     row?.productOrderInfo?.productOrderId||
     row?.productOrderDetail?.productOrderId||
