@@ -421,6 +421,9 @@ function normalizeOrder(row) {
     statusLabel: '신규주문',
     sourceStatus: 'COMPLETE',
     activeState:true,
+    stateAuthority:'elevenst-orders-api',
+    stateVerifiedAt:new Date().toISOString(),
+    apiVerifiedOpen:true,
     productNo: first(row, ['prdNo', 'productNo']),
     imageUrl: first(row, [
       'prdImgUrl','prdImg','productImageUrl','representativeImageUrl','mainImageUrl',
@@ -486,11 +489,22 @@ export async function syncElevenstOrders(
     rows.map(normalizeOrder).filter(Boolean).map(order => [order.id, order])
   ).values()];
 
+  const saved=await saveOrders(db,orders);
   return {
-    connected: true,
-    repairDiscovery: repair,
-    rawRows: rows.length,
-    ...(await saveOrders(db, orders))
+    connected:true,
+    repairDiscovery:repair,
+    rawRows:rows.length,
+    ...saved,
+    directAudit:{
+      authority:'elevenst-order-api',
+      verifiedAt:new Date().toISOString(),
+      rawRows:rows.length,
+      normalizedRows:orders.length,
+      missingAmount:orders.filter(item=>Number(item.amount||0)<=0).length,
+      checkedFrom:from.toISOString(),
+      checkedTo:now.toISOString(),
+      complete:true
+    }
   };
 }
 
@@ -817,6 +831,9 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
             status:mapped.status,statusLabel:mapped.statusLabel,
             sourceStatus:mapped.sourceStatus,
             activeState:['new','shipping_wait'].includes(mapped.status),
+            stateAuthority:'elevenst-status-api',
+            stateVerifiedAt:new Date().toISOString(),
+            apiVerifiedOpen:['new','shipping_wait'].includes(mapped.status),
             invoiceNumber:first(row,['invoiceNo','trackingNumber','waybillNo','waybillNo'])||previous.invoiceNumber||'',
             deliveryCompanyName:first(row,['dlvCpnNm','deliveryCompanyName','deliveryCompany'])||previous.deliveryCompanyName||'',
             statusInferred:Boolean(mapped.inferred),
@@ -839,6 +856,9 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
               claimInferredFromOrderStatus:Boolean(claim.inferredFromOrderStatus),
               reason:first(row,['claimReason','claimRsn','reason','reasonText','ordCnDtsRsn','ordCnDtsRsnNm','cancelReason','returnReason','exchangeReason']),
               reasonDetail:first(row,['claimReasonDetail','reasonDetail','reasonEtc','ordCnDtsRsnDetail','ordCnDtsRsnDtl']),
+              stateAuthority:'elevenst-claim-api',
+              stateVerifiedAt:new Date().toISOString(),
+              apiVerifiedOpen:!claim.terminal,
               claimRequestedAt:parseDate(first(row,[
                 'claimDate','claimDt','requestDate','ordCnDtsDt','ordCnDtsDttm','cancelDate','returnDate','exchangeDate'
               ]))||previous.datetime||new Date().toISOString(),
@@ -907,7 +927,20 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
       cloudWrites:Number(saved.quota?.cloudWrites||0)+reconciliationQuota.cloudWrites,
       cacheHits:Number(saved.quota?.cacheHits||0)
     },
-    reconciliation
+    reconciliation,
+    directAudit:{
+      authority:'elevenst-claim-status-api',
+      verifiedAt:new Date().toISOString(),
+      checkedOrderNos:orderNos.length,
+      recognizedRows,
+      missingOrderNos:[...new Set(missingOrderNos)],
+      complete:Boolean(responseComplete),
+      activeClaims:{
+        cancel:unique.filter(item=>item.eventType==='cancel'&&item.activeState!==false).length,
+        return:unique.filter(item=>item.eventType==='return'&&item.activeState!==false).length,
+        exchange:unique.filter(item=>item.eventType==='exchange'&&item.activeState!==false).length
+      }
+    }
   };
 }
 

@@ -13,7 +13,7 @@ assert.equal(product.inquiryId,'101');
 assert.equal(product.activeState,true);
 assert.equal(product.content,'상품 문의');
 assert.equal(product.claimKey,'smartstore|inquiry|product-101');
-assert.equal(product.inquiryVerificationVersion,1);
+assert.equal(product.inquiryVerificationVersion,2);
 assert.ok(product.lastVerifiedAt);
 
 const customer=H.inquiryDoc({

@@ -119,6 +119,9 @@ function normalize(sheets,requestedStatus){
         datetime:sheet.orderedAt||sheet.paidAt||new Date().toISOString(),
         orderDate:sheet.orderedAt||'',paymentDate:sheet.paidAt||'',
         status,statusLabel,sourceStatus,activeState:true,
+        stateAuthority:'coupang-orders-api',
+        stateVerifiedAt:new Date().toISOString(),
+        apiVerifiedOpen:['ACCEPT','INSTRUCT'].includes(sourceStatus),
         invoiceNumber:item.invoiceNumber||sheet.invoiceNumber||'',
         deliveryCompanyName:item.deliveryCompanyName||sheet.deliveryCompanyName||'',
         sourceUpdatedAt:sheet.modifiedAt||sheet.updatedAt||new Date().toISOString(),
@@ -186,7 +189,19 @@ export async function pollCoupangStatuses(db,config,{statuses,days,maxPages=2,re
       cloudWrites:Number(saved.quota?.cloudWrites||0)+reconcileQuota.cloudWrites,
       cacheHits:Number(saved.quota?.cacheHits||0)
     },
-    checkedFrom:from.toISOString(),checkedTo:now.toISOString()
+    checkedFrom:from.toISOString(),checkedTo:now.toISOString(),
+    directAudit:{
+      authority:'coupang-orders-api-v5',
+      verifiedAt:new Date().toISOString(),
+      checkedFrom:from.toISOString(),
+      checkedTo:now.toISOString(),
+      statuses:[...statuses],
+      counts:{...counts},
+      complete:Object.values(completeness).every(Boolean),
+      completeness:{...completeness},
+      normalizedRows:unique.length,
+      missingAmount:unique.filter(item=>Number(item.amount||0)<=0).length
+    }
   };
 }
 

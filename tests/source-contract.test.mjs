@@ -34,7 +34,7 @@ assert.match(coupangClaims,/createdAtFrom:kstSecond\(window\.from\)[\s\S]*create
 const lotteon=read('lotteon.js');
 assert.match(lotteon,/\(repair\?7:3\)\*24\*60/,'Lotteon sync must cover at least three days and use a wider repair window');
 assert.match(lotteon,/base14,[\s\S]*trNo: config\.sellerId/,'Lotteon must try API-key seller scope before trNo fallback');
-assert.match(lotteon,/status: 'shipping_wait'/,'Lotteon delivery instructions must default to shipping wait');
+assert.match(lotteon,/status:'shipping_wait'/,'Lotteon delivery instructions must default to shipping wait');
 assert.match(lotteon,/function scalarContext/,'Lotteon nested response rows must inherit parent order fields');
 assert.match(lotteon,/SellerDeliveryProgressStateSearch/,'Lotteon repair must also query current delivery progress');
 assert.match(lotteon,/instructionRows[\s\S]*progressRows/,'Lotteon sync must report instruction and progress discovery separately');
@@ -53,18 +53,23 @@ assert.match(elevenst,/where\('source','==','elevenst'\)[\s\S]*limit\(500\)/,'11
 
 const agent=read('local-agent.js');
 const orderStore=read('order-store.js');
+const directAudit=read('direct-audit-store.js');
+assert.match(agent,/recordDirectAudit/,'Agent must persist marketplace-direct audit results');
+assert.match(directAudit,/market-direct-audit\.json/,'Direct API audit must create a local sanitized result file');
+assert.match(directAudit,/gmarket:'API 승인 전 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
+assert.match(directAudit,/auction:'API 승인 전 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.13'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.14'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
 assert.match(agent,/SMARTSTORE_INQUIRY_429_COOLDOWN_MS/,'Smartstore inquiries must persist a 429 cooldown');
 assert.match(elevenst,/activeOnly:false/,'11st status repair must include incorrectly deactivated pending records');
 assert.match(elevenst,/missingOrderNos/,'11st partial batch responses must be tracked and retried');
-assert.match(coupangClaims,/exchangeDeliveryCompleted/,'Coupang completed exchange delivery must close a stale PROGRESS claim');
+assert.match(coupangClaims,/exchangeStatus가 RECEIPT\/PROGRESS이면/,'Coupang official exchange status must override replacement-delivery completion');
 assert.match(coupangClaims,/\['RECEIPT','PROGRESS','접수','진행'\]/,'Only official active Coupang exchange statuses may remain open');
 assert.match(coupangClaims,/reconcile\?90:31/,'Startup exchange repair must scan a wider history');
-assert.match(coupangClaims,/return reconcile\?new Date\(0\):fetchedFrom/,'Startup exchange reconciliation must close stale active exchange cache regardless of age');
+assert.match(coupangClaims,/return fetchedFrom/,'Exchange reconciliation must only close records inside the directly queried range');
 assert.match(smartstore,/retireLegacySmartstoreInquiryCache/,'Legacy Smartstore inquiry cache must be retired once and restored by a later successful query');
 assert.match(smartstore,/searchKeywordType:'CHANNEL_PRODUCT_NO'/,'Smartstore thumbnail lookup must recover current product identity by channel product number');
 assert.match(smartstore,/searchKeywordType:'SELLER_CODE'/,'Smartstore thumbnail lookup must fall back to seller management code');
@@ -130,6 +135,6 @@ assert.match(app,/function firstPositiveAmount/,'Zero-valued amount aliases must
 const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 assert.match(index,/오늘 판매 TOP 20/,'Today analytics heading must say TOP 20');
 const styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-assert.match(styles,/FINAL v7\.7\.13 · 전체 가독성 확대/,'Readability overrides must be included');
+assert.match(styles,/FINAL v7\.7\.14 · 공식 API 직접검증 · 전체 가독성 확대/,'Readability overrides must be included');
 
 console.log('source-contract tests passed');

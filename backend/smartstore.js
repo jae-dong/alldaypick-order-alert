@@ -649,7 +649,11 @@ function inquiryDoc(row,kind){
     inquiryKind:kind,
     content:row.question||row.inquiryContent||row.content||'',
     answered,activeState:!answered,
-    inquiryVerificationVersion:1,
+    inquiryVerificationVersion:2,
+    stateAuthority:'smartstore-inquiry-api',
+    stateVerifiedAt:new Date().toISOString(),
+    verificationBucket:Math.floor(Date.now()/(2*60*60*1000)),
+    apiVerifiedOpen:!answered,
     lastVerifiedAt:new Date().toISOString(),
     sourceUpdatedAt:
       row.answerRegistrationDateTime||row.answerDate||row.updatedAt||
@@ -918,7 +922,19 @@ export async function syncSmartstoreInquiries(db,config,{reconcile=false}={}){
       cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(productReconciled.quota?.cloudWrites||0)+Number(customerReconciled.quota?.cloudWrites||0),
       cacheHits:Number(saved.quota?.cacheHits||0)+Number(productReconciled.quota?.cacheHits||0)+Number(customerReconciled.quota?.cacheHits||0)
     },
-    complete,productComplete,customerComplete,days,rateLimited:rateLimitedResult,errors
+    complete,productComplete,customerComplete,days,rateLimited:rateLimitedResult,errors,
+    directAudit:{
+      authority:'naver-commerce-inquiry-api',
+      verifiedAt:new Date().toISOString(),
+      type:'inquiry',
+      open:enriched.filter(item=>item.activeState!==false).length,
+      productOpen:enriched.filter(item=>item.inquiryKind==='product'&&item.activeState!==false).length,
+      customerOpen:enriched.filter(item=>item.inquiryKind==='customer'&&item.activeState!==false).length,
+      complete:Boolean(complete),
+      productComplete:Boolean(productComplete),
+      customerComplete:Boolean(customerComplete),
+      checkedFrom:from.toISOString()
+    }
   };
 }
 
@@ -1019,7 +1035,16 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
       connected:true,found:0,created:0,existing:0,statusChanged:0,
       createdOrders:[],createdClaims:[],rangeCount:ranges.length,
       conditionIds,conditionDiscoveryComplete,conditionDiscoveryAttempted:reconcile,
-      claimReconcile:{cancel:0,return:0,exchange:0}
+      claimReconcile:{cancel:0,return:0,exchange:0},
+      directAudit:{
+        authority:'naver-commerce-order-api',
+        verifiedAt:new Date().toISOString(),
+        normalizedRows:0,
+        orderRows:0,
+        giftWaiting:0,
+        missingAmount:0,
+        complete:Boolean(!reconcile||conditionDiscoveryComplete)
+      }
     };
   }
 
@@ -1057,6 +1082,21 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
       cloudWrites:Number(saved.quota?.cloudWrites||0)+claimQuota.cloudWrites,
       cacheHits:Number(saved.quota?.cacheHits||0)
     },
-    claimReconcile
+    claimReconcile,
+    directAudit:{
+      authority:'naver-commerce-order-api',
+      verifiedAt:new Date().toISOString(),
+      normalizedRows:documents.length,
+      orderRows:documents.filter(item=>item.eventType==='order').length,
+      activeOrders:documents.filter(item=>item.eventType==='order'&&item.activeState!==false).length,
+      giftWaiting:documents.filter(item=>item.eventType==='order'&&item.giftPending===true).length,
+      activeClaims:{
+        cancel:documents.filter(item=>item.eventType==='cancel'&&item.activeState!==false).length,
+        return:documents.filter(item=>item.eventType==='return'&&item.activeState!==false).length,
+        exchange:documents.filter(item=>item.eventType==='exchange'&&item.activeState!==false).length
+      },
+      missingAmount:documents.filter(item=>item.eventType==='order'&&item.giftPending!==true&&Number(item.amount||0)<=0).length,
+      conditionDiscoveryComplete:Boolean(!reconcile||conditionDiscoveryComplete)
+    }
   };
 }

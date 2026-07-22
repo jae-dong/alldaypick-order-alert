@@ -39,3 +39,5 @@ backend/.telegram-product-image-cache-v9.json.tmp
 
 backend/.telegram-product-image-cache-v10.json
 backend/.telegram-product-image-cache-v10.json.tmp
+backend/market-direct-audit.json
+backend/market-direct-audit.json.tmp

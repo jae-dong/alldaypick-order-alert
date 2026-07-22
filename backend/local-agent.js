@@ -36,6 +36,7 @@ import { migrateLegacyDocuments,getCachedDocuments } from './order-store.js';
 import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 import { telegramOrderBody } from './telegram-format.js';
 import { resolveTelegramProductImage,invalidateTelegramProductImageCache } from './product-image.js';
+import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -1389,6 +1390,13 @@ async function slowSync(){
 }
 
 async function saveIntegration(fast,slow){
+  if(fast?.directAudit){
+    recordDirectAudit('coupang','orders',fast.directAudit);
+  }
+  if(slow?.directAudit){
+    recordDirectAudit('coupang',`orders-${String(slow.slowStatus||'status').toLowerCase()}`,slow.directAudit);
+  }
+
   await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
     coupang:{
       name:'쿠팡',
@@ -1406,7 +1414,8 @@ async function saveIntegration(fast,slow){
           existing:fast.existing,
           statusChanged:fast.statusChanged,
           counts:fast.counts,
-          push:fast.push
+          push:fast.push,
+          directAudit:fast.directAudit||null
         },
         slow:slow?{
           found:slow.found,
@@ -1414,7 +1423,8 @@ async function saveIntegration(fast,slow){
           existing:slow.existing,
           statusChanged:slow.statusChanged,
           counts:slow.counts,
-          slowStatus:slow.slowStatus
+          slowStatus:slow.slowStatus,
+          directAudit:slow.directAudit||null
         }:null
       }
     }
@@ -1476,6 +1486,10 @@ async function syncAllClaimTypes(source='interval'){
       result=await syncCoupangInquiries(db,coupang(),reconcile);
     }
 
+    if(result?.directAudit){
+      recordDirectAudit('coupang',type,result.directAudit);
+    }
+
     const push=await sendClaimPush(result.createdClaims||[],source);
     results.push({...result,claimType:type,push});
 
@@ -1535,6 +1549,10 @@ async function syncOneClaimType(source='interval'){
     result=await syncExchanges(db,coupang(),reconcile);
   }else{
     result=await syncCoupangInquiries(db,coupang(),reconcile);
+  }
+
+  if(result?.directAudit){
+    recordDirectAudit('coupang',type,result.directAudit);
   }
 
   const push=await sendClaimPush(result.createdClaims||[],source);
@@ -1747,6 +1765,13 @@ async function syncElevenstSafe(source){
       {repair:['startup','immediate','reconcile'].includes(source)}
     );
 
+    if(result?.directAudit){
+      recordDirectAudit('elevenst','orders',result.directAudit);
+    }
+    if(statusResult?.directAudit){
+      recordDirectAudit('elevenst','claims-status',statusResult.directAudit);
+    }
+
     const push=await sendMarketplacePush(
       result.createdOrders||[],
       '11번가',
@@ -1779,7 +1804,11 @@ async function syncElevenstSafe(source){
           externalStatusChanged:statusResult.changed,
           statusFailed:statusResult.failed,
           push,
-          statusPush
+          statusPush,
+          directAudit:{
+            orders:result.directAudit||null,
+            claimsStatus:statusResult.directAudit||null
+          }
         }
       }
     },{merge:true});
@@ -1791,7 +1820,14 @@ async function syncElevenstSafe(source){
       `상태푸시 ${statusPush.sent} · 재발견 ${result.rawRows||0} · ${quotaLog(result)}`
     );
 
-    return result;
+    return {
+      ...result,
+      statusResult,
+      directAudit:{
+        orders:result.directAudit||null,
+        claimsStatus:statusResult.directAudit||null
+      }
+    };
   }catch(error){
     const message=error instanceof Error
       ? error.message
@@ -1800,6 +1836,7 @@ async function syncElevenstSafe(source){
     if(markQuotaCooldown(error)) return null;
 
     console.error('11번가 동기화 실패:',message);
+    recordDirectAudit('elevenst','error',{verifiedAt:new Date().toISOString(),message,complete:false});
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       elevenst:{
@@ -1896,6 +1933,13 @@ async function syncSmartstoreSafe(source){
       inquiryResult=await cachedSmartstoreInquiryResult(reason);
     }
 
+    if(result?.directAudit){
+      recordDirectAudit('smartstore','orders',result.directAudit);
+    }
+    if(inquiryResult?.directAudit&&!inquiryResult?.skipped){
+      recordDirectAudit('smartstore','inquiries',inquiryResult.directAudit);
+    }
+
     const push=await sendMarketplacePush(result.createdOrders||[],'스마트스토어',source);
     const claimPush=await sendMarketplaceClaimPush(
       result.createdClaims||[],
@@ -1911,15 +1955,31 @@ async function syncSmartstoreSafe(source){
     const smartstoreConditionLabel=result.conditionDiscoveryAttempted
       ?(result.conditionDiscoveryComplete?String(result.conditionIds||0):'실패')
       :'정기생략';
+    const inquiryDirectlyVerified=Boolean(inquiryResult?.directAudit&&!inquiryResult?.skipped);
+    const inquiryStatusLabel=inquiryDirectlyVerified
+      ?`직접검증 ${inquiryResult.found||0}`
+      :`직접검증 대기${inquiryResult.reason?`(${inquiryResult.reason})`:''}`;
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',connected:true,lastRun:new Date().toISOString(),
-        message:`정상 조회 · 주문문서 ${result.found} · 오늘전체대조 ${smartstoreConditionLabel} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryResult.found||0}${inquiryResult.skipped?'(캐시)':''} · 문의정리 ${inquiryResult.deactivated||0}`,
+        message:`공식 API 직접조회 · 주문문서 ${result.found} · 오늘전체대조 ${smartstoreConditionLabel} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryStatusLabel} · 문의정리 ${inquiryResult.deactivated||0}`,
         lastResult:{
           found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
           conditionIds:result.conditionIds||0,conditionDiscoveryComplete:result.conditionDiscoveryComplete===true,
-          inquiries:{found:inquiryResult.found||0,created:inquiryResult.created||0,statusChanged:inquiryResult.statusChanged||0,deactivated:inquiryResult.deactivated||0,complete:inquiryResult.complete!==false},
+          inquiries:{
+            found:inquiryDirectlyVerified?(inquiryResult.found||0):0,
+            cachedFound:inquiryResult.found||0,
+            directlyVerified:inquiryDirectlyVerified,
+            created:inquiryResult.created||0,
+            statusChanged:inquiryResult.statusChanged||0,
+            deactivated:inquiryResult.deactivated||0,
+            complete:inquiryDirectlyVerified&&inquiryResult.complete!==false
+          },
+          directAudit:{
+            orders:result.directAudit||null,
+            inquiries:inquiryDirectlyVerified?(inquiryResult.directAudit||null):null
+          },
           push,claimPush,inquirySent
         }
       }
@@ -1928,16 +1988,24 @@ async function syncSmartstoreSafe(source){
     console.log(
       `스마트스토어 동기화 완료: 주문문서 ${result.found}, `+
       `오늘전체대조 ${smartstoreConditionLabel}, `+
-      `상태변경 ${result.statusChanged}, 요청알림 ${claimPush.sent||0}, 미답변문의 ${inquiryResult.found||0}`+
-      `${inquiryResult.skipped?'(캐시)':''}, 문의정리 ${inquiryResult.deactivated||0}, `+
+      `상태변경 ${result.statusChanged}, 요청알림 ${claimPush.sent||0}, 미답변문의 ${inquiryStatusLabel}, `+
+      `문의정리 ${inquiryResult.deactivated||0}, `+
       `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
 
-    return {...result,inquiries:inquiryResult};
+    return {
+      ...result,
+      inquiries:inquiryResult,
+      directAudit:{
+        orders:result.directAudit||null,
+        inquiries:inquiryDirectlyVerified?(inquiryResult.directAudit||null):null
+      }
+    };
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
     if(markQuotaCooldown(error)) return null;
     console.error('스마트스토어 동기화 실패:',message);
+    recordDirectAudit('smartstore','error',{verifiedAt:new Date().toISOString(),message,complete:false});
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
@@ -2054,6 +2122,10 @@ async function syncLotteonSafe(source){
     result.push=push;
     result.statusPush=statusPush;
 
+    if(result?.directAudit){
+      recordDirectAudit('lotteon','orders-status',result.directAudit);
+    }
+
     await saveLotteonIntegration(db,result);
 
     console.log(
@@ -2070,12 +2142,9 @@ async function syncLotteonSafe(source){
     if(markQuotaCooldown(error)) return null;
     await saveLotteonError(db,config,error);
 
-    console.error(
-      '롯데온 동기화 실패:',
-      error instanceof Error
-        ? error.message
-        : String(error)
-    );
+    const lotteonErrorMessage=error instanceof Error?error.message:String(error);
+    console.error('롯데온 동기화 실패:',lotteonErrorMessage);
+    recordDirectAudit('lotteon','error',{verifiedAt:new Date().toISOString(),message:lotteonErrorMessage,complete:false});
 
     return null;
   }finally{
@@ -2136,7 +2205,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.13',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.14',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2156,7 +2225,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.13',
+    version:'FINAL-7.7.14',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2519,6 +2588,7 @@ async function run(source){
       summary.coupang={error:message};
       if(markQuotaCooldown(error)) throw error;
       console.error('쿠팡 실패:',message);
+      recordDirectAudit('coupang','error',{verifiedAt:new Date().toISOString(),message,complete:false});
     }
 
     await updateCollectProgress(source,22,'쿠팡 주문 확인 완료');
@@ -2731,6 +2801,8 @@ console.log(
   `스마트스토어 문의 60분(429 보호) · 텔레그램 테스트 즉시 사용 가능 · `+
   `생존신호 5분 · 무료한도 최적화`
 );
+console.log(`마켓 공식 API 직접검증 결과: ${DIRECT_AUDIT_PATH}`);
+console.log('G마켓·옥션은 API 승인 전이므로 직접검증·집계에서 제외');
 
 run('startup').catch(error=>{
   console.error(

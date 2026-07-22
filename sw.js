@@ -1,4 +1,4 @@
-const CACHE='alldaypick-final-v7.7.13-20260722-smartstore-lotteon-state-fix-v1';
+const CACHE='alldaypick-final-v7.7.14-20260722-market-direct-audit-v1';
 const STATIC=[
   './',
   './index.html',

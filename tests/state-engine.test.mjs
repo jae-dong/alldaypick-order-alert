@@ -28,7 +28,7 @@ assert.equal(E.pendingOrders(data,integrations).length,0);
 data=[
   {...base,id:'order',lineKey:'coupang|100|A',status:'shipping_wait',sourceStatus:'INSTRUCT',sourceUpdatedAt:'2026-07-19T00:02:00+09:00'},
   {source:'coupang',market:'쿠팡',orderNo:'100',eventType:'return',claimKey:'coupang|return|R1',claimId:'R1',status:'return_request',sourceStatus:'UC',activeState:true,datetime:'2026-07-19T00:03:00+09:00'},
-  {source:'coupang',market:'쿠팡',orderNo:'100',eventType:'inquiry',claimKey:'coupang|inquiry|Q1',claimId:'Q1',status:'inquiry',sourceStatus:'NOANSWER',activeState:true,datetime:'2026-07-19T00:04:00+09:00'}
+  {source:'coupang',market:'쿠팡',orderNo:'100',eventType:'inquiry',claimKey:'coupang|inquiry|Q1',claimId:'Q1',status:'inquiry',sourceStatus:'NOANSWER',activeState:true,stateVerifiedAt:new Date().toISOString(),datetime:'2026-07-19T00:04:00+09:00'}
 ];
 assert.equal(JSON.stringify(E.counts(data,integrations)),JSON.stringify({new:0,shipping_wait:1,cancel:0,return:1,exchange:0,inquiry:1}));
 assert.equal(E.pendingItems(data,integrations).length,3);
@@ -99,7 +99,7 @@ regression.push({source:'elevenst',market:'11번가',orderNo:'E1',orderProductSe
 regression.push({source:'coupang',market:'쿠팡',eventType:'return',claimId:'CR1',claimKey:'coupang|return|CR1',sourceStatus:'UC',activeState:true});
 regression.push({source:'smartstore',market:'스마트스토어',eventType:'return',claimId:'NR1',claimKey:'smartstore|return|NR1',sourceStatus:'RETURN_REQUEST',activeState:true});
 regression.push({source:'smartstore',market:'스마트스토어',eventType:'exchange',claimId:'NE1',claimKey:'smartstore|exchange|NE1',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
-for(let i=0;i<3;i++) regression.push({source:i===0?'coupang':'smartstore',market:i===0?'쿠팡':'스마트스토어',eventType:'inquiry',claimId:`Q${i}`,claimKey:`${i===0?'coupang':'smartstore'}|inquiry|Q${i}`,sourceStatus:'NOANSWER',activeState:true});
+for(let i=0;i<3;i++) regression.push({source:i===0?'coupang':'smartstore',market:i===0?'쿠팡':'스마트스토어',eventType:'inquiry',claimId:`Q${i}`,claimKey:`${i===0?'coupang':'smartstore'}|inquiry|Q${i}`,sourceStatus:'NOANSWER',activeState:true,stateVerifiedAt:new Date().toISOString()});
 assert.equal(JSON.stringify(E.counts(regression,integrations)),JSON.stringify({new:13,shipping_wait:43,cancel:0,return:2,exchange:1,inquiry:3}));
 
 // Current-only guard: documents without an explicit activeState are historical/cache data.
@@ -118,7 +118,7 @@ liveComparison.push({source:'coupang',market:'쿠팡',eventType:'return',claimId
 liveComparison.push({source:'coupang',market:'쿠팡',eventType:'return',claimId:'LCR2',sourceStatus:'PR',activeState:true});
 liveComparison.push({source:'smartstore',market:'스마트스토어',eventType:'exchange',claimId:'LSE1',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
 liveComparison.push({source:'coupang',market:'쿠팡',eventType:'exchange',claimId:'OLD-CEX',sourceStatus:'EXCHANGE_REQUEST',activeState:true});
-liveComparison.push({source:'coupang',market:'쿠팡',eventType:'inquiry',claimId:'LCQ1',sourceStatus:'NOANSWER',activeState:true});
+liveComparison.push({source:'coupang',market:'쿠팡',eventType:'inquiry',claimId:'LCQ1',sourceStatus:'NOANSWER',activeState:true,stateVerifiedAt:new Date().toISOString()});
 liveComparison.push({source:'gmarket',market:'G마켓',orderNo:'G-EXCLUDED',eventType:'order',status:'new',sourceStatus:'NEW',activeState:true});
 assert.equal(JSON.stringify(E.counts(liveComparison,integrations)),JSON.stringify({new:4,shipping_wait:29,cancel:0,return:2,exchange:1,inquiry:1}));
 
@@ -150,7 +150,7 @@ assert.equal(E.salesGroups(giftAccepted,integrations).length,1);
     exchangeStatus:'RECEIPT',claimId:'NEW',claimRequestedAt:new Date(Date.now()-2*24*60*60*1000).toISOString()
   };
   const claims=E.openClaims([oldReceipt,recentReceipt],{coupang:{connected:true}});
-  assert.equal(JSON.stringify(claims.map(item=>item.id)),JSON.stringify(['recent-coupang-exchange']),'Coupang RECEIPT older than the official 7-day current window must not remain in the current queue');
+  assert.equal(JSON.stringify(claims.map(item=>item.id).sort()),JSON.stringify(['old-coupang-exchange','recent-coupang-exchange']),'official RECEIPT remains open until Coupang changes the exchange status');
 }
 
 // A zero-valued total alias must not hide a valid line amount.
@@ -171,4 +171,31 @@ assert.equal(E.salesGroups(giftAccepted,integrations).length,1);
     amount:0,unitPrice:7200,qty:3,datetime:'2026-07-22T09:10:00+09:00'
   }];
   assert.equal(E.salesGroups(priced,integrations)[0].amount,21600);
+}
+
+
+// Coupang's official exchange state takes priority over replacement-delivery completion.
+assert.equal(E.terminalClaim({source:'coupang',market:'쿠팡',eventType:'exchange',exchangeStatus:'PROGRESS',targetItemDeliveryComplete:true,activeState:true}),false);
+
+// Only recently verified Smartstore/Coupang inquiry documents count as current work.
+{
+  const now=Date.now();
+  const inquiryDocs=[
+    {id:'fresh-coupang-q',source:'coupang',market:'쿠팡',eventType:'inquiry',claimId:'Q1',status:'inquiry',activeState:true,stateVerifiedAt:new Date(now-30*60*1000).toISOString()},
+    {id:'stale-smart-q',source:'smartstore',market:'스마트스토어',eventType:'inquiry',claimId:'Q2',status:'inquiry',activeState:true,stateVerifiedAt:new Date(now-6*60*60*1000).toISOString()}
+  ];
+  assert.equal(E.openClaims(inquiryDocs,integrations).length,1);
+  assert.equal(E.openClaims(inquiryDocs,integrations)[0].id,'fresh-coupang-q');
+}
+
+// Sales order count uses each marketplace's official actionable work unit.
+{
+  const units=[
+    {source:'coupang',market:'쿠팡',orderNo:'UNIT-C',shipmentBoxId:'BOX-1',vendorItemId:'A',eventType:'order',status:'shipping_wait',activeState:true,amount:1000,datetime:'2026-07-22T10:00:00+09:00'},
+    {source:'coupang',market:'쿠팡',orderNo:'UNIT-C',shipmentBoxId:'BOX-2',vendorItemId:'B',eventType:'order',status:'shipping_wait',activeState:true,amount:2000,datetime:'2026-07-22T10:01:00+09:00'},
+    {source:'smartstore',market:'스마트스토어',orderNo:'UNIT-N',productOrderId:'PO-1',eventType:'order',status:'new',activeState:true,amount:3000,datetime:'2026-07-22T10:02:00+09:00'},
+    {source:'gmarket',market:'G마켓',orderNo:'EXCLUDED',eventType:'order',status:'new',activeState:true,amount:4000,datetime:'2026-07-22T10:03:00+09:00'}
+  ];
+  assert.equal(E.salesGroups(units,integrations).length,2,'sales amount grouping stays at marketplace order level');
+  assert.equal(E.salesUnits(units,integrations).length,3,'order count uses two Coupang shipment boxes plus one Smartstore product order');
 }

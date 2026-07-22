@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.13';
+const APP_VERSION='FINAL v7.7.14';
 const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1587,6 +1587,24 @@ function todayOrderGroups(){
     .filter(group=>group.day===today);
 }
 
+function todayOrderUnits(){
+  if(!window.OrderStateEngine?.salesUnits){
+    return todayOrderGroups();
+  }
+  const today=todayKey();
+  return window.OrderStateEngine.salesUnits(orders,integrations)
+    .filter(unit=>unit.day===today);
+}
+
+function monthOrderUnits(){
+  if(!window.OrderStateEngine?.salesUnits){
+    return engineMonthGroups();
+  }
+  const month=monthKey();
+  return window.OrderStateEngine.salesUnits(orders,integrations)
+    .filter(unit=>String(unit.day||'').slice(0,7)===month);
+}
+
 function todayMarketSummary(){
   const result={};
 
@@ -1603,13 +1621,14 @@ function todayMarketSummary(){
     };
   });
 
-  todayOrderGroups().forEach(group=>{
-    if(!result[group.market]){
-      return;
-    }
+  todayOrderUnits().forEach(unit=>{
+    if(result[unit.market]) result[unit.market].orders+=1;
+  });
 
-    result[group.market].orders+=1;
-    result[group.market].sales+=Number(group.amount||0);
+  todayOrderGroups().forEach(group=>{
+    if(result[group.market]){
+      result[group.market].sales+=Number(group.amount||0);
+    }
   });
 
   // 상태 칸은 오늘 생성된 주문만이 아니라 현재 미처리 전체를 표시합니다.
@@ -1704,9 +1723,10 @@ function renderDeliverySummary(){
 
 function correctedTodayTotals(){
   const groups=todayOrderGroups();
+  const units=todayOrderUnits();
 
   return {
-    count:groups.length,
+    count:units.length,
     sales:groups.reduce(
       (sum,group)=>sum+Number(group.amount||0),
       0
@@ -1716,9 +1736,10 @@ function correctedTodayTotals(){
 
 function correctedMonthTotals(){
   const groups=engineMonthGroups();
+  const units=monthOrderUnits();
 
   return {
-    count:groups.length,
+    count:units.length,
     sales:groups.reduce(
       (sum,group)=>sum+Number(group.amount||0),
       0
@@ -1811,7 +1832,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '각 쇼핑몰 API 현재상태 기준 · 실제 처리할 주문만 표시';
+      '각 쇼핑몰 공식 API 직접검증 기준 · 실제 처리할 상품주문만 표시';
   }
 
   $('statusUpdated').textContent=
@@ -2147,7 +2168,8 @@ function renderTodayAnalytics(){
   });
 
   const totalSales=groups.reduce((sum,group)=>sum+Number(group.amount||0),0);
-  const averageOrder=groups.length?Math.round(totalSales/groups.length):0;
+  const units=todayOrderUnits();
+  const averageOrder=units.length?Math.round(totalSales/units.length):0;
   const peakCount=Math.max(0,...hourly);
   const peakHour=peakCount?hourly.indexOf(peakCount):null;
   const pending=engineUnresolvedCounts();
@@ -2165,7 +2187,7 @@ function renderTodayAnalytics(){
   if(kpis){
     kpis.innerHTML=[
       ['피크 시간',peakHour==null?'-':`${peakHour}시`,peakCount?`${peakCount}건 집중`:'주문 대기','kpi-blue'],
-      ['평균 주문금액',fmt(averageOrder),`${groups.length}건 기준`,'kpi-mint'],
+      ['평균 주문금액',fmt(averageOrder),`${units.length}건 기준`,'kpi-mint'],
       ['매출 1위',topMarket,fmt(topMarketSales),'kpi-violet'],
       ['현재 처리중',`${pendingTotal}건`,`신규 ${pending.new} · 발송 ${pending.shipping_wait}`,'kpi-orange']
     ].map(([label,value,note,tone])=>`<div class="analysis-kpi ${tone}"><span>${label}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join('');
@@ -2971,7 +2993,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.13-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.14-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

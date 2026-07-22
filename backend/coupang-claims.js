@@ -91,6 +91,9 @@ function returnDocuments(rows,{eventType,activeOverride=null}){
         sourceStatus,claimStatus:sourceStatus,
         reason:row.reasonCodeText||row.cancelReason||row.cancelReasonCategory2||'',
         reasonDetail:row.reasonEtcDetail||'',modifiedAt:row.modifiedAt||'',
+        stateAuthority:'coupang-return-api',
+        stateVerifiedAt:new Date().toISOString(),
+        apiVerifiedOpen:activeOverride==null?true:Boolean(activeOverride),
         sourceUpdatedAt:row.modifiedAt||row.createdAt||new Date().toISOString(),syncedAt:new Date().toISOString()
       };
       base.activeState=activeOverride==null?!isClaimTerminal(base):Boolean(activeOverride);
@@ -132,16 +135,14 @@ function exchangeDeliveryCompleted(row={}){
 function exchangeActiveState(row={}){
   const status=exchangeStatusValue(row);
 
-  // 교환상품 배송까지 끝난 건은 API의 exchangeStatus가 PROGRESS로 늦게 남아 있어도
-  // 판매자센터의 현재 교환요청에서는 완료 건이므로 미처리 목록에서 제외합니다.
-  if(exchangeDeliveryCompleted(row)) return false;
-
-  // 쿠팡 공식 교환 상태 중 현재 판매자가 처리해야 하는 상태는
-  // RECEIPT(접수), PROGRESS(진행) 두 가지뿐입니다.
+  // 쿠팡 교환 목록 API의 exchangeStatus가 판매자센터 교환 처리상태의 기준입니다.
+  // 배송완료 플래그가 먼저 들어와도 exchangeStatus가 RECEIPT/PROGRESS이면
+  // 판매자가 아직 처리해야 하는 교환으로 그대로 표시합니다.
   if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
+  if(['SUCCESS','REJECT','CANCEL','완료','거부','취소'].includes(status)) return false;
 
-  // SUCCESS/REJECT/CANCEL뿐 아니라 비어 있거나 알 수 없는 과거 캐시도
-  // 현재 미처리 교환으로 남기지 않습니다.
+  // 구버전/불완전 응답에서 상태가 비어 있을 때만 배송완료 정보를 보조로 사용합니다.
+  if(exchangeDeliveryCompleted(row)) return false;
   return false;
 }
 
@@ -165,6 +166,9 @@ function exchangeDocuments(rows){
         reason:row.reasonCodeText||row.reasonEtcDetail||'',modifiedAt:row.modifiedAt||'',
         exchangeStatus:sourceStatus,deliveryStatus:String(row.deliveryStatus||''),
         targetItemDeliveryComplete:item.targetItemDeliveryComplete===true,
+        stateAuthority:'coupang-exchange-api',
+        stateVerifiedAt:new Date().toISOString(),
+        apiVerifiedOpen:exchangeActiveState(row),
         sourceUpdatedAt:row.modifiedAt||row.createdAt||new Date().toISOString(),syncedAt:new Date().toISOString()
       };
       document.activeState=exchangeActiveState(row);
@@ -195,48 +199,52 @@ async function fetchReturnRows(config,{status='',cancelType='',days=31}){
   return {rows,complete,from:new Date(Date.now()-days*86400000)};
 }
 
-async function fetchExchangeRows(config,days=31,maxPages=10){
+async function fetchExchangeRows(config,days=31,maxPages=10,statuses=['RECEIPT','PROGRESS']){
   const now=new Date();
   const from=new Date(now.getTime()-days*86400000);
   const path=`/v2/providers/openapi/apis/api/v4/vendors/${encodeURIComponent(config.vendorId)}/exchangeRequests`;
   const rows=[];
   let complete=true;
+  const statusList=[...new Set((statuses||[]).map(value=>String(value||'').trim()).filter(Boolean))];
 
-  // 교환 조회 API는 createdAtFrom~createdAtTo가 7일 미만이어야 하므로
-  // 6일 단위로 나누고 각 구간을 끝까지 페이지 조회합니다.
-  for(const window of rangeWindows(days,6)){
-    let nextToken='';
-    let windowComplete=false;
+  // 현재 처리 중인 교환은 공식 상태 RECEIPT/PROGRESS를 각각 직접 조회합니다.
+  // 전체 상태 혼합 응답에 의존하지 않아 판매자센터의 진행 중 교환을 놓치지 않습니다.
+  for(const status of statusList){
+    for(const window of rangeWindows(days,6)){
+      let nextToken='';
+      let windowComplete=false;
 
-    for(let page=0;page<maxPages;page+=1){
-      const params={
-        createdAtFrom:kstSecond(window.from),
-        createdAtTo:kstSecond(window.to),
-        maxPerPage:'50'
-      };
-      if(nextToken) params.nextToken=nextToken;
+      for(let page=0;page<maxPages;page+=1){
+        const params={
+          createdAtFrom:kstSecond(window.from),
+          createdAtTo:kstSecond(window.to),
+          maxPerPage:'50',
+          status
+        };
+        if(nextToken) params.nextToken=nextToken;
 
-      const payload=await request(config,path,params);
-      const pageRows=Array.isArray(payload.data)?payload.data:[];
-      rows.push(...pageRows);
-      nextToken=payload.nextToken||payload.pagination?.nextToken||'';
+        const payload=await request(config,path,params);
+        const pageRows=Array.isArray(payload.data)?payload.data:[];
+        rows.push(...pageRows);
+        nextToken=payload.nextToken||payload.pagination?.nextToken||'';
 
-      if(!nextToken||pageRows.length===0){
-        windowComplete=true;
-        break;
+        if(!nextToken||pageRows.length===0){
+          windowComplete=true;
+          break;
+        }
+        await sleep(700);
       }
-      await sleep(1000);
-    }
 
-    complete=complete&&windowComplete;
-    await sleep(800);
+      complete=complete&&windowComplete;
+      await sleep(500);
+    }
   }
 
   const unique=[...new Map(rows.map(row=>[
     String(row.exchangeId||row.receiptId||JSON.stringify(row)),
     row
   ])).values()];
-  return {rows:unique,complete,from};
+  return {rows:unique,complete,from,statuses:statusList};
 }
 
 async function saveAndReconcile(db,eventType,documents,{from,complete,reconcile}){
@@ -256,7 +264,23 @@ export async function syncCancellations(db,config,reconcile=false){
   const release=await fetchReturnRows(config,{status:'RU',days:31});
   const terminal=returnDocuments(payment.rows,{eventType:'cancel',activeOverride:false});
   const open=returnDocuments(release.rows,{eventType:'cancel',activeOverride:true});
-  return saveAndReconcile(db,'cancel',[...terminal,...open],{from:release.from,complete:release.complete,reconcile});
+  const saved=await saveAndReconcile(db,'cancel',[...terminal,...open],{
+    from:release.from,
+    complete:payment.complete&&release.complete,
+    reconcile
+  });
+  return {
+    ...saved,
+    directAudit:{
+      authority:'coupang-return-api-v6',
+      verifiedAt:new Date().toISOString(),
+      type:'cancel',
+      open:open.length,
+      terminal:terminal.length,
+      complete:Boolean(payment.complete&&release.complete),
+      checkedFrom:release.from.toISOString()
+    }
+  };
 }
 
 export async function syncReturns(db,config,reconcile=false){
@@ -265,12 +289,26 @@ export async function syncReturns(db,config,reconcile=false){
   const review=await fetchReturnRows(config,{status:'PR',days:31});
   await sleep(1000);
   const completed=await fetchReturnRows(config,{status:'CC',days:31});
-  const documents=[
+  const open=[
     ...returnDocuments(received.rows,{eventType:'return',activeOverride:true}),
-    ...returnDocuments(review.rows,{eventType:'return',activeOverride:true}),
-    ...returnDocuments(completed.rows,{eventType:'return',activeOverride:false})
+    ...returnDocuments(review.rows,{eventType:'return',activeOverride:true})
   ];
-  return saveAndReconcile(db,'return',documents,{from:received.from,complete:received.complete&&review.complete&&completed.complete,reconcile});
+  const terminal=returnDocuments(completed.rows,{eventType:'return',activeOverride:false});
+  const documents=[...open,...terminal];
+  const complete=received.complete&&review.complete&&completed.complete;
+  const saved=await saveAndReconcile(db,'return',documents,{from:received.from,complete,reconcile});
+  return {
+    ...saved,
+    directAudit:{
+      authority:'coupang-return-api-v6',
+      verifiedAt:new Date().toISOString(),
+      type:'return',
+      open:open.length,
+      terminal:terminal.length,
+      complete:Boolean(complete),
+      checkedFrom:received.from.toISOString()
+    }
+  };
 }
 
 
@@ -304,8 +342,9 @@ function exchangeClaimIdentity(data={},documentId=''){
   return explicit||stored||String(documentId||'').trim();
 }
 
-async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=true}={}){
+async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=true,from=new Date(0)}={}){
   if(!complete) return {deactivated:0,skipped:true};
+  const cutoff=new Date(from||0).getTime()||0;
 
   const activeIds=new Set();
   const activeClaims=new Set();
@@ -328,6 +367,10 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
     const data=doc.data()||{};
     if(!isCoupangExchangeDocument(data,doc.id)) return;
     if(data.activeState===false) return;
+    const businessTime=new Date(
+      data.claimRequestedAt||data.datetime||data.createdAt||data.sourceUpdatedAt||0
+    ).getTime()||0;
+    if(cutoff&&businessTime&&businessTime<cutoff) return;
     if(activeIds.has(doc.id)) return;
     const identity=exchangeClaimIdentity(data,doc.id);
     if(identity&&activeClaims.has(identity)) return;
@@ -354,32 +397,46 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
   return {deactivated:stale.length,skipped:false};
 }
 
-function exchangeReconcileFrom(fetchedFrom,reconcile=false){
-  // 정밀수집에서 쿠팡의 현재 미처리 교환 목록에 없는 문서는 요청일과 관계없이 닫습니다.
-  // 교환 API는 최근 90일을 모두 확인하므로, 그보다 오래된 active 교환은 이미 처리된
-  // 과거 캐시로 판단할 수 있습니다. 일반 순환수집은 기존 조회기간 기준을 유지합니다.
-  return reconcile?new Date(0):fetchedFrom;
+function exchangeReconcileFrom(fetchedFrom){
+  // 직접 조회한 기간 안의 문서만 종료 정리합니다. 조회 범위 밖의 오래된 문서를
+  // 추측으로 닫지 않아 실제 진행 중 교환이 사라지는 일을 막습니다.
+  return fetchedFrom;
 }
 
 export async function syncExchanges(db,config,reconcile=false){
   // 시작/수동 정밀수집에서는 과거 잘못 남은 완료 교환까지 정리할 수 있도록
   // 90일을 확인하고, 평상시 순환 수집은 API 부담을 줄여 31일만 확인합니다.
-  const fetched=await fetchExchangeRows(config,reconcile?90:31,10);
+  const fetched=await fetchExchangeRows(
+    config,
+    reconcile?90:31,
+    10,
+    ['RECEIPT','PROGRESS']
+  );
   const documents=exchangeDocuments(fetched.rows);
   const saved=await saveAndReconcile(db,'exchange',documents,{
-    from:exchangeReconcileFrom(fetched.from,reconcile),
+    from:exchangeReconcileFrom(fetched.from),
     complete:fetched.complete,
     reconcile
   });
   // 교환 API가 완전한 응답을 돌려준 주기에는 현재 목록에 없는 과거 active 교환을
   // 매번 정리합니다. 기존에는 정밀수집 때만 실행되어 완료 건이 장시간 남았습니다.
   const direct=await forceCloseStaleCoupangExchanges(
-    db,documents,{complete:fetched.complete}
+    db,documents,{complete:fetched.complete,from:fetched.from}
   );
   return {
     ...saved,
     deactivated:Number(saved.deactivated||0)+Number(direct.deactivated||0),
-    directCleanup:direct
+    directCleanup:direct,
+    directAudit:{
+      authority:'coupang-exchange-api-v4',
+      verifiedAt:new Date().toISOString(),
+      type:'exchange',
+      queriedStatuses:fetched.statuses,
+      rawRows:fetched.rows.length,
+      open:documents.filter(item=>item.activeState!==false).length,
+      complete:Boolean(fetched.complete),
+      checkedFrom:fetched.from.toISOString()
+    }
   };
 }
 

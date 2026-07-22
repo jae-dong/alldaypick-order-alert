@@ -122,12 +122,6 @@
     // 이전 버전에서 남은 EXCHANGE_REQUEST/빈 상태 캐시는 화면에서 제외하고,
     // 실제 진행 중 교환은 다음 API 동기화에서 공식 상태로 다시 활성화됩니다.
     if(eventType(item)==='exchange'&&isCoupang(item)){
-      const deliveryStatus=text(item?.deliveryStatus).toUpperCase();
-      if(
-        item?.targetItemDeliveryComplete===true||
-        ['COMPLETEDELIVERY','COMPLETE_DELIVERY','WITHDRAW','FINAL_DELIVERY'].includes(deliveryStatus)
-      )return true;
-
       const exchangeState=text(
         item?.exchangeStatus||
         item?.exchangeStatusLabel||
@@ -136,19 +130,18 @@
         item?.status
       ).toUpperCase();
 
-      // 쿠팡 교환 목록 API의 조회 계약은 접수일 기준 최대 7일 범위입니다.
-      // RECEIPT가 7일 넘게 한 번도 갱신되지 않은 과거 캐시는 현재 처리 큐에서만 제외합니다.
-      // 원문 문서는 삭제하지 않으므로 전체 기록에서는 계속 확인할 수 있습니다.
-      if(exchangeState==='RECEIPT'||exchangeState==='접수'){
-        const businessTimes=[
-          item?.modifiedAt,item?.claimRequestedAt,item?.datetime,
-          item?.requestDate,item?.receiptDate
-        ].map(time).filter(Boolean);
-        const lastBusinessTime=businessTimes.length?Math.max(...businessTimes):0;
-        if(lastBusinessTime&&Date.now()-lastBusinessTime>7*24*60*60*1000)return true;
-        return false;
-      }
-      if(exchangeState==='PROGRESS'||exchangeState==='진행')return false;
+      // 쿠팡 교환 전용 API 상태가 최우선입니다. 교환품 배송완료 여부는
+      // 교환 요청 자체의 종결 상태가 아니므로 RECEIPT/PROGRESS를 닫지 않습니다.
+      if(['RECEIPT','PROGRESS','접수','진행'].includes(exchangeState))return false;
+      if(['SUCCESS','REJECT','CANCEL','성공','거부','철회'].includes(exchangeState))return true;
+
+      const deliveryStatus=text(item?.deliveryStatus).toUpperCase();
+      if(
+        item?.targetItemDeliveryComplete===true||
+        ['COMPLETEDELIVERY','COMPLETE_DELIVERY','WITHDRAW','FINAL_DELIVERY'].includes(deliveryStatus)
+      )return true;
+
+      // 이전 버전의 비공식 상태 캐시는 현재 건수에서 제외합니다.
       return true;
     }
 
@@ -175,6 +168,18 @@
       '처리완료','취소완료','반품완료','교환완료','답변완료',
       '철회','거부','종결','완료처리','요청철회','반품철회','교환철회'
     ].some(word=>raw.includes(word));
+  }
+  function claimVerificationFresh(item,now=Date.now()){
+    if(eventType(item)!=='inquiry')return true;
+    const source=normalized(item?.source||market(item));
+    if(!['smartstore','스마트스토어','coupang','쿠팡'].includes(source))return true;
+    const verified=time(
+      item?.stateVerifiedAt||item?.lastVerifiedAt||item?.verifiedAt||item?.syncedAt
+    );
+    if(!verified)return false;
+    // 문의 API가 429로 막힌 동안 과거 문의를 현재 미답변으로 계속 표시하지 않습니다.
+    // 문서는 삭제하지 않고, 최근 4시간 안에 공식 API로 확인된 문의만 현재 목록에 포함합니다.
+    return now-verified<=4*60*60*1000;
   }
   function included(item,integrations){
     const giftStatus=text(item?.giftReceivingStatus).toUpperCase();
@@ -311,7 +316,11 @@
     return pendingOrderUnits(items,integrations);
   }
   function openClaims(items,integrations){
-    return latestClaims(items,integrations).filter(item=>item.activeState===true&&!terminalClaim(item));
+    return latestClaims(items,integrations).filter(item=>
+      item.activeState===true&&
+      !terminalClaim(item)&&
+      claimVerificationFresh(item)
+    );
   }
   function pendingItems(items,integrations){return [...pendingOrders(items,integrations),...openClaims(items,integrations)];}
   function counts(items,integrations){
@@ -336,9 +345,30 @@
     });
   }
 
+  function salesUnits(items,integrations){
+    const groups=new Map();
+    for(const line of latestOrderLines(items,integrations)){
+      const key=workUnitKey(line);
+      if(!groups.has(key))groups.set(key,{key,market:market(line),lines:[]});
+      groups.get(key).lines.push(line);
+    }
+    return [...groups.values()].map(group=>{
+      const dates=group.lines.map(orderDate).filter(date=>date.getTime());
+      const date=dates.length?new Date(Math.min(...dates.map(date=>date.getTime()))):new Date(0);
+      const representative=[...group.lines].sort((a,b)=>timestamp(b)-timestamp(a))[0]||{};
+      return {
+        ...representative,
+        ...group,
+        representative,
+        date,
+        day:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(date)
+      };
+    });
+  }
+
   root.OrderStateEngine={
     status,eventType,terminalClaim,latestOrderLines,latestClaims,
-    pendingOrders,pendingOrderUnits,openClaims,pendingItems,counts,salesGroups,groupOrders,workUnitKey,
-    orderKey,lineKey,claimKey,timestamp,market,included
+    pendingOrders,pendingOrderUnits,openClaims,pendingItems,counts,salesGroups,salesUnits,groupOrders,workUnitKey,
+    orderKey,lineKey,claimKey,timestamp,market,included,claimVerificationFresh
   };
 })(typeof window!=='undefined'?window:globalThis);

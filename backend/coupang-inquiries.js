@@ -75,6 +75,7 @@ function productDocument(row){
     qty:1,buyer:'',phone:'',amount:0,datetime:row.inquiryAt||new Date().toISOString(),inquiryAt:row.inquiryAt||'',
     status:'inquiry',statusLabel:'문의사항',sourceStatus:'NOANSWER',inquiryStatus:'NOANSWER',
     inquiryKind:'product',content:row.content||'',activeState:true,answered:false,
+    stateAuthority:'coupang-inquiry-api',stateVerifiedAt:new Date().toISOString(),verificationBucket:Math.floor(Date.now()/(2*60*60*1000)),apiVerifiedOpen:true,
     sourceUpdatedAt:row.inquiryAt||new Date().toISOString(),syncedAt:new Date().toISOString()
   };
 }
@@ -95,6 +96,7 @@ function callCenterDocument(row,queryStatus='NO_ANSWER'){
     inquiryStatus,partnerCounselingStatus:queryStatus,csPartnerCounselingStatus:counselingStatus,
     inquiryKind:queryStatus==='TRANSFER'?'call_center_confirm':'call_center_answer',
     content:row.content||'',reason:row.receiptCategory||'',activeState:true,answered:false,
+    stateAuthority:'coupang-inquiry-api',stateVerifiedAt:new Date().toISOString(),verificationBucket:Math.floor(Date.now()/(2*60*60*1000)),apiVerifiedOpen:true,
     sourceUpdatedAt:row.inquiryAt||new Date().toISOString(),syncedAt:new Date().toISOString()
   };
 }
@@ -132,5 +134,19 @@ export async function syncCoupangInquiries(db,config,reconcile=false){
     source:'coupang',eventType:'inquiry',currentIds:enriched.map(item=>item.id),from,complete,
     reason:'쿠팡 문의 답변완료 또는 현재 미답변 목록에서 제외됨'
   }):{deactivated:0,skipped:true};
-  return {...saved,createdClaims:saved.createdDocuments,changedClaims:saved.changedDocuments,deactivated:reconciled.deactivated||0,complete};
+  return {
+    ...saved,
+    createdClaims:saved.createdDocuments,
+    changedClaims:saved.changedDocuments,
+    deactivated:reconciled.deactivated||0,
+    complete,
+    directAudit:{
+      authority:'coupang-customer-service-api-v5',
+      verifiedAt:new Date().toISOString(),
+      type:'inquiry',
+      open:enriched.filter(item=>item.activeState!==false).length,
+      complete:Boolean(complete),
+      checkedFrom:from.toISOString()
+    }
+  };
 }

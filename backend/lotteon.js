@@ -240,109 +240,104 @@ function collectRecords(node, depth = 0, inherited = {}) {
   return [...unique.values()];
 }
 
-function statusInfo(row) {
-  const raw = [
+function sourceStatusText(row={}){
+  return [
     'ordStsCd','ordStsNm','dlvStsCd','dlvStsNm','procStsCd','procStsNm',
     'ifTypCd','ifTypNm','workTypCd','workTypNm','dvProcTypCd','dvProcTypNm',
     'ordDtlStsCd','ordDtlStsNm','dtlDlvStsCd','dtlDlvStsNm','deliveryStatus'
   ]
-    .map(key => text(row?.[key]))
+    .map(key=>text(row?.[key]))
     .filter(Boolean)
     .join(' ')
     .toUpperCase();
+}
+
+function statusInfo(row) {
+  const raw=sourceStatusText(row);
+  const feed=text(row?.__lotteonFeed).toLowerCase();
+  const deliveredEvidence=Boolean(first(row,[
+    'dlvCmplDttm','deliveryCompleteDate','deliveredDate','deliveryCompletedAt',
+    'rcvDttm','purchaseConfirmDate','buyDecisionDate'
+  ]));
+  const shipmentEvidence=Boolean(first(row,[
+    'invNo','invoiceNo','trackingNumber','dlvCpnNm','deliveryCompanyName'
+  ]));
 
   if (
     raw.includes('RETURN') ||
     raw.includes('회수') ||
     raw.includes('반품')
   ) {
-    return {
-      eventType: 'return',
-      status: 'return_request',
-      statusLabel: '반품요청'
-    };
+    return {eventType:'return',status:'return_request',statusLabel:'반품요청'};
   }
 
   if (
     raw.includes('EXCHANGE') ||
     raw.includes('교환')
   ) {
-    return {
-      eventType: 'exchange',
-      status: 'exchange_request',
-      statusLabel: '교환요청'
-    };
+    return {eventType:'exchange',status:'exchange_request',statusLabel:'교환요청'};
   }
 
   if (
     raw.includes('CANCEL') ||
     raw.includes('취소')
   ) {
-    return {
-      eventType: 'cancel',
-      status: 'cancel_request',
-      statusLabel: '주문취소'
-    };
+    return {eventType:'cancel',status:'cancel_request',statusLabel:'주문취소'};
   }
 
   if (
     raw.includes('PURCHASE_CONFIRM') ||
     raw.includes('PURCHASE_DECIDED') ||
+    raw.includes('BUY_DECISION') ||
     raw.includes('구매확정')
   ) {
-    return {
-      eventType: 'order',
-      status: 'purchase_confirmed',
-      statusLabel: '구매확정'
-    };
+    return {eventType:'order',status:'purchase_confirmed',statusLabel:'구매확정'};
   }
 
   if (
+    deliveredEvidence ||
+    raw.includes('FINAL_DELIVERY') ||
     raw.includes('DELIVERED') ||
     raw.includes('DELIVERY_COMPLETE') ||
+    raw.includes('DLV_COMPLETE') ||
     raw.includes('배송완료')
   ) {
-    return {
-      eventType: 'order',
-      status: 'delivered',
-      statusLabel: '배송완료'
-    };
+    return {eventType:'order',status:'delivered',statusLabel:'배송완료'};
   }
 
   if (
     raw.includes('DELIVERING') ||
     raw.includes('SHIPPED') ||
+    raw.includes('DEPARTURE') ||
     raw.includes('IN_TRANSIT') ||
+    raw.includes('DELIVERY_START') ||
     raw.includes('배송중') ||
-    raw.includes('발송완료')
+    raw.includes('발송완료') ||
+    raw.includes('출고완료')
   ) {
-    return {
-      eventType: 'order',
-      status: 'delivering',
-      statusLabel: '배송중'
-    };
+    return {eventType:'order',status:'delivering',statusLabel:'배송중'};
   }
 
   if (
     raw.includes('READY') ||
     raw.includes('PREPARE') ||
+    raw.includes('INSTRUCT') ||
     raw.includes('상품준비') ||
     raw.includes('출고지시') ||
     raw.includes('발송대기')
   ) {
-    return {
-      eventType: 'order',
-      status: 'shipping_wait',
-      statusLabel: '발송대기'
-    };
+    return {eventType:'order',status:'shipping_wait',statusLabel:'발송대기'};
   }
 
-  // 이 API는 출고/회수지시 조회이므로 별도 상태값이 없어도 주문확인 후 발송대기 건입니다.
-  return {
-    eventType: 'order',
-    status: 'shipping_wait',
-    statusLabel: '발송대기'
-  };
+  // 배송진행 API의 알 수 없는 상태를 출고지시로 되돌리지 않습니다.
+  // 진행 피드에 존재하거나 송장 정보가 있으면 최소 배송중으로 처리해
+  // 이미 출고된 주문이 발송대기에 남는 문제를 막습니다.
+  if(feed==='progress'||shipmentEvidence){
+    return {eventType:'order',status:'delivering',statusLabel:'배송중'};
+  }
+
+  // 출고지시 API의 상태값이 생략된 경우에만 발송대기로 봅니다.
+  return {eventType:'order',status:'shipping_wait',statusLabel:'발송대기'};
 }
 
 function normalizeOrder(row, sellerId) {
@@ -440,22 +435,7 @@ function normalizeOrder(row, sellerId) {
     ...workflowFields({source:'lotteon',orderNo,lineId:idPart,eventType:mapped.eventType,claimId}),
     status: mapped.status,
     statusLabel: mapped.statusLabel,
-    sourceStatus: first(row, [
-      'ordStsCd',
-      'ordStsNm',
-      'dlvStsCd',
-      'dlvStsNm',
-      'procStsCd',
-      'procStsNm',
-      'ifTypCd',
-      'ifTypNm',
-      'dvProcTypCd',
-      'dvProcTypNm',
-      'ordDtlStsCd',
-      'ordDtlStsNm',
-      'dtlDlvStsCd',
-      'dtlDlvStsNm'
-    ]),
+    sourceStatus: sourceStatusText(row),
     orderNo,
     deliveryNo,
     orderProductSequence: sequence,
@@ -560,6 +540,9 @@ function normalizeOrder(row, sellerId) {
     activeState:true,
     stateAuthority:'lotteon-api',
     stateVerifiedAt:new Date().toISOString(),
+    apiVerifiedOpen:mapped.eventType==='order'
+      ?['new','shipping_wait'].includes(mapped.status)
+      :true,
     sourceUpdatedAt:first(row,['modDttm','updDttm','ifDttm'])||new Date().toISOString(),
     syncedAt: new Date().toISOString()
   };
@@ -986,6 +969,23 @@ export async function syncLotteonOrders(
       cloudReads:Number(saved.quota?.cloudReads||0)+Number(reconciliation.quota?.cloudReads||0),
       cloudWrites:Number(saved.quota?.cloudWrites||0)+Number(reconciliation.quota?.cloudWrites||0),
       cacheHits:Number(saved.quota?.cacheHits||0)
+    },
+    directAudit:{
+      authority:'lotteon-delivery-api',
+      verifiedAt:new Date().toISOString(),
+      instructionRows,
+      progressRows,
+      normalizedRows:orders.length,
+      openOrders:orders.filter(item=>item.eventType==='order'&&item.activeState!==false&&['new','shipping_wait'].includes(item.status)).length,
+      progressOrders:orders.filter(item=>item.eventType==='order'&&['delivering','delivered','purchase_confirmed'].includes(item.status)).length,
+      activeClaims:{
+        cancel:orders.filter(item=>item.eventType==='cancel'&&item.activeState!==false).length,
+        return:orders.filter(item=>item.eventType==='return'&&item.activeState!==false).length,
+        exchange:orders.filter(item=>item.eventType==='exchange'&&item.activeState!==false).length
+      },
+      missingAmount:orders.filter(item=>item.eventType==='order'&&Number(item.amount||0)<=0).length,
+      complete:Boolean(instructionComplete&&progressComplete),
+      queryErrors
     }
   };
 }
@@ -1023,7 +1023,8 @@ export async function saveLotteonIntegration(
               created: result.created,
               existing: result.existing,
               statusChanged: result.statusChanged,
-              requestBody: result.requestBody
+              requestBody: result.requestBody,
+              directAudit:result.directAudit||null
             }
     }
   }, { merge: true });

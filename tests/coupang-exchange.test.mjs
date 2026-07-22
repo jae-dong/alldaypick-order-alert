@@ -3,8 +3,8 @@ import { coupangClaimsTestHelpers as H } from '../backend/coupang-claims.js';
 
 assert.equal(H.exchangeActiveState({exchangeStatus:'RECEIPT'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS'}),true);
-assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',exchangeItemDtoV1s:[{targetItemDeliveryComplete:true}]}),false);
-assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',deliveryStatus:'CompleteDelivery'}),false);
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',exchangeItemDtoV1s:[{targetItemDeliveryComplete:true}]}),true,'official PROGRESS must remain active even after replacement delivery');
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',deliveryStatus:'CompleteDelivery'}),true,'delivery completion must not override official exchange status');
 assert.equal(H.exchangeActiveState({exchangeStatus:'SUCCESS'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'REJECT'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'CANCEL'}),false);
@@ -24,7 +24,7 @@ assert.ok(H.rangeWindows(90,6).length>=15,'startup exchange repair must support 
 
 const regularFrom=new Date('2026-07-01T00:00:00.000Z');
 assert.equal(H.exchangeReconcileFrom(regularFrom,false).getTime(),regularFrom.getTime());
-assert.equal(H.exchangeReconcileFrom(regularFrom,true).getTime(),0,'startup reconciliation must close stale active exchanges regardless of age');
+assert.equal(H.exchangeReconcileFrom(regularFrom).getTime(),regularFrom.getTime(),'reconciliation must only close documents inside the directly queried period');
 
 assert.equal(H.exchangeActiveState({exchangeStatusLabel:'RECEIPT'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatusLabel:'PROGRESS'}),true);
