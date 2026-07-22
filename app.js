@@ -1,4 +1,4 @@
-const APP_VERSION='FINAL v7.7.17';
+const APP_VERSION='v7.7.18 당일원장 재구축';
 const BUILD_DATE='2026-07-22';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -1673,7 +1673,32 @@ function engineUnresolvedByMarket(){
 
 
 
+function authoritativeDailyMetrics(){
+  const snapshot=integrations?.dailyMetrics;
+  if(!snapshot||snapshot.day!==todayKey()||!Array.isArray(snapshot.rows)) return null;
+  return snapshot;
+}
+
+function authoritativeDailyRows(){
+  const snapshot=authoritativeDailyMetrics();
+  if(!snapshot) return [];
+  return snapshot.rows.map((row,index)=>({
+    ...row,
+    id:row.id||`daily-${index}`,
+    eventType:'order',workflowType:'order',activeState:true,
+    datetime:row.datetime,metricDate:row.datetime,orderDate:row.datetime,
+    lineKey:row.id,
+    productOrderId:row.source==='smartstore'?row.line:undefined,
+    orderProductSequence:row.source==='elevenst'?row.line:undefined,
+    vendorItemId:row.source==='coupang'?row.line:undefined,
+    orderItemId:row.source==='lotteon'?row.line:undefined
+  }));
+}
+
 function todayOrderSourceLines(){
+  const snapshot=authoritativeDailyMetrics();
+  const authoritative=authoritativeDailyRows();
+  if(snapshot) return authoritative;
   return allLifecycleLatestLines().filter(order=>
     String(order?.eventType||'order').toLowerCase()==='order' &&
     engineOrderDay(order)===todayKey()
@@ -1681,6 +1706,25 @@ function todayOrderSourceLines(){
 }
 
 function todayOrderGroups(){
+  const snapshot=authoritativeDailyMetrics();
+  const authoritative=authoritativeDailyRows();
+  if(snapshot){
+    const groups=new Map();
+    authoritative.forEach(line=>{
+      const key=`${normalizedText(line.market)}|${normalizedText(line.orderNo||line.id)}`;
+      if(!groups.has(key)) groups.set(key,{
+        key,market:line.market,orderNo:line.orderNo||'',lines:[],amount:0,qty:0,
+        date:engineOrderDate(line),day:todayKey()
+      });
+      const group=groups.get(key);
+      group.lines.push(line);
+      group.amount+=Number(line.amount||0);
+      group.qty+=Number(line.qty||1);
+      const date=engineOrderDate(line);
+      if(date.getTime()&&(!group.date.getTime()||date<group.date)) group.date=date;
+    });
+    return [...groups.values()];
+  }
   if(!window.OrderStateEngine){
     return [];
   }
@@ -1690,6 +1734,9 @@ function todayOrderGroups(){
 }
 
 function todayOrderUnits(){
+  const snapshot=authoritativeDailyMetrics();
+  const authoritative=authoritativeDailyRows();
+  if(snapshot) return authoritative;
   if(!window.OrderStateEngine?.salesUnits){
     return todayOrderGroups();
   }
@@ -1934,7 +1981,7 @@ function renderStatus(){
 
   if(info){
     info.textContent=
-      '송장 수가 아닌 상품주문 행 기준 · 합배송 상품도 각각 1건';
+      '공식 API 당일 상품주문 원장 기준 · 합배송 상품도 각각 1건';
   }
 
   $('statusUpdated').textContent=
@@ -3120,7 +3167,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=final-v7.7.17-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.18-daily-ledger-final',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

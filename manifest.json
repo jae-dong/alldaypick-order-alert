@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 FINAL v7.7.17",
+  "name": "올데이픽 주문알림 v7.7.18 당일원장 재구축",
   "short_name": "주문알림",
-  "start_url": "./?v=final-v7.7.17",
+  "start_url": "./?v=v7.7.18-daily-ledger",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

@@ -37,6 +37,7 @@ import { quotaExceeded,nextFirestoreFreeResetMs } from './quota-utils.js';
 import { telegramOrderBody } from './telegram-format.js';
 import { resolveTelegramProductImage,invalidateTelegramProductImageCache } from './product-image.js';
 import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
+import { rebuildDailyMetrics } from './daily-metrics-ledger.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -83,6 +84,59 @@ function coupang(){
 admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 
 const db=admin.firestore();
+
+const DAILY_METRICS_MARKETS={
+  coupang:'쿠팡',smartstore:'스마트스토어',elevenst:'11번가',lotteon:'롯데온'
+};
+
+function directAuditRows(audit,source){
+  if(!audit) return [];
+  const market=DAILY_METRICS_MARKETS[source]||source;
+  const payloads=[];
+  if(Array.isArray(audit.orderLines)) payloads.push(audit);
+  for(const value of Object.values(audit||{})){
+    if(value&&typeof value==='object'&&Array.isArray(value.orderLines)) payloads.push(value);
+  }
+  return payloads.flatMap(payload=>(payload.orderLines||[]).map(row=>({
+    ...row,source,market,eventType:'order',
+    orderProductSequence:source==='elevenst'?(row.line||row.orderProductSequence):row.orderProductSequence,
+    productOrderId:source==='smartstore'?(row.line||row.productOrderId):row.productOrderId,
+    vendorItemId:source==='coupang'?(row.line||row.vendorItemId):row.vendorItemId,
+    orderItemId:source==='lotteon'?(row.line||row.orderItemId):row.orderItemId
+  })));
+}
+
+function runDailyMetricRows(summary={}){
+  return [
+    ...directAuditRows(summary?.coupang?.fast?.directAudit||summary?.coupang?.directAudit,'coupang'),
+    ...directAuditRows(summary?.coupang?.slow?.directAudit,'coupang'),
+    ...directAuditRows(summary?.smartstore?.directAudit,'smartstore'),
+    ...directAuditRows(summary?.elevenst?.directAudit,'elevenst'),
+    ...directAuditRows(summary?.lotteon?.directAudit,'lotteon')
+  ];
+}
+
+async function publishDailyMetrics(summary={},forceRemote=false){
+  try{
+    const snapshot=await rebuildDailyMetrics(db,{
+      forceRemote,
+      additionalRows:runDailyMetricRows(summary)
+    });
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
+      dailyMetrics:snapshot
+    },{merge:true,minRefreshMs:0});
+    recordDirectAudit('daily','ledger',snapshot);
+    console.log(
+      `당일 상품주문 원장 갱신: ${snapshot.count}건 · ${Number(snapshot.sales||0).toLocaleString('ko-KR')}원 · `+
+      `쿠팡 ${snapshot.markets?.쿠팡?.count||0}, 스마트스토어 ${snapshot.markets?.스마트스토어?.count||0}, `+
+      `11번가 ${snapshot.markets?.['11번가']?.count||0}, 롯데온 ${snapshot.markets?.롯데온?.count||0}`
+    );
+    return snapshot;
+  }catch(error){
+    console.error('당일 상품주문 원장 갱신 실패:',error?.message||error);
+    return null;
+  }
+}
 
 
 const HEARTBEAT_INTERVAL_MS=5*60*1000;
@@ -2205,7 +2259,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.17',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.18',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2225,7 +2279,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.17',
+    version:'FINAL-7.7.18',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2422,6 +2476,7 @@ function refreshCurrentOrdersInBackground(source='immediate'){
         300000
       );
       await saveIntegration(result,null);
+      await publishDailyMetrics({coupang:{fast:result,slow:null}},false);
       const deactivated=statuses.reduce(
         (sum,status)=>sum+Number(result.counts?.[`${status}_DEACTIVATED`]||0),
         0
@@ -2535,6 +2590,7 @@ async function run(source){
   try{
     if(source==='immediate'){
       await runImmediateMarketCollection(summary);
+      await publishDailyMetrics(summary,true);
       await commandRef.set({
         status:'success',
         action:'collect',
@@ -2610,6 +2666,7 @@ async function run(source){
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
     await updateCollectProgress(source,70,'롯데온 확인 완료');
 
+    await publishDailyMetrics(summary,['startup','reconcile'].includes(source));
     await refreshEsmStatus();
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
 

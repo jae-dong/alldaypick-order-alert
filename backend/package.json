@@ -1,11 +1,11 @@
 {
   "name": "alldaypick-order-alert",
-  "version": "7.7.17",
+  "version": "7.7.18",
   "private": true,
   "type": "module",
   "scripts": {
     "agent": "node local-agent.js",
-    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/elevenst-status.test.mjs && node ../tests/lotteon-status.test.mjs && node ../tests/coupang-exchange.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs && node ../tests/progress-contract.test.mjs && node ../tests/telegram-format.test.mjs && node ../tests/parent-order-context.test.mjs && node ../tests/product-image.test.mjs && node ../tests/market-image-resolver.test.mjs && node ../tests/v7717-market-recovery.test.mjs"
+    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/elevenst-status.test.mjs && node ../tests/lotteon-status.test.mjs && node ../tests/coupang-exchange.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs && node ../tests/progress-contract.test.mjs && node ../tests/telegram-format.test.mjs && node ../tests/parent-order-context.test.mjs && node ../tests/product-image.test.mjs && node ../tests/market-image-resolver.test.mjs && node ../tests/v7717-market-recovery.test.mjs && node ../tests/daily-metrics-ledger.test.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

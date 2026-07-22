@@ -59,7 +59,7 @@ assert.match(directAudit,/market-direct-audit\.json/,'Direct API audit must crea
 assert.match(directAudit,/gmarket:'API 승인 전 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
 assert.match(directAudit,/auction:'API 승인 전 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.17'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.18'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -84,6 +84,13 @@ assert.match(orderStore,/stateVerifiedAt/,'Verification timestamps must not trig
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 assert.match(app,/where\('datetime','>=',monthStartIso\(\)\)/,'Web app must subscribe only to the current month');
 assert.match(app,/where\('activeState','==',true\)/,'Web app must separately subscribe to unresolved items');
+assert.match(agent,/publishDailyMetrics/,'Agent must publish the authoritative daily product-order ledger');
+assert.match(agent,/rebuildDailyMetrics/,'Agent must rebuild daily metrics from persisted marketplace rows');
+const dailyLedger=read('daily-metrics-ledger.js');
+assert.match(dailyLedger,/\.daily-order-ledger-v2\.json/,'Daily ledger must persist across agent restarts');
+assert.match(dailyLedger,/lineIdentifier/,'Daily ledger must count unique marketplace product-order lines');
+assert.match(dailyLedger,/excludedFromMetrics/,'Daily ledger must exclude unaccepted Smartstore gift orders');
+assert.match(app,/authoritativeDailyMetrics/,'Web metrics must prefer the authoritative daily ledger');
 
 assert.match(agent,/quickCurrentCoupangSync/,'Manual collection must use the fast current-status Coupang path');
 assert.match(agent,/refreshClaimsInBackground/,'Claims must continue in the background after current-order collection');
@@ -135,6 +142,6 @@ assert.match(app,/function firstPositiveAmount/,'Zero-valued amount aliases must
 const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 assert.match(index,/오늘 판매 TOP 20/,'Today analytics heading must say TOP 20');
 const styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-assert.match(styles,/FINAL v7\.7\.17 · 공식 API 직접검증 · 전체 가독성 확대/,'Readability overrides must be included');
+assert.match(styles,/v7\.7\.18 당일원장 재구축 · 공식 API 직접검증 · 전체 가독성 확대/,'Readability overrides must be included');
 
 console.log('source-contract tests passed');

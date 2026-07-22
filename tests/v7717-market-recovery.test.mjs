@@ -41,4 +41,4 @@ import {lotteonTestHelpers} from '../backend/lotteon.js';
   assert.equal(order.orderTotalAmount,39250);
 }
 
-console.log('v7.7.17 market recovery tests passed');
+console.log('v7.7.18 market recovery tests passed');
