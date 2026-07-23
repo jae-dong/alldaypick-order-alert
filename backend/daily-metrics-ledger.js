@@ -223,7 +223,7 @@ export function buildDailySnapshot(rows,{day=kstDay(),generatedAt=new Date().toI
   }
   const allRows=active.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
   return {
-    version:2,appVersion:'v7.7.18',day,generatedAt,
+    version:2,appVersion:'v7.7.19',day,generatedAt,
     basis:'공식 API 저장 상품주문 행 일일 원장 · 송장번호/주문자 수가 아닌 상품주문 처리행 기준',
     excludedMarkets:['G마켓','옥션'],
     count:allRows.length,

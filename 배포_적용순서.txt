@@ -1,24 +1,17 @@
-v7.7.18 적용 방법
+v7.7.19 적용 방법
 
-1. 현재 실행 중인 검은색 PC 수집기 창을 닫습니다.
-2. 압축파일을 새 폴더에 압축 해제합니다.
+1. 실행 중인 검은색 PC 수집기 창을 닫습니다.
+2. ZIP을 새 폴더에 압축 해제합니다.
 3. GitHub Desktop에서 alldaypick-order-alert 저장소를 선택합니다.
-4. Repository 메뉴에서 Show in Explorer를 누릅니다.
-5. 압축 해제한 폴더 안의 모든 파일을 기존 저장소 폴더에 복사하고 덮어씁니다.
-6. 아래 항목은 삭제하지 않습니다.
-   .git
-   backend\.env.local
-   backend\firebase-service-account.json
-7. GitHub Desktop Summary에 아래 문구를 입력합니다.
-   v7.7.18 당일 상품주문 원장 재구축
-8. Commit to main을 누릅니다.
-9. Push origin을 누릅니다.
-10. Render 배포 성공을 확인합니다.
-11. 기존 프로젝트 폴더의 START_AGENT.cmd를 실행합니다.
-12. 아래 문구가 표시될 때까지 기다립니다.
-   Starting ALLDAYPICK order agent v7.7.18 DAILY LEDGER REBUILD...
-   당일 상품주문 원장 갱신: ...
-13. 검은 창은 닫지 않습니다.
-14. 웹앱에서 Ctrl+F5를 눌러 강력 새로고침합니다.
-15. 상단 버전이 v7.7.18 당일원장 재구축인지 확인합니다.
-16. 당일원장_결과열기.cmd를 실행하면 상품주문 행별 원장을 확인할 수 있습니다.
+4. Repository → Show in Explorer를 눌러 기존 저장소 폴더를 엽니다.
+5. 압축을 푼 폴더 안의 모든 파일을 기존 저장소에 복사하고 덮어씁니다.
+6. .git, backend\.env.local, backend\firebase-service-account.json은 기존 파일을 유지합니다.
+7. GitHub Desktop Summary: v7.7.19 당일전체·기간전체통계
+8. Commit to main → Push origin을 누릅니다.
+9. Render의 최신 배포가 성공했는지 확인합니다.
+10. START_AGENT.cmd를 실행합니다.
+11. 검은 창에 v7.7.19 ALL DAY FULL RANGE STATS가 표시되는지 확인합니다.
+12. 웹앱에서 Ctrl+F5로 강력 새로고침합니다.
+13. 오늘 분석에서 오늘 판매상품이 전부 표시되는지 확인합니다.
+14. 주문 통계에서 기간을 바꾸고 판매상품 전체와 합계가 바뀌는지 확인합니다.
+15. PC 수집기 검은 창은 계속 켜 둡니다.

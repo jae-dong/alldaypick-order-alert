@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f4c81">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>올데이픽 주문알림 · v7.7.18 당일원장 재구축</title>
-<link rel="manifest" href="./manifest.json?v=v7.7.18-daily-ledger-final">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.18-daily-ledger">
-<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.18-daily-ledger">
-<link rel="stylesheet" href="./styles.css?v=v7.7.18-daily-ledger">
+<title>올데이픽 주문알림 · v7.7.19 당일전체·기간전체통계</title>
+<link rel="manifest" href="./manifest.json?v=v7.7.19-full-stats">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.19-full-stats">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.19-full-stats">
+<link rel="stylesheet" href="./styles.css?v=v7.7.19-full-stats">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -23,7 +23,7 @@
 <div class="brand-kicker">ALLDAYPICK ORDER DESK</div>
 <div class="brand-title">
         올데이픽 주문알림
-        <button type="button" id="versionBadge" class="version-badge">v7.7.18 당일원장 재구축</button>
+        <button type="button" id="versionBadge" class="version-badge">v7.7.19 당일전체·기간전체통계</button>
       </div>
 <div class="brand-sub">
 <span class="dot" id="cloudDot"></span>
@@ -84,7 +84,7 @@
   <div class="donut-layout"><div class="market-donut" id="marketDonut"><strong>0%</strong><span>1위 마켓</span></div><div class="share-list" id="marketShare"></div></div>
 </div>
 </div>
-<div class="analytics-card top-products-card"><div class="analytics-title"><div><h3>오늘 판매 TOP 20</h3><p>주문 건수와 매출 기준</p></div></div><div class="top-list" id="todayTopProducts"></div></div>
+<div class="analytics-card top-products-card"><div class="analytics-title"><div><h3>오늘 판매상품 전체</h3><p>오늘 들어온 상품주문을 빠짐없이 전부 표시</p></div><span class="chart-badge" id="todayProductCount">0종 전체</span></div><div class="top-list" id="todayTopProducts"></div></div>
 </section>
 <nav class="tabs"><button class="tab active" id="ordersTab">주문 현황</button><button class="tab" id="statsTab">주문 통계</button></nav>
 <main>
@@ -104,8 +104,9 @@
 </div>
 <div class="panel" id="statsPanel">
 <section class="card section">
-<div class="section-head"><h2>주문 통계</h2><select id="statsPeriod"><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="all">전체 기간</option></select></div>
-<div class="stats-grid"><div class="stat"><span>주문 건수</span><strong id="statOrders">0건</strong></div><div class="stat"><span>판매 수량</span><strong id="statQty">0개</strong></div><div class="stat"><span>주문 금액</span><strong id="statSales">0원</strong></div></div>
+<div class="section-head"><div><h2>주문 통계</h2><span class="subtle" id="statsDataStatus">선택 기간 전체 주문을 불러옵니다.</span></div><select id="statsPeriod"><option value="1">오늘</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="all">전체 기간</option></select></div>
+<div class="stats-grid"><div class="stat"><span>상품주문 건수</span><strong id="statOrders">0건</strong></div><div class="stat"><span>판매 수량</span><strong id="statQty">0개</strong></div><div class="stat"><span>주문 금액</span><strong id="statSales">0원</strong></div></div>
+<div class="stats-rank-head"><h3>조회 기간 판매상품 전체</h3><span class="result-badge" id="statsProductCount">0종 전체 표시</span></div>
 <div class="rank" id="productRank"></div>
 </section>
 </div>
@@ -125,7 +126,7 @@
 
 
 
-<script src="./state-engine.js?v=v7.7.18-daily-ledger" defer></script>
-<script src="./app.js?v=v7.7.18-daily-ledger" defer></script>
+<script src="./state-engine.js?v=v7.7.19-full-stats" defer></script>
+<script src="./app.js?v=v7.7.19-full-stats" defer></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ALLDAYPICK ORDER AGENT v7.7.18 DAILY LEDGER REBUILD
+title ALLDAYPICK ORDER AGENT v7.7.19 ALL DAY FULL RANGE STATS
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -92,7 +92,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.18 DAILY LEDGER REBUILD...
+echo Starting ALLDAYPICK order agent v7.7.19 ALL DAY FULL RANGE STATS...
 echo Keep this window open.
 echo.
 call npm run agent

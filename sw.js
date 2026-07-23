@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.18-daily-ledger-20260722-daily-ledger-rebuild-v1';
+const CACHE='alldaypick-v7.7.19-full-stats-20260723-v1';
 const STATIC=[
   './',
   './index.html',

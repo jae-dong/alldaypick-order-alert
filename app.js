@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.18 당일원장 재구축';
-const BUILD_DATE='2026-07-22';
+const APP_VERSION='v7.7.19 당일전체·기간전체통계';
+const BUILD_DATE='2026-07-23';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -10,6 +10,7 @@ const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['eleven
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
 let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,unsubscribeSyncedOrders=null,collectUnsub=null;
 let monthOrderMap=new Map(),activeOrderMap=new Map(),syncedOrderMap=new Map();
+let statisticsOrderMap=new Map(),statisticsLoaded=false,statisticsLoading=false,statisticsLoadedAt=0,statisticsLoadToken=0;
 const PAGE_SIZE=40;
 
 function toast(text){const el=$('toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
@@ -758,19 +759,117 @@ function unresolvedRowsForMarket(market=''){
   );
 }
 
-function statsGroupsForPeriod(period){
-  const all=historicalNormalGroups();
+function statisticsSourceOrders(){
+  if(!statisticsLoaded&&statisticsOrderMap.size===0){
+    return orders;
+  }
 
-  if(period==='all'){
+  const merged=new Map();
+
+  statisticsOrderMap.forEach((item,id)=>{
+    merged.set(String(id||item?.id||engineLineKey(item)),item);
+  });
+
+  // 현재 월 실시간 구독 데이터가 전체 통계 원장보다 최신일 수 있으므로 마지막에 덮어씁니다.
+  orders.forEach(item=>{
+    const key=String(item?.id||engineLineKey(item));
+    const current=merged.get(key);
+    if(!current||engineTimestamp(item)>=engineTimestamp(current)){
+      merged.set(key,item);
+    }
+  });
+
+  // 오늘은 PC 수집기가 확정한 당일 상품주문 원장을 함께 넣어 누락 없이 맞춥니다.
+  authoritativeDailyRows().forEach(item=>{
+    const key=String(item?.id||engineLineKey(item));
+    merged.set(key,item);
+  });
+
+  return [...merged.values()];
+}
+
+function statsPeriodStart(period){
+  if(period==='all') return null;
+  const days=Math.max(1,Number(period)||7);
+  const start=new Date(`${todayKey()}T00:00:00+09:00`);
+  start.setTime(start.getTime()-(days-1)*86400000);
+  return start;
+}
+
+function statsPeriodLabel(period){
+  if(period==='all') return '전체 기간';
+  if(String(period)==='1') return '오늘';
+  return `최근 ${Math.max(1,Number(period)||7)}일`;
+}
+
+function statsGroupsForPeriod(period){
+  const all=historicalNormalGroups(statisticsSourceOrders());
+  const start=statsPeriodStart(period);
+
+  if(!start){
     return all;
   }
 
-  const days=Math.max(1,Number(period)||7);
-  const cutoff=Date.now()-days*86400000;
+  const now=Date.now();
+  return all.filter(group=>{
+    const time=group.date?.getTime?.()||0;
+    return time>=start.getTime()&&time<=now;
+  });
+}
 
-  return all.filter(group=>
-    group.date?.getTime?.()>=cutoff
-  );
+function statisticsStatusText(period,productCount=0){
+  if(statisticsLoading){
+    return `${statsPeriodLabel(period)} 전체 주문 불러오는 중…`;
+  }
+  if(!statisticsLoaded){
+    return `${statsPeriodLabel(period)} · 현재 연결 데이터 표시 중`;
+  }
+  const loadedAt=statisticsLoadedAt
+    ?new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(statisticsLoadedAt))
+    :'';
+  return `${statsPeriodLabel(period)} 전체 반영 · 판매상품 ${productCount}종${loadedAt?` · ${loadedAt} 갱신`:''}`;
+}
+
+async function loadAllStatisticsOrders(force=false){
+  if(!db||!currentUser){
+    return;
+  }
+
+  if(statisticsLoading){
+    return;
+  }
+
+  // 같은 화면에서 반복 클릭할 때 전체 문서를 계속 다시 읽지 않도록 5분 동안 재사용합니다.
+  if(!force&&statisticsLoaded&&Date.now()-statisticsLoadedAt<5*60*1000){
+    renderStats();
+    return;
+  }
+
+  statisticsLoading=true;
+  const token=++statisticsLoadToken;
+  renderStats();
+
+  try{
+    const snapshot=await db.collection('orders').get();
+    if(token!==statisticsLoadToken) return;
+
+    const next=new Map();
+    snapshot.docs.forEach(doc=>{
+      next.set(doc.id,{id:doc.id,...doc.data()});
+    });
+
+    statisticsOrderMap=next;
+    statisticsLoaded=true;
+    statisticsLoadedAt=Date.now();
+  }catch(error){
+    console.error('전체 주문 통계 불러오기 실패:',error);
+    toast('전체 통계 불러오기 실패 · 현재 데이터로 표시합니다.');
+  }finally{
+    if(token===statisticsLoadToken){
+      statisticsLoading=false;
+      renderStats();
+    }
+  }
 }
 
 
@@ -1001,10 +1100,10 @@ function engineOrderKey(order){
 
 
 
-function allLifecycleLatestLines(){
+function allLifecycleLatestLines(sourceOrders=orders){
   const histories=new Map();
 
-  orders
+  sourceOrders
     .filter(marketIncludedOrder)
     .forEach(order=>{
       const key=engineLineKey(order);
@@ -1483,10 +1582,10 @@ function engineCompleted(order){
 }
 
 
-function historicalNormalGroups(){
+function historicalNormalGroups(sourceOrders=orders){
   const groups=new Map();
 
-  allLifecycleLatestLines()
+  allLifecycleLatestLines(sourceOrders)
     .filter(line=>
       String(line?.eventType||'order').toLowerCase()==='order'
     )
@@ -2178,9 +2277,12 @@ function renderOrders(){
 function renderStats(){
   const period=$('statsPeriod').value;
   const groups=statsGroupsForPeriod(period);
+  const productOrderCount=groups.reduce(
+    (sum,group)=>sum+(Array.isArray(group.lines)?group.lines.length:0),
+    0
+  );
 
-  $('statOrders').textContent=
-    groups.length+'건';
+  $('statOrders').textContent=productOrderCount+'건';
 
   $('statQty').textContent=
     groups.reduce(
@@ -2204,41 +2306,53 @@ function renderStats(){
 
       if(!products[name]){
         products[name]={
-          orders:new Set(),
+          lines:new Set(),
           qty:0,
           sales:0
         };
       }
 
-      products[name].orders.add(group.key);
+      products[name].lines.add(engineLineKey(line));
       products[name].qty+=Number(line.qty||1);
       products[name].sales+=Number(allocated[index]||0);
     });
   });
 
+  const productRows=Object.entries(products)
+    .map(([name,value])=>[
+      name,
+      {
+        count:value.lines.size,
+        qty:value.qty,
+        sales:value.sales
+      }
+    ])
+    .sort(
+      (a,b)=>
+        b[1].count-a[1].count||
+        b[1].qty-a[1].qty||
+        b[1].sales-a[1].sales||
+        a[0].localeCompare(b[0],'ko')
+    );
+
+  const status=$('statsDataStatus');
+  if(status){
+    status.textContent=statisticsStatusText(period,productRows.length);
+  }
+  const count=$('statsProductCount');
+  if(count){
+    count.textContent=`${productRows.length}종 전체 표시`;
+  }
+
   $('productRank').innerHTML=
-    Object.entries(products)
-      .map(([name,value])=>[
-        name,
-        {
-          count:value.orders.size,
-          qty:value.qty,
-          sales:value.sales
-        }
-      ])
-      .sort(
-        (a,b)=>
-          b[1].count-a[1].count||
-          b[1].sales-a[1].sales
-      )
-      .slice(0,10)
+    productRows
       .map(([name,value],index)=>`
         <div class="rank-row">
           <span class="rank-no">${index+1}</span>
           <div class="rank-name">
             <strong>${escapeHtml(name)}</strong>
             <small>
-              ${value.count}건 · ${value.qty}개
+              상품주문 ${value.count}건 · 판매 ${value.qty}개
             </small>
           </div>
           <strong>${fmt(value.sales)}</strong>
@@ -2246,6 +2360,7 @@ function renderStats(){
       `).join('')||
     '<div class="subtle">해당 기간의 주문이 없습니다.</div>';
 }
+
 
 
 const ANALYTICS_MARKET_COLORS={
@@ -2382,16 +2497,19 @@ function renderTodayAnalytics(){
     const allocated=allocatedGroupLineAmounts(group);
     group.lines.forEach((line,index)=>{
       const name=line.product||'상품명 없음';
-      if(!products[name]) products[name]={orders:new Set(),qty:0,sales:0};
-      products[name].orders.add(group.key);
+      if(!products[name]) products[name]={lines:new Set(),qty:0,sales:0};
+      products[name].lines.add(engineLineKey(line));
       products[name].qty+=Number(line.qty||1);
       products[name].sales+=Number(allocated[index]||0);
     });
   });
   const productRows=Object.entries(products)
-    .map(([name,value])=>[name,{orders:value.orders.size,qty:value.qty,sales:value.sales}])
-    .sort((a,b)=>b[1].orders-a[1].orders||b[1].sales-a[1].sales)
-    .slice(0,20);
+    .map(([name,value])=>[name,{orders:value.lines.size,qty:value.qty,sales:value.sales}])
+    .sort((a,b)=>b[1].orders-a[1].orders||b[1].qty-a[1].qty||b[1].sales-a[1].sales||a[0].localeCompare(b[0],'ko'));
+  const todayProductCount=$('todayProductCount');
+  if(todayProductCount){
+    todayProductCount.textContent=`${productRows.length}종 전체`;
+  }
   const maxProductScore=Math.max(1,...productRows.map(([,value])=>value.orders*1000000+value.sales));
   $('todayTopProducts').innerHTML=productRows.map(([name,value],index)=>{
     const score=value.orders*1000000+value.sales;
@@ -2440,7 +2558,7 @@ function render(){saveCloudCache();renderMetrics();renderStatus();renderMarkets(
 
 async function toggleRead(id){const o=orders.find(x=>x.id===id);if(!o)return;await db.collection('orders').doc(id).set({readStatus:isUnread(o)?'read':'unread',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}
 function showOrdersTab(){$('ordersTab').classList.add('active');$('statsTab').classList.remove('active');$('ordersPanel').classList.add('active');$('statsPanel').classList.remove('active')}
-function showStatsTab(){$('statsTab').classList.add('active');$('ordersTab').classList.remove('active');$('statsPanel').classList.add('active');$('ordersPanel').classList.remove('active')}
+function showStatsTab(){$('statsTab').classList.add('active');$('ordersTab').classList.remove('active');$('statsPanel').classList.add('active');$('ordersPanel').classList.remove('active');loadAllStatisticsOrders()}
 function copyText(text,label){if(!text)return toast(label+' 정보가 없습니다.');navigator.clipboard.writeText(String(text)).then(()=>toast(label+' 복사 완료')).catch(()=>toast(label+' 복사 실패'))}
 function openDetail(id){
   const o=orders.find(x=>x.id===id);
@@ -3160,14 +3278,14 @@ async function requestTelegramTest(){
 }
 
 
-$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=renderStats;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;$('telegramTestBtn').onclick=requestTelegramTest;
+$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=()=>{renderStats();loadAllStatisticsOrders()};$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;$('telegramTestBtn').onclick=requestTelegramTest;
 $('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
 $('closeDetailBtn').onclick=()=>$('detailDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
 $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.18-daily-ledger-final',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.19-full-stats',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -3236,11 +3354,11 @@ function showVersionInfo(){
   alert(
     `${APP_VERSION}\n`+
     `빌드 날짜: ${BUILD_DATE}\n\n`+
-    `• 중복 패치 코드 제거\n`+
-    `• Firebase 고정 로딩\n`+
-    `• 모바일 대시보드\n`+
-    `• 텔레그램 전용 알림\n`+
-    `• PC 수집기 연동`
+    `• 오늘 판매상품 전체 표시\n`+
+    `• 주문 통계 상품 전체 표시\n`+
+    `• 오늘·7일·30일·90일·전체 기간 조회\n`+
+    `• 상품주문 행 기준 건수 계산\n`+
+    `• PC 수집기·텔레그램 기능 유지`
   );
 }
 

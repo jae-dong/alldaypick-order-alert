@@ -305,7 +305,7 @@ dialog .modal{width:min(92vw,680px);max-height:86vh;overflow:auto;box-sizing:bor
 .market-unlinked-label{margin-left:6px;padding:2px 6px;border-radius:999px;background:#edf1f5;color:#74808d;font-size:10px;font-weight:800}
 
 
-/* v7.7.18 당일원장 재구축 · 공식 API 직접검증 · 전체 가독성 확대 */
+/* v7.7.19 당일전체·기간전체통계 · 공식 API 직접검증 · 전체 가독성 확대 */
 body{font-size:16px;line-height:1.5}
 .brand-kicker,.section-kicker{font-size:12px}
 .brand-title{font-size:31px}
@@ -399,3 +399,8 @@ input::placeholder,textarea::placeholder{font-size:inherit}
   .market-unlinked-label{font-size:10px}
   .copy-grid .btn,.modal-actions .btn,.note-actions .btn{font-size:12px}
 }
+
+.stats-rank-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;margin-bottom:8px}
+.stats-rank-head h3{margin:0;font-size:17px}
+#statsDataStatus{display:block;margin-top:4px}
+.top-products-card .top-list,.rank{max-height:none;overflow:visible}
