@@ -8,7 +8,7 @@ export const DIRECT_AUDIT_PATH=path.join(BACKEND_DIR,'market-direct-audit.json')
 function defaultAudit(){
   return {
     schemaVersion:1,
-    appVersion:'v7.7.24 진행목록 썸네일·월별 엑셀통계',
+    appVersion:'v7.7.25 진행목록 썸네일 자동채우기·월별 엑셀통계',
     generatedAt:'',
     basis:'각 쇼핑몰 공식 API 직접조회',
     excludedMarkets:{

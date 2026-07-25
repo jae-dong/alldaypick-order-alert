@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.24-thumbnail-excel-stats-20260726-v1';
+const CACHE='alldaypick-v7.7.25-active-thumbnail-backfill-20260726-v1';
 const STATIC=[
   './',
   './index.html',

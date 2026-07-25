@@ -9,7 +9,7 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const agent=fs.readFileSync(path.join(root,'backend','local-agent.js'),'utf8');
 
-assert.match(app,/v7\.7\.24 진행목록 썸네일·월별 엑셀통계/);
+assert.match(app,/v7\.7\.25 진행목록 썸네일 자동채우기·월별 엑셀통계/);
 assert.match(app,/function renderOrderProductCell/);
 assert.match(app,/class="order-thumb-img"/);
 assert.match(app,/function exportStatisticsExcel/);
@@ -23,4 +23,4 @@ assert.match(css,/\.order-thumb-btn/);
 assert.match(css,/\.excel-btn/);
 assert.match(agent,/latestImageUrl:photoUrl/);
 assert.match(agent,/thumbnailRefreshedAt/);
-console.log('v7.7.24 thumbnail and Excel export contract passed');
+console.log('v7.7.25 thumbnail and Excel export contract passed');

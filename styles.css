@@ -406,7 +406,7 @@ input::placeholder,textarea::placeholder{font-size:inherit}
 .top-products-card .top-list,.rank{max-height:none;overflow:visible}
 
 
-/* v7.7.24 현재 진행 목록 썸네일 */
+/* v7.7.25 현재 진행 목록 썸네일 자동채우기 */
 .product-cell-inner{display:flex;align-items:center;gap:11px;min-width:0}
 .order-thumb-btn{position:relative;display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;padding:0;border:1px solid #dce6ee;border-radius:12px;background:#f4f7fa;overflow:hidden;cursor:pointer;color:#8393a2}
 .order-thumb-btn:hover{border-color:#7db8df;box-shadow:0 4px 14px rgba(24,116,180,.16)}

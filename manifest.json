@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.24 진행목록 썸네일·월별 엑셀통계",
-  "short_name": "주문알림 v7.7.24",
-  "start_url": "./?v=v7.7.24-thumbnail-excel-stats",
+  "name": "올데이픽 주문알림 v7.7.25 진행목록 썸네일 자동채우기·월별 엑셀통계",
+  "short_name": "주문알림 v7.7.25",
+  "start_url": "./?v=v7.7.25-active-thumbnail-backfill",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

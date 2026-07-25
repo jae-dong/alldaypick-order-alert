@@ -1000,6 +1000,145 @@ async function sendOrderTelegramAlert(
 }
 
 
+const ACTIVE_THUMBNAIL_REFRESH_MS=6*60*60*1000;
+let activeThumbnailBackfillRunning=false;
+let activeThumbnailBackfillTimer=null;
+
+function activeThumbnailMarketName(order={}){
+  const market=String(order.market||order.marketName||'').trim();
+  if(['쿠팡','스마트스토어','11번가','롯데온'].includes(market)) return market;
+  const source=String(order.source||'').trim().toLowerCase();
+  return {
+    coupang:'쿠팡',smartstore:'스마트스토어',elevenst:'11번가',lotteon:'롯데온'
+  }[source]||'';
+}
+
+function activeThumbnailCurrentUrl(order={}){
+  const values=[
+    order.latestImageUrl,order.freshImageUrl,order.currentImageUrl,
+    order.representativeImageUrl,order.productImageUrl,order.thumbnailUrl,
+    order.mainImageUrl,order.imageUrl,order.thumbUrl,order.goodsImageUrl,
+    order.prdImgUrl,order.spdImgUrl
+  ];
+  return values.map(value=>String(value||'').trim()).find(value=>/^https?:\/\//i.test(value))||'';
+}
+
+function activeThumbnailTime(value){
+  if(value?.toDate) value=value.toDate();
+  const time=new Date(value||0).getTime();
+  return Number.isFinite(time)?time:0;
+}
+
+function activeThumbnailIdentity(order={},marketName=''){
+  const values=[
+    order.productOrderId,order.vendorItemId,order.orderItemId,
+    order.orderProductSequence,order.productNo,order.productId,
+    order.channelProductNo,order.originProductNo,order.originalProductId,
+    order.spdNo,order.sitmNo,order.itemNo,order.goodsNo,
+    order.sellerProductId,order.sellerProductCode,order.externalVendorSkuCode,
+    order.product,order.option,order.orderId
+  ].map(value=>String(value||'').trim()).filter(Boolean);
+  return `${marketName}|${values.slice(0,4).join('|')||values[0]||'unknown'}`;
+}
+
+async function backfillActiveOrderThumbnails(reason='startup'){
+  if(activeThumbnailBackfillRunning||inQuotaCooldown()) return null;
+  activeThumbnailBackfillRunning=true;
+  try{
+    const snapshot=await db.collection('orders')
+      .where('activeState','==',true)
+      .limit(300)
+      .get();
+    const now=Date.now();
+    const candidates=[];
+    snapshot.docs.forEach(doc=>{
+      const order={id:doc.id,...(doc.data()||{})};
+      const marketName=activeThumbnailMarketName(order);
+      if(!marketName) return;
+      const currentUrl=activeThumbnailCurrentUrl(order);
+      const refreshedAt=activeThumbnailTime(order.thumbnailRefreshedAt||order.thumbnailCheckedAt);
+      const stale=!refreshedAt||now-refreshedAt>=ACTIVE_THUMBNAIL_REFRESH_MS;
+      if(!currentUrl||stale) candidates.push({doc,order,marketName});
+    });
+
+    if(!candidates.length){
+      console.log(`진행목록 썸네일 확인 완료: 대상 0 · ${reason}`);
+      return {scanned:snapshot.size,targeted:0,success:0,failed:0,products:0};
+    }
+
+    const groups=new Map();
+    for(const item of candidates){
+      const key=activeThumbnailIdentity(item.order,item.marketName);
+      if(!groups.has(key)) groups.set(key,[]);
+      groups.get(key).push(item);
+    }
+
+    let success=0;
+    let failed=0;
+    let processedProducts=0;
+    for(const group of groups.values()){
+      processedProducts+=1;
+      const first=group[0];
+      let alertOrder=first.order;
+      try{
+        alertOrder=await enrichTelegramProductContext(first.order,first.marketName);
+        const photoUrl=await resolveTelegramProductImage(alertOrder,first.marketName,{
+          coupangConfig:first.marketName==='쿠팡'?coupang():null,
+          smartstoreConfig:first.marketName==='스마트스토어'?smartstoreConfig():null,
+          smartstoreResolver:resolveSmartstoreProductImage,
+          lotteonConfig:first.marketName==='롯데온'?lotteonConfigFromEnv():null,
+          lotteonResolver:resolveLotteonProductImage,
+          forceRefresh:true
+        });
+        if(!photoUrl) throw new Error('대표 썸네일 주소 없음');
+        const patch={
+          latestImageUrl:photoUrl,
+          thumbnailRefreshedAt:admin.firestore.FieldValue.serverTimestamp(),
+          thumbnailCheckedAt:admin.firestore.FieldValue.serverTimestamp(),
+          thumbnailSource:'active-list-backfill-v7.7.25'
+        };
+        const ids=new Set(group.map(item=>item.doc.id));
+        if(alertOrder?.telegramParentOrderId) ids.add(String(alertOrder.telegramParentOrderId));
+        await Promise.all([...ids].map(id=>
+          db.collection('orders').doc(id).set(patch,{merge:true})
+        ));
+        success+=group.length;
+      }catch(error){
+        failed+=group.length;
+        await Promise.all(group.map(item=>
+          item.doc.ref.set({
+            thumbnailCheckedAt:admin.firestore.FieldValue.serverTimestamp(),
+            thumbnailLastError:String(error?.message||error).slice(0,180)
+          },{merge:true}).catch(()=>{})
+        ));
+        console.warn(`진행목록 썸네일 조회 실패 · ${first.marketName} · ${first.order.product||first.order.orderId||first.doc.id}:`,error?.message||error);
+      }
+      await new Promise(resolve=>setTimeout(resolve,250));
+    }
+
+    console.log(
+      `진행목록 썸네일 채우기 완료: 대상 ${candidates.length} · `+
+      `성공 ${success} · 실패 ${failed} · 상품 ${processedProducts}종 · ${reason}`
+    );
+    return {scanned:snapshot.size,targeted:candidates.length,success,failed,products:processedProducts};
+  }catch(error){
+    if(!markQuotaCooldown(error)) console.error('진행목록 썸네일 채우기 실패:',error?.message||error);
+    return null;
+  }finally{
+    activeThumbnailBackfillRunning=false;
+  }
+}
+
+function scheduleActiveThumbnailBackfill(reason='startup',delayMs=1500){
+  clearTimeout(activeThumbnailBackfillTimer);
+  activeThumbnailBackfillTimer=setTimeout(()=>{
+    backfillActiveOrderThumbnails(reason).catch(error=>{
+      console.error('진행목록 썸네일 예약 작업 실패:',error?.message||error);
+    });
+  },Math.max(0,Number(delayMs)||0));
+}
+
+
 function telegramConfigured(){
   return Boolean(
     String(process.env.TELEGRAM_BOT_TOKEN||'').trim() &&
@@ -2332,7 +2471,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.24',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.25',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2352,7 +2491,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.24',
+    version:'FINAL-7.7.25',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2708,6 +2847,7 @@ async function run(source){
         updatedAt:admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
       console.log('immediate 완료 · 주문·교환 상태 우선 반영');
+      scheduleActiveThumbnailBackfill('immediate',500);
       return;
     }
     try{
@@ -2826,6 +2966,10 @@ async function run(source){
 
     console.log(`${label} 완료`);
 
+    if(['startup','reconcile'].includes(source)){
+      scheduleActiveThumbnailBackfill(source,1500);
+    }
+
     if(['startup','reconcile','immediate'].includes(source)){
       await writeDiagnostics(source);
     }
@@ -2913,6 +3057,11 @@ setInterval(
 setInterval(
   ()=>run('interval'),
   Math.max(30,Number.isFinite(intervalMinutes)?intervalMinutes:30)*60*1000
+);
+
+setInterval(
+  ()=>scheduleActiveThumbnailBackfill('6시간 자동갱신',0),
+  ACTIVE_THUMBNAIL_REFRESH_MS
 );
 
 
