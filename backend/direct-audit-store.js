@@ -8,7 +8,7 @@ export const DIRECT_AUDIT_PATH=path.join(BACKEND_DIR,'market-direct-audit.json')
 function defaultAudit(){
   return {
     schemaVersion:1,
-    appVersion:'v7.7.21 교환 0건 강제동기화·전체통계',
+    appVersion:'v7.7.22 교환완료 공식목록·기준선 정리·전체통계',
     generatedAt:'',
     basis:'각 쇼핑몰 공식 API 직접조회',
     excludedMarkets:{

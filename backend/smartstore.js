@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
+import { isBeforeExchangeBaseline } from './exchange-baseline.js';
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -459,22 +460,22 @@ function normalizeDetail(row){
 
   const currentClaim=row.currentClaim||productOrder.currentClaim||{};
   const currentCandidates=[
-    {type:'cancel',value:currentClaim.cancel},
-    {type:'return',value:currentClaim.return},
-    {type:'exchange',value:currentClaim.exchange}
+    {type:'cancel',value:currentClaim.cancel,authoritative:true},
+    {type:'return',value:currentClaim.return,authoritative:true},
+    {type:'exchange',value:currentClaim.exchange,authoritative:true}
   ].filter(candidate=>candidate.value&&typeof candidate.value==='object');
 
   // currentClaim is authoritative. Deprecated claim objects are used only when
   // currentClaim is absent, preventing the same request from being counted twice.
   const claimCandidates=currentCandidates.length?currentCandidates:[
-    {type:'cancel',value:row.cancel||row.cancelInfo||productOrder.cancel},
-    {type:'return',value:row.return||row.returnInfo||row.returnClaim||productOrder.return},
-    {type:'exchange',value:row.exchange||row.exchangeInfo||productOrder.exchange},
-    {type:'',value:row.claim||row.claimInfo||productOrder.claim}
+    {type:'cancel',value:row.cancel||row.cancelInfo||productOrder.cancel,authoritative:false},
+    {type:'return',value:row.return||row.returnInfo||row.returnClaim||productOrder.return,authoritative:false},
+    {type:'exchange',value:row.exchange||row.exchangeInfo||productOrder.exchange,authoritative:false},
+    {type:'',value:row.claim||row.claimInfo||productOrder.claim,authoritative:false}
   ].filter(candidate=>candidate.value&&typeof candidate.value==='object');
 
   if(!claimCandidates.length&&claimTypeOf(productOrder,productOrder)){
-    claimCandidates.push({type:'',value:productOrder});
+    claimCandidates.push({type:'',value:productOrder,authoritative:false});
   }
 
   const seen=new Set();
@@ -506,10 +507,26 @@ function normalizeDetail(row){
       receiptStatus:claim.receiptStatus||'',
       exchangeStatus:claim.exchangeStatus||''
     };
-    claimDocument.activeState=!isClaimTerminal(claimDocument);
+    const legacyFallbackClosed=
+      eventType==='exchange'&&
+      candidate.authoritative!==true&&
+      (
+        !String(claimStatus||'').trim()||
+        isBeforeExchangeBaseline(claimDocument)
+      );
+    const baselineClosed=
+      eventType==='exchange'&&
+      (isBeforeExchangeBaseline(claimDocument)||legacyFallbackClosed);
+    claimDocument.activeState=!isClaimTerminal(claimDocument)&&!baselineClosed;
     if(!claimDocument.activeState){
       claimDocument.status=eventType==='cancel'?'cancelled':eventType==='return'?'returned':'exchanged';
-      claimDocument.statusLabel='처리완료';
+      claimDocument.statusLabel=eventType==='exchange'?'교환완료':'처리완료';
+      if(baselineClosed){
+        claimDocument.sourceStatus='BASELINE_CLOSED';
+        claimDocument.claimStatus='BASELINE_CLOSED';
+        claimDocument.exchangeStatus='BASELINE_CLOSED';
+        claimDocument.resolvedReason='v7.7.22 교환 0건 기준선 이전 요청';
+      }
     }
     output.push(claimDocument);
   }

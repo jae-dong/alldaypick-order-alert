@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.21 교환 0건 강제동기화·전체통계",
+  "name": "올데이픽 주문알림 v7.7.22 교환완료 공식목록·기준선 정리·전체통계",
   "short_name": "주문알림",
-  "start_url": "./?v=v7.7.21-exchange-zero-sync",
+  "start_url": "./?v=v7.7.22-authoritative-exchange-cleanup",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

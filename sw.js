@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.21-exchange-zero-sync-20260725-v1';
+const CACHE='alldaypick-v7.7.22-authoritative-exchange-cleanup-20260725-v1';
 const STATIC=[
   './',
   './index.html',

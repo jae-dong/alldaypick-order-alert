@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,invalidateOrderStoreMirrorCache } from './order-store.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
+import { isBeforeExchangeBaseline } from './exchange-baseline.js';
 
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -143,10 +144,14 @@ function exchangeActiveState(row={}){
   const status=exchangeStatusValue(row);
 
   // 최종상태와 교환상품 배송완료를 먼저 반영합니다.
-  // 쿠팡 목록 API가 PROGRESS를 늦게 유지하더라도 교환상품 배송이 완료되면
-  // 판매자센터의 처리할 교환 건수에서는 제외되므로 미처리로 남기지 않습니다.
   if(['SUCCESS','REJECT','CANCEL','완료','거부','취소'].includes(status)) return false;
   if(exchangeDeliveryCompleted(row)) return false;
+
+  // v7.7.22 적용 시점에 판매자센터 미처리 교환 0건을 확인했습니다.
+  // 쿠팡 API가 과거 완료 교환을 RECEIPT/PROGRESS로 늦게 반환해도 기준선 이전
+  // 요청은 다시 미처리로 살리지 않습니다. 이후 새 요청은 정상 표시됩니다.
+  if(isBeforeExchangeBaseline(row)) return false;
+
   if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
   return false;
 }
@@ -204,52 +209,82 @@ async function fetchReturnRows(config,{status='',cancelType='',days=31}){
   return {rows,complete,from:new Date(Date.now()-days*86400000)};
 }
 
-async function fetchExchangeRows(config,days=31,maxPages=10,statuses=['RECEIPT','PROGRESS']){
-  const now=new Date();
-  const from=new Date(now.getTime()-days*86400000);
+function exchangeRowTimestamp(row={}){
+  const time=new Date(row.modifiedAt||row.createdAt||0).getTime();
+  return Number.isFinite(time)?time:0;
+}
+
+function exchangeStatusPriority(row={}){
+  const status=exchangeStatusValue(row);
+  if(['SUCCESS','REJECT','CANCEL'].includes(status)) return 3;
+  if(status==='PROGRESS') return 2;
+  if(status==='RECEIPT') return 1;
+  return 0;
+}
+
+function latestExchangeRows(rows=[]){
+  const map=new Map();
+  for(const row of rows){
+    const key=String(row.exchangeId||row.receiptId||JSON.stringify(row));
+    const before=map.get(key);
+    if(!before){
+      map.set(key,row);
+      continue;
+    }
+    const beforeTime=exchangeRowTimestamp(before);
+    const nextTime=exchangeRowTimestamp(row);
+    if(
+      nextTime>beforeTime||
+      (nextTime===beforeTime&&exchangeStatusPriority(row)>exchangeStatusPriority(before))
+    ){
+      map.set(key,row);
+    }
+  }
+  return [...map.values()];
+}
+
+async function fetchExchangeRows(config,days=31,maxPages=10){
   const path=`/v2/providers/openapi/apis/api/v4/vendors/${encodeURIComponent(config.vendorId)}/exchangeRequests`;
   const rows=[];
   let complete=true;
-  const statusList=[...new Set((statuses||[]).map(value=>String(value||'').trim()).filter(Boolean))];
 
-  // 현재 처리 중인 교환은 공식 상태 RECEIPT/PROGRESS를 각각 직접 조회합니다.
-  // 전체 상태 혼합 응답에 의존하지 않아 판매자센터의 진행 중 교환을 놓치지 않습니다.
-  for(const status of statusList){
-    for(const window of rangeWindows(days,6)){
-      let nextToken='';
-      let windowComplete=false;
+  // status 파라미터를 생략하면 쿠팡 공식 API가 RECEIPT/PROGRESS뿐 아니라
+  // SUCCESS/REJECT/CANCEL까지 모두 반환합니다. 같은 exchangeId의 최신 상태를
+  // 선택하여 완료 건이 오래된 PROGRESS 응답에 가려지는 문제를 막습니다.
+  for(const window of rangeWindows(days,6)){
+    let nextToken='';
+    let windowComplete=false;
 
-      for(let page=0;page<maxPages;page+=1){
-        const params={
-          createdAtFrom:kstSecond(window.from),
-          createdAtTo:kstSecond(window.to),
-          maxPerPage:'50',
-          status
-        };
-        if(nextToken) params.nextToken=nextToken;
+    for(let page=0;page<maxPages;page+=1){
+      const params={
+        createdAtFrom:kstSecond(window.from),
+        createdAtTo:kstSecond(window.to),
+        maxPerPage:'50'
+      };
+      if(nextToken) params.nextToken=nextToken;
 
-        const payload=await request(config,path,params);
-        const pageRows=Array.isArray(payload.data)?payload.data:[];
-        rows.push(...pageRows);
-        nextToken=payload.nextToken||payload.pagination?.nextToken||'';
+      const payload=await request(config,path,params);
+      const pageRows=Array.isArray(payload.data)?payload.data:[];
+      rows.push(...pageRows);
+      nextToken=payload.nextToken||payload.pagination?.nextToken||'';
 
-        if(!nextToken||pageRows.length===0){
-          windowComplete=true;
-          break;
-        }
-        await sleep(700);
+      if(!nextToken||pageRows.length===0){
+        windowComplete=true;
+        break;
       }
-
-      complete=complete&&windowComplete;
-      await sleep(500);
+      await sleep(700);
     }
+
+    complete=complete&&windowComplete;
+    await sleep(500);
   }
 
-  const unique=[...new Map(rows.map(row=>[
-    String(row.exchangeId||row.receiptId||JSON.stringify(row)),
-    row
-  ])).values()];
-  return {rows:unique,complete,from,statuses:statusList};
+  return {
+    rows:latestExchangeRows(rows),
+    complete,
+    from:new Date(Date.now()-days*86400000),
+    statuses:['ALL']
+  };
 }
 
 async function saveAndReconcile(db,eventType,documents,{from,complete,reconcile}){
@@ -420,8 +455,7 @@ export async function syncExchanges(db,config,reconcile=false){
   const fetched=await fetchExchangeRows(
     config,
     reconcile?90:31,
-    10,
-    ['RECEIPT','PROGRESS']
+    10
   );
   const documents=exchangeDocuments(fetched.rows);
   const saved=await saveAndReconcile(db,'exchange',documents,{
@@ -460,5 +494,8 @@ export const coupangClaimsTestHelpers={
   exchangeReconcileFrom,
   forceCloseStaleCoupangExchanges,
   isCoupangExchangeDocument,
-  exchangeClaimIdentity
+  exchangeClaimIdentity,
+  latestExchangeRows,
+  exchangeStatusPriority,
+  exchangeRowTimestamp
 };

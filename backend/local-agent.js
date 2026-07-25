@@ -38,6 +38,7 @@ import { telegramOrderBody } from './telegram-format.js';
 import { resolveTelegramProductImage,invalidateTelegramProductImageCache } from './product-image.js';
 import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
 import { rebuildDailyMetrics } from './daily-metrics-ledger.js';
+import { closePreBaselineExchangeDocuments,EXCHANGE_BASELINE_CUTOFF_ISO } from './exchange-baseline.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -2225,6 +2226,18 @@ async function refreshEsmStatus(){
 
 
 let legacyMigrationDone=false;
+let exchangeBaselineCleanupDone=false;
+
+async function ensureExchangeBaselineCleanup(){
+  if(exchangeBaselineCleanupDone) return null;
+  exchangeBaselineCleanupDone=true;
+  const result=await closePreBaselineExchangeDocuments(db);
+  console.log(
+    `교환 0건 기준선 정리 완료: 종료 ${result.deactivated||0} · `+
+    `기준 ${EXCHANGE_BASELINE_CUTOFF_ISO}`
+  );
+  return result;
+}
 
 async function ensureLegacyMigration(){
   if(legacyMigrationDone) return null;
@@ -2260,7 +2273,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.21',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.22',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2280,7 +2293,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.21',
+    version:'FINAL-7.7.22',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2539,7 +2552,7 @@ async function runImmediateMarketCollection(summary){
   try{
     const exchangeResult=await withTimeout(
       '쿠팡 교환 처리상태 즉시확인',
-      syncExchanges(db,coupang(),false),
+      syncExchanges(db,coupang(),true),
       300000
     );
     if(exchangeResult?.directAudit){
@@ -2549,7 +2562,7 @@ async function runImmediateMarketCollection(summary){
     summary.exchangeState={...exchangeResult,push:exchangePush};
     const smartstoreClosed=Number(summary.smartstore?.claimReconcile?.exchange||0);
     console.log(
-      `교환 0건 동기화 완료: `+
+      `교환 공식 미처리 동기화 완료: `+
       `쿠팡 현재 ${exchangeResult.directAudit?.open||0}, 쿠팡 종료정리 ${exchangeResult.deactivated||0}, `+
       `스마트스토어 종료정리 ${smartstoreClosed}`
     );
@@ -2578,15 +2591,16 @@ async function run(source){
 
   running=true;
 
-  if(['startup','reconcile'].includes(source)){
+  if(['startup','reconcile','immediate'].includes(source)){
     try{
+      await ensureExchangeBaselineCleanup();
       await ensureLegacyMigration();
     }catch(error){
       if(markQuotaCooldown(error)){
         running=false;
         return;
       }
-      console.error('기존 데이터 정리 실패:',error instanceof Error?error.message:String(error));
+      console.error('교환 기준선/기존 데이터 정리 실패:',error instanceof Error?error.message:String(error));
     }
   }
 
