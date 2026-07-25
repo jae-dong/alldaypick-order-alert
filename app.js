@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.19 당일전체·기간전체통계';
-const BUILD_DATE='2026-07-23';
+const APP_VERSION='v7.7.20 교환완료 즉시정리·전체통계';
+const BUILD_DATE='2026-07-25';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -446,6 +446,12 @@ function terminalStatusText(order){
 }
 
 function isCompletedClaim(order){
+  // 마켓 공식 API 대조에서 activeState=false로 종료된 요청은
+  // 기존 status/statusLabel이 남아 있어도 즉시 완료로 처리합니다.
+  if(order?.activeState===false){
+    return true;
+  }
+
   if(isProcessed(order)){
     return true;
   }
@@ -485,7 +491,10 @@ function isActiveOrderWork(order){
 }
 
 function isActiveClaimWork(order){
-  if(!isClaimEvent(order)){
+  if(
+    !isClaimEvent(order) ||
+    order?.activeState===false
+  ){
     return false;
   }
 
@@ -3285,7 +3294,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.19-full-stats',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.20-claim-cleanup',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

@@ -31,4 +31,4 @@ assert.match(app,/db\.collection\('orders'\)\.get\(\)/);
 assert.match(app,/authoritativeDailyRows\(\)\.forEach/);
 assert.match(app,/Date\.now\(\)-statisticsLoadedAt<5\*60\*1000/);
 
-console.log('v7.7.19 full day and range statistics tests passed');
+console.log('v7.7.20 full day and range statistics tests passed');

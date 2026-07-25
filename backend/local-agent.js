@@ -1522,11 +1522,11 @@ async function sendClaimPush(
 }
 
 
-async function syncAllClaimTypes(source='interval'){
+async function syncAllClaimTypes(source='interval',types=CLAIM_TYPES){
   const reconcile=['reconcile','startup','immediate'].includes(source);
   const results=[];
 
-  for(const type of CLAIM_TYPES){
+  for(const type of types){
     if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
     let result;
 
@@ -1559,7 +1559,7 @@ async function syncAllClaimTypes(source='interval'){
 }
 
 
-function refreshClaimsInBackground(source='immediate'){
+function refreshClaimsInBackground(source='immediate',types=CLAIM_TYPES){
   if(backgroundClaimsRunning||inQuotaCooldown()) return;
   backgroundClaimsRunning=true;
 
@@ -1568,7 +1568,7 @@ function refreshClaimsInBackground(source='immediate'){
       console.log('취소·반품·교환·문의 백그라운드 확인 시작');
       const results=await withTimeout(
         '쿠팡 CS 백그라운드 전체조회',
-        syncAllClaimTypes(source),
+        syncAllClaimTypes(source,types),
         600000
       );
       console.log('취소·반품·교환·문의 백그라운드 확인 완료');
@@ -2259,7 +2259,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.19',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.20',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2279,7 +2279,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.19',
+    version:'FINAL-7.7.20',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2531,10 +2531,39 @@ async function runImmediateMarketCollection(summary){
   }));
 
   if(inQuotaCooldown()) throw new Error('Firestore quota cooldown');
-  summary.claims={background:true};
-  await updateCollectProgress('immediate',95,'현재 주문 반영 완료');
+
+  // 즉시수집 버튼이 완료되기 전에 쿠팡 교환 미처리 목록을 먼저 대조합니다.
+  // 스마트스토어 교환은 위 syncSmartstoreSafe('immediate')의 reconcile에서 이미 정리됩니다.
+  await updateCollectProgress('immediate',90,'교환 처리완료 확인 중');
+  try{
+    const exchangeResult=await withTimeout(
+      '쿠팡 교환 처리상태 즉시확인',
+      syncExchanges(db,coupang(),false),
+      300000
+    );
+    if(exchangeResult?.directAudit){
+      recordDirectAudit('coupang','exchange',exchangeResult.directAudit);
+    }
+    const exchangePush=await sendClaimPush(exchangeResult.createdClaims||[],'immediate');
+    summary.exchangeState={...exchangeResult,push:exchangePush};
+    console.log(
+      `교환 처리상태 즉시확인 완료: 현재 ${exchangeResult.directAudit?.open||0}, `+
+      `종료정리 ${exchangeResult.deactivated||0}`
+    );
+  }catch(error){
+    if(markQuotaCooldown(error)) throw error;
+    const message=error instanceof Error?error.message:String(error);
+    summary.exchangeState={error:message};
+    console.error('교환 처리상태 즉시확인 실패:',message);
+  }
+
+  summary.claims={background:true,exchangeChecked:true};
+  await updateCollectProgress('immediate',95,'주문·교환 상태 반영 완료');
   refreshCurrentOrdersInBackground('immediate');
-  refreshClaimsInBackground('immediate');
+  refreshClaimsInBackground(
+    'immediate',
+    CLAIM_TYPES.filter(type=>type!=='exchange')
+  );
 }
 
 async function run(source){
@@ -2596,13 +2625,13 @@ async function run(source){
         action:'collect',
         progressPercent:100,
         remainingPercent:0,
-        progressStep:'현재 주문 반영 완료 · 요청 상태는 백그라운드 확인 중',
+        progressStep:'주문·교환 상태 반영 완료 · 나머지 요청은 백그라운드 확인 중',
         result:summary,
         completedAt:admin.firestore.FieldValue.serverTimestamp(),
         progressUpdatedAt:admin.firestore.FieldValue.serverTimestamp(),
         updatedAt:admin.firestore.FieldValue.serverTimestamp()
       },{merge:true});
-      console.log('immediate 완료 · 현재 주문 우선 반영');
+      console.log('immediate 완료 · 주문·교환 상태 우선 반영');
       return;
     }
     try{

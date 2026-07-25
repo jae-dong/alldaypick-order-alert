@@ -59,7 +59,7 @@ assert.match(directAudit,/market-direct-audit\.json/,'Direct API audit must crea
 assert.match(directAudit,/gmarket:'API 승인 전 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
 assert.match(directAudit,/auction:'API 승인 전 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.19'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.20'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -142,6 +142,10 @@ assert.match(app,/function firstPositiveAmount/,'Zero-valued amount aliases must
 const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 assert.match(index,/오늘 판매상품 전체/,'Today analytics heading must show all products');
 const styles=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-assert.match(styles,/v7\.7\.19 당일전체·기간전체통계/,'Readability overrides must include the current release marker');
+assert.match(styles,/v7\.7\.20 교환완료 즉시정리·전체통계/,'Readability overrides must include the current release marker');
+
+assert.match(app,/order\?\.activeState===false/,'Completed claims must be hidden immediately when activeState is false');
+assert.match(agent,/교환 처리상태 즉시확인 완료/,'Manual collection must verify exchange completion before reporting success');
+assert.match(orderStore,/terminalClaimPatch\(eventType\)/,'Reconciled claims must receive a terminal status label');
 
 console.log('source-contract tests passed');

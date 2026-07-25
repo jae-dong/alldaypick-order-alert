@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
-import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { upsertDocuments,reconcileOpenDocuments,invalidateOrderStoreMirrorCache } from './order-store.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
 
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -392,6 +392,12 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
       },{merge:true});
     }
     await batch.commit();
+  }
+
+  if(stale.length){
+    // 직접 Firestore를 정리한 뒤 로컬 mirror cache의 active=true 흔적도 제거합니다.
+    // 그렇지 않으면 다음 즉시수집에서 완료 교환을 다시 미처리로 오인할 수 있습니다.
+    invalidateOrderStoreMirrorCache();
   }
 
   return {deactivated:stale.length,skipped:false};

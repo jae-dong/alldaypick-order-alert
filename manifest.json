@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.19 당일전체·기간전체통계",
+  "name": "올데이픽 주문알림 v7.7.20 교환완료 즉시정리·전체통계",
   "short_name": "주문알림",
-  "start_url": "./?v=v7.7.19-full-stats",
+  "start_url": "./?v=v7.7.20-claim-cleanup",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

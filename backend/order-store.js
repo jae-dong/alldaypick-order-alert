@@ -195,6 +195,15 @@ async function commitOperations(db,operations){
 }
 
 
+function terminalClaimPatch(eventType=''){
+  const type=String(eventType||'').toLowerCase();
+  if(type==='cancel') return {status:'cancelled',statusLabel:'취소완료'};
+  if(type==='return') return {status:'returned',statusLabel:'반품완료'};
+  if(type==='exchange') return {status:'exchanged',statusLabel:'교환완료'};
+  if(type==='inquiry') return {status:'inquiry_answered',statusLabel:'문의완료'};
+  return {};
+}
+
 function isOpenOrderDocument(document={}){
   const status=String(document.status||'').toLowerCase();
   const sourceStatus=String(document.sourceStatus||'').toUpperCase();
@@ -516,6 +525,7 @@ async function reconcileOpenDocumentsCached(db,{
     ...item,
     payload:{
       activeState:false,
+      ...terminalClaimPatch(eventType),
       resolvedReason:reason,
       resolvedAt:admin.firestore.FieldValue.serverTimestamp(),
       updatedAt:admin.firestore.FieldValue.serverTimestamp()
@@ -524,7 +534,7 @@ async function reconcileOpenDocumentsCached(db,{
 
   const cloudWrites=await commitOperations(db,operations);
   for(const item of stale){
-    const semantic={...(item.entry.semantic||{}),activeState:false};
+    const semantic={...(item.entry.semantic||{}),activeState:false,...terminalClaimPatch(eventType)};
     cache.docs[item.id]={...makeCacheEntry(semantic),touchedAt:Date.now()};
   }
   if(stale.length) saveMirrorCache();
@@ -573,6 +583,7 @@ async function reconcileOpenDocumentsLegacy(db,{
     const batch=db.batch();
     stale.slice(index,index+400).forEach(ref=>batch.set(ref,{
       activeState:false,
+      ...terminalClaimPatch(eventType),
       resolvedReason:reason,
       resolvedAt:admin.firestore.FieldValue.serverTimestamp(),
       updatedAt:admin.firestore.FieldValue.serverTimestamp()
@@ -651,6 +662,11 @@ export async function migrateLegacyDocuments(db){
   saveMirrorCache();
 
   return {scanned:snapshot.size,patched,legacyClaimsDeactivated};
+}
+
+export function invalidateOrderStoreMirrorCache(){
+  mirrorCache=defaultCache();
+  saveMirrorCache();
 }
 
 export function resetOrderStoreCacheForTests(){
