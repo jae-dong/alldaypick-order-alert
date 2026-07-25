@@ -44,3 +44,5 @@ backend/market-direct-audit.json.tmp
 
 backend/.daily-order-ledger-v2.json
 backend/.daily-order-ledger-v2.json.tmp
+backend/.telegram-product-image-cache-v11.json
+backend/.telegram-product-image-cache-v11.json.tmp

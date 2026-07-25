@@ -951,7 +951,10 @@ async function sendOrderTelegramAlert(
     smartstoreConfig:marketName==='스마트스토어'?smartstoreConfig():null,
     smartstoreResolver:resolveSmartstoreProductImage,
     lotteonConfig:marketName==='롯데온'?lotteonConfigFromEnv():null,
-    lotteonResolver:resolveLotteonProductImage
+    lotteonResolver:resolveLotteonProductImage,
+    // 판매자가 대표사진을 교체한 경우 예전 30일 캐시나 주문 당시 URL을 사용하지 않고
+    // 알림 직전에 마켓의 현재 대표사진을 다시 확인합니다.
+    forceRefresh:true
   });
 
   const result=await sendTelegram(
@@ -1040,6 +1043,26 @@ function marketplaceReferer(photoUrl){
   return '';
 }
 
+function freshTelegramImageUrl(photoUrl){
+  try{
+    const parsed=new URL(photoUrl);
+    const signedKeys=['signature','expires','policy','key-pair-id','token','auth_key','x-amz-signature'];
+    const hasSignature=[...parsed.searchParams.keys()]
+      .some(key=>signedKeys.includes(String(key).toLowerCase()));
+    if(hasSignature) return photoUrl;
+    const host=parsed.hostname.toLowerCase();
+    const cacheableMarketCdn=[
+      'coupangcdn.com','pstatic.net','11st.co.kr','11st.com',
+      'lotteon.com','gmarket.co.kr','auction.co.kr'
+    ].some(domain=>host===domain||host.endsWith(`.${domain}`));
+    if(!cacheableMarketCdn) return photoUrl;
+    parsed.searchParams.set('__adp_fresh',String(Date.now()));
+    return parsed.toString();
+  }catch{
+    return photoUrl;
+  }
+}
+
 async function downloadTelegramPhoto(photoUrl){
   const parsed=new URL(photoUrl);
   const referers=[
@@ -1048,20 +1071,25 @@ async function downloadTelegramPhoto(photoUrl){
     ''
   ].filter((value,index,array)=>array.indexOf(value)===index);
   let lastError='';
-  for(const referer of referers){
-    try{
-      const headers={
-        Accept:'image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5',
-        'Accept-Language':'ko-KR,ko;q=0.9,en;q=0.8',
-        'Cache-Control':'no-cache',
-        'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36'
-      };
-      if(referer) headers.Referer=referer;
-      const response=await fetch(photoUrl,{
-        redirect:'follow',
-        signal:AbortSignal.timeout(20000),
-        headers
-      });
+  const downloadUrls=[freshTelegramImageUrl(photoUrl),photoUrl]
+    .filter((value,index,array)=>array.indexOf(value)===index);
+  for(const downloadUrl of downloadUrls){
+    for(const referer of referers){
+      try{
+        const headers={
+          Accept:'image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5',
+          'Accept-Language':'ko-KR,ko;q=0.9,en;q=0.8',
+          'Cache-Control':'no-cache, no-store, max-age=0',
+          Pragma:'no-cache',
+          'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36'
+        };
+        if(referer) headers.Referer=referer;
+        const response=await fetch(downloadUrl,{
+          redirect:'follow',
+          signal:AbortSignal.timeout(20000),
+          cache:'no-store',
+          headers
+        });
       if(!response.ok) throw new Error(`상품 이미지 다운로드 HTTP ${response.status}`);
       const bytes=await response.arrayBuffer();
       if(!bytes.byteLength) throw new Error('상품 이미지 파일이 비어 있습니다.');
@@ -1078,8 +1106,9 @@ async function downloadTelegramPhoto(photoUrl){
         size:bytes.byteLength,
         contentType
       };
-    }catch(error){
-      lastError=error instanceof Error?error.message:String(error);
+      }catch(error){
+        lastError=error instanceof Error?error.message:String(error);
+      }
     }
   }
   throw new Error(lastError||'상품 이미지 다운로드 실패');
@@ -1147,10 +1176,23 @@ async function sendTelegram(title,body,options={}){
       lastError=uploadError instanceof Error?uploadError.message:String(uploadError);
       console.warn(`${photoLogPrefix}텔레그램 썸네일 파일 업로드 실패 · URL 전송 재시도:`,lastError);
       try{
-        await telegramApiRequest(token,'sendPhoto',{
-          ...photoPayload,
-          photo:photoUrl
-        },20000);
+        const remoteUrls=[freshTelegramImageUrl(photoUrl),photoUrl]
+          .filter((value,index,array)=>array.indexOf(value)===index);
+        let remoteSent=false;
+        let remoteError='';
+        for(const remoteUrl of remoteUrls){
+          try{
+            await telegramApiRequest(token,'sendPhoto',{
+              ...photoPayload,
+              photo:remoteUrl
+            },20000);
+            remoteSent=true;
+            break;
+          }catch(error){
+            remoteError=error instanceof Error?error.message:String(error);
+          }
+        }
+        if(!remoteSent) throw new Error(remoteError||'텔레그램 원격 이미지 전송 실패');
         console.log(`${photoLogPrefix}텔레그램 상품 썸네일 URL 전송 성공`);
         await db.collection('system').doc('agent').set({
           telegramConfigured:true,telegramLastSuccess:new Date().toISOString(),
@@ -2273,7 +2315,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.22',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.23',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2293,7 +2335,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.22',
+    version:'FINAL-7.7.23',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

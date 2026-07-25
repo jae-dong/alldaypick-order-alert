@@ -4,6 +4,7 @@ import {
   directOrderImage,
   directCoupangOrderImage,
   coupangRepresentativeImage,
+  resolveTelegramProductImage,
   productImageTestHelpers as H
 } from '../backend/product-image.js';
 
@@ -84,6 +85,27 @@ assert.equal(
   }finally{
     globalThis.fetch=originalFetch;
   }
+}
+
+
+{
+  const latest=await resolveTelegramProductImage(
+    {
+      channelProductNo:'fresh-thumbnail-test-v7723',
+      thumbnailUrl:'https://shop-phinf.pstatic.net/old-image.jpg'
+    },
+    '스마트스토어',
+    {
+      forceRefresh:true,
+      smartstoreConfig:{},
+      smartstoreResolver:async()=> 'https://shop-phinf.pstatic.net/new-image.jpg'
+    }
+  );
+  assert.equal(
+    latest,
+    'https://shop-phinf.pstatic.net/new-image.jpg',
+    '강제 새로고침에서는 주문 당시 과거 이미지보다 마켓의 현재 대표사진을 우선해야 합니다.'
+  );
 }
 
 console.log('product image tests passed');

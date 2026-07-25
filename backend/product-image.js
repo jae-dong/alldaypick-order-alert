@@ -5,10 +5,13 @@ import {fileURLToPath} from 'node:url';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 // 이전 버전에서 "이미지 없음"으로 저장된 음수 캐시를 재사용하지 않습니다.
-const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v10.json');
-const POSITIVE_TTL_MS=30*24*60*60*1000;
-const NEGATIVE_TTL_MS=30*60*1000;
+const CACHE_PATH=path.join(BACKEND_DIR,'.telegram-product-image-cache-v11.json');
+// 상품 대표사진은 판매자가 언제든 교체할 수 있으므로 30일 고정 캐시를 사용하지 않습니다.
+// 같은 상품의 연속 알림만 5분 동안 재사용하고, 이후 알림에서는 마켓 원본을 다시 조회합니다.
+const POSITIVE_TTL_MS=5*60*1000;
+const NEGATIVE_TTL_MS=10*60*1000;
 let cache=null;
+const refreshInFlight=new Map();
 
 function loadCache(){
   if(cache) return cache;
@@ -484,16 +487,7 @@ function publicProductUrl(order={},marketName=''){
   return '';
 }
 
-export async function resolveTelegramProductImage(order={},marketName='',options={}){
-  const direct=marketName==='쿠팡'?directCoupangOrderImage(order):directOrderImage(order);
-  if(direct) return direct;
-
-  const key=cacheKey(order,marketName);
-  const stored=loadCache()[key];
-  if(stored&&Date.now()-Number(stored.checkedAt||0)<(stored.url?POSITIVE_TTL_MS:NEGATIVE_TTL_MS)){
-    return String(stored.url||'');
-  }
-
+async function refreshTelegramProductImage(order={},marketName='',options={},key=''){
   let url='';
   try{
     if(marketName==='쿠팡'){
@@ -505,7 +499,7 @@ export async function resolveTelegramProductImage(order={},marketName='',options
     }
     if(!url) url=await resolveOpenGraph(publicProductUrl(order,marketName));
   }catch(error){
-    console.warn('텔레그램 상품 썸네일 조회 생략:',error?.message||error);
+    console.warn('텔레그램 최신 상품 썸네일 재조회 생략:',error?.message||error);
   }
 
   url=normalizeImageUrl(url);
@@ -518,6 +512,33 @@ export async function resolveTelegramProductImage(order={},marketName='',options
     );
   }
   return url;
+}
+
+export async function resolveTelegramProductImage(order={},marketName='',options={}){
+  const direct=marketName==='쿠팡'?directCoupangOrderImage(order):directOrderImage(order);
+  // 강제 새로고침 알림에서는 주문 당시 저장된 과거 이미지 URL을 우선하지 않습니다.
+  if(direct&&!options.forceRefresh) return direct;
+
+  const key=cacheKey(order,marketName);
+  const stored=loadCache()[key];
+  const ttl=stored?.url?POSITIVE_TTL_MS:NEGATIVE_TTL_MS;
+  if(!options.forceRefresh&&stored&&Date.now()-Number(stored.checkedAt||0)<ttl){
+    return String(stored.url||'');
+  }
+
+  // 같은 상품 알림이 동시에 여러 건 들어와도 상품 API는 한 번만 조회합니다.
+  if(refreshInFlight.has(key)) return refreshInFlight.get(key);
+  const task=refreshTelegramProductImage(order,marketName,options,key)
+    .then(url=>{
+      if(url) return url;
+      if(direct&&options.forceRefresh){
+        console.warn(`텔레그램 최신 썸네일 재조회 실패 · 주문 저장 이미지로 대체: ${marketName}`);
+      }
+      return direct;
+    })
+    .finally(()=>refreshInFlight.delete(key));
+  refreshInFlight.set(key,task);
+  return task;
 }
 
 export const productImageTestHelpers={
