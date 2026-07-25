@@ -116,8 +116,15 @@ function exchangeStatusValue(row={}){
 }
 
 function exchangeDeliveryCompleted(row={}){
-  const deliveryStatus=String(row.deliveryStatus||'').trim().toUpperCase();
-  if(['COMPLETEDELIVERY','COMPLETE_DELIVERY','WITHDRAW'].includes(deliveryStatus)) return true;
+  const deliveryStatus=String(
+    row.deliveryStatus||row.orderDeliveryStatusCode||row.orderDeliveryStatus||''
+  ).trim().toUpperCase();
+  if([
+    'FINAL_DELIVERY','DELIVERED','COMPLETEDELIVERY','COMPLETE_DELIVERY',
+    'WITHDRAW','SUCCESS','COMPLETED'
+  ].includes(deliveryStatus)) return true;
+
+  if(row.targetItemDeliveryComplete===true) return true;
 
   const items=Array.isArray(row.exchangeItemDtoV1s)?row.exchangeItemDtoV1s:[];
   if(items.length>0&&items.every(item=>item?.targetItemDeliveryComplete===true)) return true;
@@ -125,8 +132,8 @@ function exchangeDeliveryCompleted(row={}){
   const invoiceGroups=Array.isArray(row.deliveryInvoiceGroupDtos)?row.deliveryInvoiceGroupDtos:[];
   const invoices=invoiceGroups.flatMap(group=>Array.isArray(group?.deliveryInvoiceDtos)?group.deliveryInvoiceDtos:[]);
   if(invoices.length>0&&invoices.every(invoice=>{
-    const status=String(invoice?.statusCode||'').trim().toUpperCase();
-    return ['FINAL_DELIVERY','DELIVERED','COMPLETEDELIVERY','COMPLETE_DELIVERY'].includes(status);
+    const status=String(invoice?.statusCode||invoice?.deliveryStatus||'').trim().toUpperCase();
+    return ['FINAL_DELIVERY','DELIVERED','COMPLETEDELIVERY','COMPLETE_DELIVERY','SUCCESS','COMPLETED'].includes(status);
   })) return true;
 
   return false;
@@ -135,14 +142,12 @@ function exchangeDeliveryCompleted(row={}){
 function exchangeActiveState(row={}){
   const status=exchangeStatusValue(row);
 
-  // 쿠팡 교환 목록 API의 exchangeStatus가 판매자센터 교환 처리상태의 기준입니다.
-  // 배송완료 플래그가 먼저 들어와도 exchangeStatus가 RECEIPT/PROGRESS이면
-  // 판매자가 아직 처리해야 하는 교환으로 그대로 표시합니다.
-  if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
+  // 최종상태와 교환상품 배송완료를 먼저 반영합니다.
+  // 쿠팡 목록 API가 PROGRESS를 늦게 유지하더라도 교환상품 배송이 완료되면
+  // 판매자센터의 처리할 교환 건수에서는 제외되므로 미처리로 남기지 않습니다.
   if(['SUCCESS','REJECT','CANCEL','완료','거부','취소'].includes(status)) return false;
-
-  // 구버전/불완전 응답에서 상태가 비어 있을 때만 배송완료 정보를 보조로 사용합니다.
   if(exchangeDeliveryCompleted(row)) return false;
+  if(['RECEIPT','PROGRESS','접수','진행'].includes(status)) return true;
   return false;
 }
 

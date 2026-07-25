@@ -3,8 +3,9 @@ import { coupangClaimsTestHelpers as H } from '../backend/coupang-claims.js';
 
 assert.equal(H.exchangeActiveState({exchangeStatus:'RECEIPT'}),true);
 assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS'}),true);
-assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',exchangeItemDtoV1s:[{targetItemDeliveryComplete:true}]}),true,'official PROGRESS must remain active even after replacement delivery');
-assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',deliveryStatus:'CompleteDelivery'}),true,'delivery completion must not override official exchange status');
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',exchangeItemDtoV1s:[{targetItemDeliveryComplete:true}]}),false,'delivered replacement item must be removed from the seller action count');
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',deliveryStatus:'CompleteDelivery'}),false,'delivery completion must close stale PROGRESS rows');
+assert.equal(H.exchangeActiveState({exchangeStatus:'PROGRESS',orderDeliveryStatusCode:'FINAL_DELIVERY'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'SUCCESS'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'REJECT'}),false);
 assert.equal(H.exchangeActiveState({exchangeStatus:'CANCEL'}),false);

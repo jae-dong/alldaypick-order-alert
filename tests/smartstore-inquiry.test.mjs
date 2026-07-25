@@ -135,3 +135,21 @@ const staleInquiryCandidates=H.staleInquiryKindDocuments([
   from:new Date('2026-07-22T00:00:00+09:00')
 });
 assert.deepEqual(staleInquiryCandidates.map(item=>item.id),['product-old']);
+
+
+{
+  const writes=[];
+  const docs=[
+    {id:'legacy-smartstore-exchange',data:()=>({source:'naver',market:'스마트스토어',status:'exchange_request',activeState:true,claimId:'OLD-1'}),ref:{path:'orders/legacy-smartstore'}},
+    {id:'coupang-exchange',data:()=>({source:'coupang',market:'쿠팡',eventType:'exchange',activeState:true}),ref:{path:'orders/coupang'}}
+  ];
+  const query={where(){return this;},async get(){return {forEach(callback){docs.forEach(callback);}};}};
+  const db={
+    collection(){return query;},
+    batch(){return {set(ref,payload){writes.push({ref,payload});},async commit(){}};}
+  };
+  const result=await H.forceCloseStaleSmartstoreExchanges(db,[],{complete:true});
+  assert.equal(result.deactivated,1);
+  assert.equal(writes[0].ref.path,'orders/legacy-smartstore');
+  assert.equal(writes[0].payload.activeState,false);
+}

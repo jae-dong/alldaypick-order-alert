@@ -2044,6 +2044,7 @@ async function syncSmartstoreSafe(source){
       `오늘전체대조 ${smartstoreConditionLabel}, `+
       `상태변경 ${result.statusChanged}, 요청알림 ${claimPush.sent||0}, 미답변문의 ${inquiryStatusLabel}, `+
       `문의정리 ${inquiryResult.deactivated||0}, `+
+      `교환종료정리 ${result.claimReconcile?.exchange||0}, `+
       `조회구간 ${result.rangeCount||1} · ${quotaLog(result,inquiryResult)}`
     );
 
@@ -2259,7 +2260,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.20',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.21',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2279,7 +2280,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.20',
+    version:'FINAL-7.7.21',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
@@ -2546,9 +2547,11 @@ async function runImmediateMarketCollection(summary){
     }
     const exchangePush=await sendClaimPush(exchangeResult.createdClaims||[],'immediate');
     summary.exchangeState={...exchangeResult,push:exchangePush};
+    const smartstoreClosed=Number(summary.smartstore?.claimReconcile?.exchange||0);
     console.log(
-      `교환 처리상태 즉시확인 완료: 현재 ${exchangeResult.directAudit?.open||0}, `+
-      `종료정리 ${exchangeResult.deactivated||0}`
+      `교환 0건 동기화 완료: `+
+      `쿠팡 현재 ${exchangeResult.directAudit?.open||0}, 쿠팡 종료정리 ${exchangeResult.deactivated||0}, `+
+      `스마트스토어 종료정리 ${smartstoreClosed}`
     );
   }catch(error){
     if(markQuotaCooldown(error)) throw error;

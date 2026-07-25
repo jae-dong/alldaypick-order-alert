@@ -1,4 +1,4 @@
-const APP_VERSION='v7.7.20 교환완료 즉시정리·전체통계';
+const APP_VERSION='v7.7.21 교환 0건 강제동기화·전체통계';
 const BUILD_DATE='2026-07-25';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -2699,10 +2699,12 @@ function watchCollect(){
 }
 
 
-const ORDER_CACHE_KEY='alldaypick-orders-cache-v770';
-const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v770';
+const ORDER_CACHE_KEY='alldaypick-orders-cache-v7721';
+const INTEGRATION_CACHE_KEY='alldaypick-integrations-cache-v7721';
 
 for(const legacyKey of [
+  'alldaypick-orders-cache-v770',
+  'alldaypick-integrations-cache-v770',
   'alldaypick-orders-cache-v764',
   'alldaypick-integrations-cache-v764',
   'alldaypick-orders-cache-v760',
@@ -3294,7 +3296,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.20-claim-cleanup',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.21-exchange-zero-sync',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

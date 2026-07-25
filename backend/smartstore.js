@@ -337,6 +337,69 @@ function claimTypeOf(productOrder={},claim={}){
   if(raw.includes('CANCEL')) return 'cancel';
   return '';
 }
+function smartstoreExchangeIdentity(data={},documentId=''){
+  return String(
+    data.claimId||data.exchangeRequestId||data.claimKey||
+    data.productOrderId||documentId||''
+  ).trim();
+}
+
+function isSmartstoreExchangeDocument(data={},documentId=''){
+  const source=String(data.source||'').toLowerCase();
+  const market=String(data.market||'');
+  const signals=[
+    data.eventType,data.workflowType,data.status,data.statusLabel,
+    data.sourceStatus,data.claimStatus,data.exchangeStatus,
+    data.claimKey,documentId
+  ].filter(Boolean).join(' ').toUpperCase();
+  const smartstore=source==='smartstore'||source==='naver'||market==='스마트스토어'||signals.includes('SMARTSTORE');
+  const exchange=String(data.eventType||'').toLowerCase()==='exchange'||signals.includes('EXCHANGE')||signals.includes('교환');
+  return smartstore&&exchange;
+}
+
+async function forceCloseStaleSmartstoreExchanges(db,currentDocuments,{complete=true}={}){
+  if(!complete) return {deactivated:0,skipped:true};
+
+  const activeIds=new Set();
+  const activeIdentities=new Set();
+  for(const item of currentDocuments||[]){
+    if(item?.activeState===false) continue;
+    if(item?.id) activeIds.add(String(item.id));
+    const identity=smartstoreExchangeIdentity(item,item?.id);
+    if(identity) activeIdentities.add(identity);
+  }
+
+  const snapshot=await db.collection('orders')
+    .where('activeState','==',true)
+    .get();
+  const stale=[];
+  snapshot.forEach(doc=>{
+    const data=doc.data()||{};
+    if(!isSmartstoreExchangeDocument(data,doc.id)) return;
+    if(activeIds.has(doc.id)) return;
+    const identity=smartstoreExchangeIdentity(data,doc.id);
+    if(identity&&activeIdentities.has(identity)) return;
+    stale.push(doc.ref);
+  });
+
+  for(let index=0;index<stale.length;index+=400){
+    const batch=db.batch();
+    stale.slice(index,index+400).forEach(ref=>batch.set(ref,{
+      activeState:false,
+      status:'exchanged',
+      statusLabel:'교환완료',
+      sourceStatus:'EXCHANGE_DONE',
+      claimStatus:'EXCHANGE_DONE',
+      resolvedReason:'스마트스토어 현재 미처리 교환 목록에서 제외됨',
+      resolvedAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString()
+    },{merge:true}));
+    await batch.commit();
+  }
+
+  return {deactivated:stale.length,skipped:false};
+}
+
 function normalizeDetail(row){
   const order=row.order||row.orderInfo||{};
   const productOrder=row.productOrder||row.productOrderInfo||row.productOrderDetail||row;
@@ -1008,7 +1071,9 @@ export const smartstoreTestHelpers={
   isLegacyInquiryCacheStale,
   firstImageUrl,
   collectProductNumbers,
-  normalizeSmartstoreImageUrl
+  normalizeSmartstoreImageUrl,
+  forceCloseStaleSmartstoreExchanges,
+  isSmartstoreExchangeDocument
 };
 
 export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
@@ -1081,9 +1146,9 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
 
   if(reconcile){
     for(const eventType of ['cancel','return','exchange']){
-      const currentIds=documents
-        .filter(item=>item.eventType===eventType&&item.activeState!==false)
-        .map(item=>item.id);
+      const currentDocuments=documents
+        .filter(item=>item.eventType===eventType&&item.activeState!==false);
+      const currentIds=currentDocuments.map(item=>item.id);
       const result=await reconcileOpenDocuments(db,{
         source:'smartstore',
         eventType,
@@ -1094,6 +1159,15 @@ export async function syncSmartstore(db,config,minutes=30,{reconcile=false}={}){
       claimReconcile[eventType]=result.deactivated||0;
       claimQuota.cloudReads+=Number(result.quota?.cloudReads||0);
       claimQuota.cloudWrites+=Number(result.quota?.cloudWrites||0);
+
+      // 이전 버전에서 source/eventType/문서 ID가 다르게 저장된 교환 문서까지 정리합니다.
+      if(eventType==='exchange'){
+        const legacyResult=await forceCloseStaleSmartstoreExchanges(db,currentDocuments,{
+          complete:conditionDiscoveryComplete===true
+        });
+        claimReconcile.exchange+=Number(legacyResult.deactivated||0);
+        claimQuota.cloudWrites+=Number(legacyResult.deactivated||0);
+      }
     }
   }
 
