@@ -1,6 +1,6 @@
 ﻿@echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ALLDAYPICK ORDER AGENT v7.7.23 FRESH THUMBNAIL REFRESH
+title ALLDAYPICK ORDER AGENT v7.7.24 THUMBNAIL EXCEL STATS
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -92,7 +92,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.23 FRESH THUMBNAIL REFRESH...
+echo Starting ALLDAYPICK order agent v7.7.24 THUMBNAIL EXCEL STATS...
 echo Keep this window open.
 echo.
 call npm run agent

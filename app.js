@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.23 최신 썸네일 강제갱신·교환완료 정리·전체통계';
-const BUILD_DATE='2026-07-25';
+const APP_VERSION='v7.7.24 진행목록 썸네일·월별 엑셀통계';
+const BUILD_DATE='2026-07-26';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -18,6 +18,85 @@ function dateValue(o){const v=o.metricDate||o.businessDate||o.orderDate||o.order
 function orderDay(o){const d=new Date(dateValue(o));if(Number.isNaN(d.getTime()))return'';return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(d)}
 function todayKey(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date())}
 function monthKey(){return todayKey().slice(0,7)}
+
+function normalizedImageUrl(value){
+  let url=String(value||'').trim();
+  if(!url) return '';
+  if(url.startsWith('//')) url=`https:${url}`;
+  if(!/^https?:\/\//i.test(url)) return '';
+  return url;
+}
+
+function orderImageUrl(order={}){
+  const candidates=[
+    order.latestImageUrl,
+    order.freshImageUrl,
+    order.currentImageUrl,
+    order.representativeImageUrl,
+    order.productImageUrl,
+    order.thumbnailUrl,
+    order.mainImageUrl,
+    order.imageUrl,
+    order.thumbUrl,
+    order.goodsImageUrl,
+    order.prdImgUrl,
+    order.spdImgUrl
+  ];
+
+  for(const value of candidates){
+    const url=normalizedImageUrl(value);
+    if(url) return url;
+  }
+
+  return '';
+}
+
+function orderImageVersion(order={}){
+  const candidates=[
+    order.thumbnailRefreshedAt,
+    order.imageUpdatedAt,
+    order.sourceUpdatedAt,
+    order.statusUpdatedAt,
+    order.syncedAt,
+    order.updatedAt,
+    order.createdAt
+  ];
+
+  for(const value of candidates){
+    const raw=value?.toDate?value.toDate():value;
+    const time=new Date(raw||0).getTime();
+    if(Number.isFinite(time)&&time>0){
+      return Math.floor(time/(10*60*1000));
+    }
+  }
+
+  return todayKey().replace(/-/g,'');
+}
+
+function displayOrderImageUrl(order={}){
+  const url=orderImageUrl(order);
+  if(!url) return '';
+  // 서명형 이미지 주소는 임의 쿼리를 붙이면 인증이 깨질 수 있으므로 그대로 사용합니다.
+  if(/[?&](?:x-amz-|signature=|token=|expires=|policy=|key-pair-id=)/i.test(url)){
+    return url;
+  }
+  const joiner=url.includes('?')?'&':'?';
+  return `${url}${joiner}adp_thumb=${encodeURIComponent(orderImageVersion(order))}`;
+}
+
+function renderOrderProductCell(order={}){
+  const rawImage=orderImageUrl(order);
+  const displayImage=displayOrderImageUrl(order);
+  const product=order.product||'상품명 없음';
+  const note=order.workflowNote
+    ?`<small class="product-note">${escapeHtml(order.workflowNote)}</small>`
+    :'';
+  const thumb=rawImage
+    ?`<button type="button" class="order-thumb-btn" data-image="${escapeHtml(rawImage)}" data-product="${escapeHtml(product)}" aria-label="상품 사진 크게 보기"><span class="order-thumb-placeholder">사진</span><img class="order-thumb-img" src="${escapeHtml(displayImage)}" data-fallback="${escapeHtml(rawImage)}" alt="${escapeHtml(product)} 상품 썸네일" loading="lazy"></button>`
+    :`<span class="order-thumb-btn is-empty" aria-hidden="true"><span class="order-thumb-placeholder">사진 없음</span></span>`;
+
+  return `<div class="product-cell-inner">${thumb}<div class="product-copy"><strong>${isImportant(order)?'⭐ ':''}${escapeHtml(product)}</strong>${order.option?`<small class="product-option">${escapeHtml(order.option)}</small>`:''}${note}</div></div>`;
+}
 
 function hasShipmentEvidence(order){
   const invoice=String(
@@ -797,8 +876,18 @@ function statisticsSourceOrders(){
   return [...merged.values()];
 }
 
+function selectedStatsMonth(){
+  return $('statsMonth')?.value||monthKey();
+}
+
+function statsMonthLabel(value=selectedStatsMonth()){
+  const match=String(value||'').match(/^(\d{4})-(\d{2})$/);
+  if(!match) return String(value||'월별');
+  return `${match[1]}년 ${Number(match[2])}월`;
+}
+
 function statsPeriodStart(period){
-  if(period==='all') return null;
+  if(period==='all'||period==='month') return null;
   const days=Math.max(1,Number(period)||7);
   const start=new Date(`${todayKey()}T00:00:00+09:00`);
   start.setTime(start.getTime()-(days-1)*86400000);
@@ -807,12 +896,19 @@ function statsPeriodStart(period){
 
 function statsPeriodLabel(period){
   if(period==='all') return '전체 기간';
+  if(period==='month') return statsMonthLabel();
   if(String(period)==='1') return '오늘';
   return `최근 ${Math.max(1,Number(period)||7)}일`;
 }
 
 function statsGroupsForPeriod(period){
   const all=historicalNormalGroups(statisticsSourceOrders());
+
+  if(period==='month'){
+    const target=selectedStatsMonth();
+    return all.filter(group=>String(group.day||'').slice(0,7)===target);
+  }
+
   const start=statsPeriodStart(period);
 
   if(!start){
@@ -2253,12 +2349,29 @@ function renderOrders(){
       <td data-label="일시">${escapeHtml(dateValue(o).replace('T',' ').slice(0,16))}</td>
       <td data-label="쇼핑몰">${escapeHtml(o.market||'')}</td>
       <td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td>
-      <td data-label="상품명" class="product-cell">${isImportant(o)?'⭐ ':''}${escapeHtml(o.product||'상품명 없음')}${o.workflowNote?`<small style="display:block;color:var(--muted);margin-top:4px">${escapeHtml(o.workflowNote)}</small>`:''}</td>
+      <td data-label="상품명" class="product-cell">${renderOrderProductCell(o)}</td>
       <td data-label="수량">${Number(o.qty||0)}</td>
       <td data-label="구매자">${escapeHtml(o.buyer||'')}</td>
       <td data-label="금액">${fmt(displayOrderAmount(o))}</td>
       <td data-label="관리"><button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></td>
     </tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
+
+  $('orderBody').querySelectorAll('.order-thumb-img').forEach(img=>{
+    img.onerror=()=>{
+      if(img.dataset.fallback&&!img.dataset.fallbackUsed){
+        img.dataset.fallbackUsed='1';
+        img.src=img.dataset.fallback;
+        return;
+      }
+      img.classList.add('is-missing');
+    };
+    if(img.complete&&!img.naturalWidth) img.onerror();
+  });
+
+  $('orderBody').querySelectorAll('.order-thumb-btn[data-image]').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    openImagePreview(btn.dataset.image,btn.dataset.product||'상품 사진');
+  });
 
   $('orderBody').querySelectorAll('.read-btn').forEach(btn=>btn.onclick=e=>{
     e.stopPropagation();
@@ -2371,6 +2484,283 @@ function renderStats(){
 }
 
 
+
+let xlsxLibraryPromise=null;
+
+function ensureXlsxLibrary(){
+  if(globalThis.XLSX) return Promise.resolve(globalThis.XLSX);
+  if(xlsxLibraryPromise) return xlsxLibraryPromise;
+
+  xlsxLibraryPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    script.async=true;
+    script.onload=()=>globalThis.XLSX
+      ?resolve(globalThis.XLSX)
+      :reject(new Error('엑셀 모듈을 불러오지 못했습니다.'));
+    script.onerror=()=>reject(new Error('엑셀 모듈 다운로드 실패'));
+    document.head.appendChild(script);
+  });
+
+  return xlsxLibraryPromise;
+}
+
+function safeSpreadsheetText(value){
+  const text=String(value??'');
+  return /^[=+\-@]/.test(text)?`'${text}`:text;
+}
+
+function statsExportFileLabel(period){
+  if(period==='month') return selectedStatsMonth();
+  if(period==='all') return '전체기간';
+  if(String(period)==='1') return todayKey();
+  return `${todayKey()}_최근${Math.max(1,Number(period)||7)}일`;
+}
+
+function statsExportDataset(groups){
+  const productMap=new Map();
+  const marketMap=new Map();
+  const dailyMap=new Map();
+  const detailRows=[];
+
+  groups.forEach(group=>{
+    const allocated=allocatedGroupLineAmounts(group);
+    const day=group.day||canonicalOrderDay(group.lines?.[0]||{});
+    const market=group.market||'기타';
+
+    if(!dailyMap.has(day)) dailyMap.set(day,{orders:0,qty:0,sales:0});
+    if(!marketMap.has(market)) marketMap.set(market,{orders:0,qty:0,sales:0,products:new Set()});
+
+    const daily=dailyMap.get(day);
+    const marketSummary=marketMap.get(market);
+    const lines=Array.isArray(group.lines)?group.lines:[];
+
+    daily.orders+=lines.length;
+    daily.qty+=Number(group.qty||0);
+    daily.sales+=Number(group.amount||0);
+    marketSummary.orders+=lines.length;
+    marketSummary.qty+=Number(group.qty||0);
+    marketSummary.sales+=Number(group.amount||0);
+
+    lines.forEach((line,index)=>{
+      const product=safeSpreadsheetText(line.product||'상품명 없음');
+      const key=String(product).trim().toLowerCase();
+      if(!productMap.has(key)){
+        productMap.set(key,{
+          product,
+          orders:new Set(),
+          qty:0,
+          sales:0,
+          markets:new Set()
+        });
+      }
+
+      const productSummary=productMap.get(key);
+      const amount=Math.round(Number(allocated[index]||0));
+      const qty=Math.max(1,Number(line.qty||1));
+      const lineKey=engineLineKey(line);
+      productSummary.orders.add(lineKey);
+      productSummary.qty+=qty;
+      productSummary.sales+=amount;
+      productSummary.markets.add(market);
+      marketSummary.products.add(key);
+
+      const date=canonicalOrderDate(line);
+      const timeText=date.getTime()
+        ?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(date)
+        :'';
+
+      detailRows.push({
+        day:day||'',
+        time:timeText,
+        market,
+        productOrderId:safeSpreadsheetText(
+          line.productOrderId||line.orderItemId||line.orderProductSequence||line.vendorItemId||lineKey
+        ),
+        orderNo:safeSpreadsheetText(line.orderNo||line.orderId||group.orderNo||''),
+        product,
+        option:safeSpreadsheetText(line.option||''),
+        qty,
+        amount,
+        status:labelFor(line),
+        invoice:safeSpreadsheetText(line.invoiceNumber||line.trackingNumber||line.waybillNumber||'')
+      });
+    });
+  });
+
+  const products=[...productMap.values()]
+    .map(item=>({
+      ...item,
+      orderCount:item.orders.size,
+      marketText:[...item.markets].sort((a,b)=>a.localeCompare(b,'ko')).join(', '),
+      average:item.qty?Math.round(item.sales/item.qty):0
+    }))
+    .sort((a,b)=>b.qty-a.qty||b.orderCount-a.orderCount||b.sales-a.sales||a.product.localeCompare(b.product,'ko'));
+
+  const markets=[...marketMap.entries()]
+    .map(([market,value])=>({market,...value,productCount:value.products.size}))
+    .sort((a,b)=>b.sales-a.sales||b.orders-a.orders||a.market.localeCompare(b.market,'ko'));
+
+  const daily=[...dailyMap.entries()]
+    .map(([day,value])=>({day,...value}))
+    .sort((a,b)=>String(a.day).localeCompare(String(b.day)));
+
+  detailRows.sort((a,b)=>
+    String(a.day).localeCompare(String(b.day))||
+    String(a.time).localeCompare(String(b.time))||
+    a.market.localeCompare(b.market,'ko')||
+    a.product.localeCompare(b.product,'ko')
+  );
+
+  return {products,markets,daily,detailRows};
+}
+
+function setWorksheetColumns(sheet,widths){
+  sheet['!cols']=widths.map(width=>({wch:width}));
+}
+
+function setWorksheetNumberFormat(XLSX,sheet,columns,startRow,endRow,format='#,##0'){
+  columns.forEach(column=>{
+    for(let row=startRow;row<=endRow;row+=1){
+      const cell=sheet[`${column}${row}`];
+      if(cell) cell.z=format;
+    }
+  });
+}
+
+async function exportStatisticsExcel(){
+  const button=$('exportStatsExcelBtn');
+  const original=button?.textContent||'엑셀 내려받기';
+
+  if(button){
+    button.disabled=true;
+    button.textContent='엑셀 만드는 중…';
+  }
+
+  try{
+    await loadAllStatisticsOrders();
+    const period=$('statsPeriod').value;
+    const groups=statsGroupsForPeriod(period);
+
+    if(!groups.length){
+      toast('선택 기간에 내려받을 주문이 없습니다.');
+      return;
+    }
+
+    const XLSX=await ensureXlsxLibrary();
+    const dataset=statsExportDataset(groups);
+    const orderCount=dataset.detailRows.length;
+    const qty=dataset.detailRows.reduce((sum,row)=>sum+Number(row.qty||0),0);
+    const sales=groups.reduce((sum,group)=>sum+Number(group.amount||0),0);
+    const periodLabel=statsPeriodLabel(period);
+    const generatedAt=new Intl.DateTimeFormat('ko-KR',{
+      timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',
+      hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false
+    }).format(new Date());
+
+    const workbook=XLSX.utils.book_new();
+    workbook.Props={
+      Title:`올데이픽 주문통계 ${periodLabel}`,
+      Subject:'상품별 판매 순위와 상품주문 상세',
+      Author:'올데이픽',
+      CreatedDate:new Date()
+    };
+
+    const summaryRows=[
+      ['올데이픽 주문 통계'],
+      ['조회 기간',periodLabel],
+      ['생성 시각',generatedAt],
+      ['상품주문 건수',orderCount],
+      ['판매 수량',qty],
+      ['주문 금액',sales],
+      ['판매상품 종류',dataset.products.length],
+      [],
+      ['집계 기준','공식 API 상품주문 행 기준 · 합배송 상품도 각각 1건'],
+      ['제외 기준','G마켓·옥션 미연동 시 제외 · 스마트스토어 선물하기 미수락 제외'],
+      ['사용 방법','월별 선택 후 내려받으면 해당 월 베스트상품과 주문 상세가 저장됩니다.']
+    ];
+    const summarySheet=XLSX.utils.aoa_to_sheet(summaryRows);
+    setWorksheetColumns(summarySheet,[24,72]);
+    setWorksheetNumberFormat(XLSX,summarySheet,['B'],4,7);
+    XLSX.utils.book_append_sheet(workbook,summarySheet,'요약');
+
+    const productRows=[
+      ['순위','상품명','판매 쇼핑몰','상품주문 건수','판매 수량','주문 금액','개당 평균금액']
+    ];
+    dataset.products.forEach((item,index)=>productRows.push([
+      index+1,item.product,item.marketText,item.orderCount,item.qty,item.sales,item.average
+    ]));
+    const productSheet=XLSX.utils.aoa_to_sheet(productRows);
+    setWorksheetColumns(productSheet,[8,44,22,16,14,16,18]);
+    productSheet['!autofilter']={ref:`A1:G${productRows.length}`};
+    setWorksheetNumberFormat(XLSX,productSheet,['D','E','F','G'],2,productRows.length);
+    XLSX.utils.book_append_sheet(workbook,productSheet,'상품별 순위');
+
+    const marketRows=[['쇼핑몰','상품주문 건수','판매 수량','주문 금액','판매상품 종류']];
+    dataset.markets.forEach(item=>marketRows.push([
+      item.market,item.orders,item.qty,item.sales,item.productCount
+    ]));
+    const marketSheet=XLSX.utils.aoa_to_sheet(marketRows);
+    setWorksheetColumns(marketSheet,[20,18,14,18,16]);
+    marketSheet['!autofilter']={ref:`A1:E${marketRows.length}`};
+    setWorksheetNumberFormat(XLSX,marketSheet,['B','C','D','E'],2,marketRows.length);
+    XLSX.utils.book_append_sheet(workbook,marketSheet,'쇼핑몰별');
+
+    const dailyRows=[['날짜','상품주문 건수','판매 수량','주문 금액']];
+    dataset.daily.forEach(item=>dailyRows.push([item.day,item.orders,item.qty,item.sales]));
+    const dailySheet=XLSX.utils.aoa_to_sheet(dailyRows);
+    setWorksheetColumns(dailySheet,[16,18,14,18]);
+    dailySheet['!autofilter']={ref:`A1:D${dailyRows.length}`};
+    setWorksheetNumberFormat(XLSX,dailySheet,['B','C','D'],2,dailyRows.length);
+    XLSX.utils.book_append_sheet(workbook,dailySheet,'일자별');
+
+    const detailRows=[[
+      '주문일자','주문시간','쇼핑몰','상품주문 식별값','주문번호',
+      '상품명','옵션','수량','상품주문 금액','현재상태','운송장번호'
+    ]];
+    dataset.detailRows.forEach(row=>detailRows.push([
+      row.day,row.time,row.market,row.productOrderId,row.orderNo,
+      row.product,row.option,row.qty,row.amount,row.status,row.invoice
+    ]));
+    const detailSheet=XLSX.utils.aoa_to_sheet(detailRows);
+    setWorksheetColumns(detailSheet,[14,12,16,24,24,44,28,10,18,14,22]);
+    detailSheet['!autofilter']={ref:`A1:K${detailRows.length}`};
+    setWorksheetNumberFormat(XLSX,detailSheet,['H','I'],2,detailRows.length);
+    XLSX.utils.book_append_sheet(workbook,detailSheet,'상품주문 상세');
+
+    const fileName=`올데이픽_주문통계_${statsExportFileLabel(period)}.xlsx`;
+    XLSX.writeFile(workbook,fileName,{compression:true,bookSST:true});
+    toast('주문 통계 엑셀 다운로드 완료');
+  }catch(error){
+    console.error('주문 통계 엑셀 다운로드 실패:',error);
+    toast(`엑셀 다운로드 실패 · ${error?.message||'다시 시도해 주세요.'}`);
+  }finally{
+    if(button){
+      button.disabled=false;
+      button.textContent=original;
+    }
+  }
+}
+
+function syncStatsMonthVisibility(){
+  const input=$('statsMonth');
+  if(!input) return;
+  input.hidden=$('statsPeriod').value!=='month';
+}
+
+function openImagePreview(url,title='상품 사진'){
+  const normalized=normalizedImageUrl(url);
+  if(!normalized){
+    toast('표시할 상품 사진이 없습니다.');
+    return;
+  }
+  $('imageDialogTitle').textContent=title;
+  const previewUrl=/[?&](?:x-amz-|signature=|token=|expires=|policy=|key-pair-id=)/i.test(normalized)
+    ?normalized
+    :`${normalized}${normalized.includes('?')?'&':'?'}adp_preview=${Date.now()}`;
+  $('imageDialogImg').src=previewUrl;
+  $('imageDialog').showModal();
+}
 
 const ANALYTICS_MARKET_COLORS={
   '쿠팡':'#f97373',
@@ -3289,14 +3679,14 @@ async function requestTelegramTest(){
 }
 
 
-$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=()=>{renderStats();loadAllStatisticsOrders()};$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;$('telegramTestBtn').onclick=requestTelegramTest;
+$('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=()=>{syncStatsMonthVisibility();renderStats();loadAllStatisticsOrders()};$('statsMonth').onchange=()=>{renderStats();loadAllStatisticsOrders()};$('exportStatsExcelBtn').onclick=exportStatisticsExcel;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;$('telegramTestBtn').onclick=requestTelegramTest;
 $('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
-$('closeDetailBtn').onclick=()=>$('detailDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
+$('closeDetailBtn').onclick=()=>$('detailDialog').close();$('closeImageDialogBtn').onclick=()=>$('imageDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
 $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.23-fresh-thumbnail-refresh',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.24-thumbnail-excel-stats',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -3315,6 +3705,8 @@ $('cloudStatus').onclick=()=>{
 
 
 restoreCloudCache();
+if($('statsMonth')&&!$('statsMonth').value) $('statsMonth').value=monthKey();
+syncStatsMonthVisibility();
 render();
 
 window.addEventListener('online',()=>{
@@ -3365,9 +3757,10 @@ function showVersionInfo(){
   alert(
     `${APP_VERSION}\n`+
     `빌드 날짜: ${BUILD_DATE}\n\n`+
-    `• 오늘 판매상품 전체 표시\n`+
-    `• 주문 통계 상품 전체 표시\n`+
-    `• 오늘·7일·30일·90일·전체 기간 조회\n`+
+    `• 현재 진행 주문 목록 상품 썸네일 표시\n`+
+    `• 썸네일 클릭 시 크게 보기\n`+
+    `• 주문 통계 월별 선택·엑셀 다운로드\n`+
+    `• 오늘·7일·30일·90일·월별·전체 기간 조회\n`+
     `• 상품주문 행 기준 건수 계산\n`+
     `• PC 수집기·텔레그램 기능 유지`
   );

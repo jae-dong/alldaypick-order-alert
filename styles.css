@@ -305,7 +305,7 @@ dialog .modal{width:min(92vw,680px);max-height:86vh;overflow:auto;box-sizing:bor
 .market-unlinked-label{margin-left:6px;padding:2px 6px;border-radius:999px;background:#edf1f5;color:#74808d;font-size:10px;font-weight:800}
 
 
-/* v7.7.23 최신 썸네일 강제갱신·교환완료 정리·전체통계 · 공식 API 직접검증 · 전체 가독성 확대 */
+/* v7.7.24 진행목록 썸네일·월별 엑셀통계 · 공식 API 직접검증 · 전체 가독성 확대 */
 body{font-size:16px;line-height:1.5}
 .brand-kicker,.section-kicker{font-size:12px}
 .brand-title{font-size:31px}
@@ -404,3 +404,43 @@ input::placeholder,textarea::placeholder{font-size:inherit}
 .stats-rank-head h3{margin:0;font-size:17px}
 #statsDataStatus{display:block;margin-top:4px}
 .top-products-card .top-list,.rank{max-height:none;overflow:visible}
+
+
+/* v7.7.24 현재 진행 목록 썸네일 */
+.product-cell-inner{display:flex;align-items:center;gap:11px;min-width:0}
+.order-thumb-btn{position:relative;display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;padding:0;border:1px solid #dce6ee;border-radius:12px;background:#f4f7fa;overflow:hidden;cursor:pointer;color:#8393a2}
+.order-thumb-btn:hover{border-color:#7db8df;box-shadow:0 4px 14px rgba(24,116,180,.16)}
+.order-thumb-btn.is-empty{cursor:default}
+.order-thumb-placeholder{font-size:10px;font-weight:900;line-height:1.15;text-align:center;padding:4px}
+.order-thumb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#fff}
+.order-thumb-img.is-missing{display:none}
+.product-copy{min-width:0;display:grid;gap:3px}
+.product-copy>strong{font-size:13px;line-height:1.35;word-break:break-word}
+.product-copy small{display:block;color:var(--muted);font-size:11px;line-height:1.35}
+.product-option{color:#4f6477!important}
+.image-preview-modal{width:min(94vw,720px)!important}
+.image-preview-frame{display:grid;place-items:center;min-height:280px;max-height:68vh;border:1px solid var(--line);border-radius:16px;overflow:auto;background:#f4f7fa;margin-bottom:14px}
+.image-preview-frame img{display:block;max-width:100%;max-height:65vh;object-fit:contain;background:#fff}
+
+/* v7.7.24 월별 통계 및 엑셀 다운로드 */
+.stats-section-head{align-items:flex-start}
+.stats-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.stats-actions select,.stats-actions input{min-height:46px;border:1px solid var(--line-strong);border-radius:11px;padding:10px 12px;background:#fff;color:var(--ink);font-size:14px}
+.stats-actions input[type="month"]{width:160px}
+.excel-btn{background:linear-gradient(135deg,#16834f,#0e6c40);border-color:#0e6c40;color:#fff;white-space:nowrap}
+.excel-btn:hover{filter:brightness(1.04)}
+.excel-btn:disabled{opacity:.62;cursor:wait}
+.stats-export-note{margin:-2px 0 13px;padding:10px 12px;border-radius:11px;background:#edf8f2;color:#406353;font-size:12px;line-height:1.45}
+
+@media(max-width:760px){
+  .product-cell-inner{gap:9px}
+  .order-thumb-btn{flex-basis:64px;width:64px;height:64px;border-radius:11px}
+  .product-copy>strong{font-size:12px}
+  .product-copy small{font-size:10px}
+  .stats-section-head{display:grid;gap:10px}
+  .stats-actions{display:grid;grid-template-columns:1fr 1fr;width:100%;gap:7px}
+  .stats-actions select,.stats-actions input,.stats-actions .btn{width:100%;min-width:0;font-size:12px}
+  .stats-actions .excel-btn{grid-column:1/-1}
+  .stats-export-note{font-size:10px}
+  .image-preview-frame{min-height:220px}
+}

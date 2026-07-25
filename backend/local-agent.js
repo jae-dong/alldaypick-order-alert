@@ -957,6 +957,23 @@ async function sendOrderTelegramAlert(
     forceRefresh:true
   });
 
+  // 알림 직전에 확인한 최신 대표사진 주소를 주문 문서에도 저장해
+  // 웹의 현재 진행 목록이 예전 주문 당시 사진이 아니라 최신 썸네일을 표시하도록 합니다.
+  if(photoUrl){
+    const imagePatch={
+      latestImageUrl:photoUrl,
+      thumbnailRefreshedAt:admin.firestore.FieldValue.serverTimestamp()
+    };
+    const documentIds=[order?.id,alertOrder?.telegramParentOrderId]
+      .map(value=>String(value||'').trim())
+      .filter((value,index,array)=>value&&array.indexOf(value)===index);
+    await Promise.all(documentIds.map(id=>
+      db.collection('orders').doc(id).set(imagePatch,{merge:true}).catch(error=>{
+        console.warn('웹 주문목록 최신 썸네일 저장 생략:',error?.message||error);
+      })
+    ));
+  }
+
   const result=await sendTelegram(
     telegramAlertTitle(order,marketName),
     telegramOrderBody(alertOrder),
@@ -2315,7 +2332,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.23',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.24',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2335,7 +2352,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.23',
+    version:'FINAL-7.7.24',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

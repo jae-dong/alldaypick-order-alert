@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.23 최신 썸네일 강제갱신·교환완료 정리·전체통계",
-  "short_name": "주문알림",
-  "start_url": "./?v=v7.7.23-fresh-thumbnail-refresh",
+  "name": "올데이픽 주문알림 v7.7.24 진행목록 썸네일·월별 엑셀통계",
+  "short_name": "주문알림 v7.7.24",
+  "start_url": "./?v=v7.7.24-thumbnail-excel-stats",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

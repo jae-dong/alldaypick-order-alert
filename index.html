@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f4c81">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>올데이픽 주문알림 · v7.7.23 최신 썸네일 강제갱신·교환완료 정리·전체통계</title>
-<link rel="manifest" href="./manifest.json?v=v7.7.23-fresh-thumbnail-refresh">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.23-fresh-thumbnail-refresh">
-<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.23-fresh-thumbnail-refresh">
-<link rel="stylesheet" href="./styles.css?v=v7.7.23-fresh-thumbnail-refresh">
+<title>올데이픽 주문알림 · v7.7.24 진행목록 썸네일·월별 엑셀통계</title>
+<link rel="manifest" href="./manifest.json?v=v7.7.24-thumbnail-excel-stats">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.24-thumbnail-excel-stats">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.24-thumbnail-excel-stats">
+<link rel="stylesheet" href="./styles.css?v=v7.7.24-thumbnail-excel-stats">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -23,7 +23,7 @@
 <div class="brand-kicker">ALLDAYPICK ORDER DESK</div>
 <div class="brand-title">
         올데이픽 주문알림
-        <button type="button" id="versionBadge" class="version-badge">v7.7.23 최신 썸네일 강제갱신·교환완료 정리·전체통계</button>
+        <button type="button" id="versionBadge" class="version-badge">v7.7.24 진행목록 썸네일·월별 엑셀통계</button>
       </div>
 <div class="brand-sub">
 <span class="dot" id="cloudDot"></span>
@@ -104,7 +104,8 @@
 </div>
 <div class="panel" id="statsPanel">
 <section class="card section">
-<div class="section-head"><div><h2>주문 통계</h2><span class="subtle" id="statsDataStatus">선택 기간 전체 주문을 불러옵니다.</span></div><select id="statsPeriod"><option value="1">오늘</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="all">전체 기간</option></select></div>
+<div class="section-head stats-section-head"><div><h2>주문 통계</h2><span class="subtle" id="statsDataStatus">선택 기간 전체 주문을 불러옵니다.</span></div><div class="stats-actions"><select id="statsPeriod"><option value="1">오늘</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="month">월별 선택</option><option value="all">전체 기간</option></select><input type="month" id="statsMonth" aria-label="통계 조회 월" hidden><button type="button" class="btn excel-btn" id="exportStatsExcelBtn">엑셀 내려받기</button></div></div>
+<div class="stats-export-note">선택 기간의 상품별 순위·쇼핑몰별·일자별·상품주문 상세를 한 개의 엑셀 파일로 저장합니다. 월별 선택으로 지난달 데이터도 다시 내려받을 수 있습니다.</div>
 <div class="stats-grid"><div class="stat"><span>상품주문 건수</span><strong id="statOrders">0건</strong></div><div class="stat"><span>판매 수량</span><strong id="statQty">0개</strong></div><div class="stat"><span>주문 금액</span><strong id="statSales">0원</strong></div></div>
 <div class="stats-rank-head"><h3>조회 기간 판매상품 전체</h3><span class="result-badge" id="statsProductCount">0종 전체 표시</span></div>
 <div class="rank" id="productRank"></div>
@@ -122,11 +123,12 @@
 <div class="copy-grid"><button class="btn" id="copyOrderNoBtn" type="button">주문번호 복사</button><button class="btn" id="copyBuyerBtn" type="button">구매자 복사</button><button class="btn" id="copyPhoneBtn" type="button">연락처 복사</button><button class="btn" id="copyProductBtn" type="button">상품명 복사</button><button class="btn" id="copyInvoiceBtn" type="button">운송장번호 복사</button></div>
 <div class="workflow-panel"><textarea class="note-area" id="detailNote" placeholder="이 주문에 대한 메모를 입력하세요."></textarea><div class="note-actions"><button class="btn primary" id="saveNoteBtn" type="button">메모 저장</button></div></div>
 <div class="modal-actions"><button class="btn primary" id="closeDetailBtn" type="button">닫기</button></div></div></dialog>
+<dialog id="imageDialog"><div class="modal image-preview-modal"><h3 id="imageDialogTitle">상품 사진</h3><div class="image-preview-frame"><img id="imageDialogImg" alt="상품 사진 크게 보기"></div><div class="modal-actions"><button class="btn primary" id="closeImageDialogBtn" type="button">닫기</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 
 
 
-<script src="./state-engine.js?v=v7.7.23-fresh-thumbnail-refresh" defer></script>
-<script src="./app.js?v=v7.7.23-fresh-thumbnail-refresh" defer></script>
+<script src="./state-engine.js?v=v7.7.24-thumbnail-excel-stats" defer></script>
+<script src="./app.js?v=v7.7.24-thumbnail-excel-stats" defer></script>
 </body>
 </html>
