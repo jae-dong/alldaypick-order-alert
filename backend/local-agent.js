@@ -1091,12 +1091,20 @@ async function backfillActiveOrderThumbnails(reason='startup'){
           forceRefresh:true
         });
         if(!photoUrl) throw new Error('대표 썸네일 주소 없음');
+        const resolvedProduct=String(alertOrder?.product||alertOrder?.productName||alertOrder?.itemName||'').trim();
+        const currentProduct=String(first.order?.product||'').trim();
+        const placeholderProduct=!currentProduct||[
+          '상품명 없음','상품 없음','원상품','상품','쿠팡 상품','11번가 상품',
+          '스마트스토어 상품','롯데온 상품','반품요청 상품','교환요청 상품','주문취소 상품'
+        ].includes(currentProduct);
         const patch={
           latestImageUrl:photoUrl,
           thumbnailRefreshedAt:admin.firestore.FieldValue.serverTimestamp(),
           thumbnailCheckedAt:admin.firestore.FieldValue.serverTimestamp(),
-          thumbnailSource:'active-list-backfill-v7.7.25'
+          thumbnailSource:'active-list-backfill-v7.7.26'
         };
+        if(resolvedProduct&&placeholderProduct) patch.product=resolvedProduct;
+        if(alertOrder?.option&&!first.order?.option) patch.option=alertOrder.option;
         const ids=new Set(group.map(item=>item.doc.id));
         if(alertOrder?.telegramParentOrderId) ids.add(String(alertOrder.telegramParentOrderId));
         await Promise.all([...ids].map(id=>

@@ -1,0 +1,12 @@
+v7.7.26 적용 방법
+
+1. 실행 중인 검은 창을 닫습니다.
+2. 압축을 새 폴더에 풉니다.
+3. GitHub Desktop > Repository > Show in Explorer를 누릅니다.
+4. 압축 해제 폴더의 파일을 기존 저장소에 모두 덮어씁니다.
+5. .git, backend\.env.local, backend\firebase-service-account.json은 유지합니다.
+6. GitHub Desktop Summary: v7.7.26 상태색상·마켓아이콘·상품명·가독성 개선
+7. Commit to main > Push origin을 누릅니다.
+8. Render 배포 성공을 확인합니다.
+9. START_AGENT.cmd를 실행합니다.
+10. 웹앱에서 Ctrl+F5로 강력 새로고침합니다.

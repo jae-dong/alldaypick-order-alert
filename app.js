@@ -1,4 +1,4 @@
-const APP_VERSION='v7.7.25 진행목록 썸네일 자동채우기·월별 엑셀통계';
+const APP_VERSION='v7.7.26 상태색상·마켓아이콘·상품명·가독성 개선';
 const BUILD_DATE='2026-07-26';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -25,6 +25,86 @@ function normalizedImageUrl(value){
   if(url.startsWith('//')) url=`https:${url}`;
   if(!/^https?:\/\//i.test(url)) return '';
   return url;
+}
+
+function meaningfulProductName(value){
+  const text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  const generic=[
+    '상품명 없음','상품 없음','원상품','상품','쿠팡 상품','11번가 상품',
+    '스마트스토어 상품','롯데온 상품','반품요청 상품','교환요청 상품',
+    '주문취소 상품','상품정보 확인 중'
+  ];
+  if(generic.includes(text)) return '';
+  return text;
+}
+
+function sameOrderIdentity(a={},b={}){
+  const marketA=String(a.market||a.source||'').trim().toLowerCase();
+  const marketB=String(b.market||b.source||'').trim().toLowerCase();
+  if(marketA&&marketB&&marketA!==marketB) return false;
+  const idsA=[
+    a.productOrderId,a.vendorItemId,a.orderItemId,a.orderProductSequence,
+    a.productNo,a.productId,a.channelProductNo,a.spdNo,a.sitmNo,a.itemNo,
+    a.sellerProductId,a.sellerProductCode
+  ].map(v=>String(v||'').trim()).filter(Boolean);
+  const idsB=new Set([
+    b.productOrderId,b.vendorItemId,b.orderItemId,b.orderProductSequence,
+    b.productNo,b.productId,b.channelProductNo,b.spdNo,b.sitmNo,b.itemNo,
+    b.sellerProductId,b.sellerProductCode
+  ].map(v=>String(v||'').trim()).filter(Boolean));
+  if(idsA.some(id=>idsB.has(id))) return true;
+  const orderA=String(a.orderNo||a.orderId||'').trim();
+  const orderB=String(b.orderNo||b.orderId||'').trim();
+  return Boolean(orderA&&orderB&&orderA===orderB);
+}
+
+function orderProductName(order={}){
+  const direct=[
+    order.product,order.productName,order.itemName,order.goodsName,
+    order.vendorItemName,order.sellerProductName,order.sellerProductItemName,
+    order.orderItemName,order.targetItemName,order.prdNm,order.prdName,
+    order.title,order.name
+  ];
+  for(const value of direct){
+    const name=meaningfulProductName(value);
+    if(name) return name;
+  }
+  const related=orders
+    .filter(candidate=>candidate!==order&&sameOrderIdentity(order,candidate))
+    .sort((a,b)=>timestampValue(b)-timestampValue(a));
+  for(const candidate of related){
+    for(const value of [
+      candidate.product,candidate.productName,candidate.itemName,candidate.goodsName,
+      candidate.vendorItemName,candidate.sellerProductName,candidate.sellerProductItemName,
+      candidate.orderItemName,candidate.targetItemName,candidate.prdNm,candidate.prdName,
+      candidate.title,candidate.name
+    ]){
+      const name=meaningfulProductName(value);
+      if(name) return name;
+    }
+  }
+  const option=meaningfulProductName(order.option);
+  return option?`${option} 상품`:'상품정보 확인 중';
+}
+
+function marketVisualKey(market=''){
+  const value=String(market||'').trim().toLowerCase();
+  if(value.includes('쿠팡')||value==='coupang') return 'coupang';
+  if(value.includes('스마트')||value==='smartstore') return 'smartstore';
+  if(value.includes('11')||value==='elevenst') return 'elevenst';
+  if(value.includes('g마켓')||value==='gmarket') return 'gmarket';
+  if(value.includes('옥션')||value==='auction') return 'auction';
+  if(value.includes('롯데')||value==='lotteon') return 'lotteon';
+  return 'other';
+}
+
+function renderMarketBadge(market=''){
+  const key=marketVisualKey(market);
+  const icon={
+    coupang:'C',smartstore:'N',elevenst:'11',gmarket:'G',auction:'A',lotteon:'ON',other:'•'
+  }[key];
+  return `<span class="market-badge market-${key}"><i>${icon}</i><b>${escapeHtml(market||'기타')}</b></span>`;
 }
 
 function orderImageUrl(order={}){
@@ -87,7 +167,7 @@ function displayOrderImageUrl(order={}){
 function renderOrderProductCell(order={}){
   const rawImage=orderImageUrl(order);
   const displayImage=displayOrderImageUrl(order);
-  const product=order.product||'상품명 없음';
+  const product=orderProductName(order);
   const note=order.workflowNote
     ?`<small class="product-note">${escapeHtml(order.workflowNote)}</small>`
     :'';
@@ -2278,7 +2358,7 @@ function filteredOrders(){
     }
 
     const hit=!q||[
-      order.product,
+      orderProductName(order),
       order.orderNo,
       order.buyer,
       order.phone,
@@ -2344,10 +2424,10 @@ function renderOrders(){
   $('filterText').textContent=labels.length?labels.join(' · ')+'만 표시 중':'';
 
   $('orderBody').innerHTML=list.length?list.map(o=>`
-    <tr class="order-row" data-id="${escapeHtml(o.id)}">
-      <td data-label="상태"><span class="status-pill">${escapeHtml(labelFor(o))}</span></td>
+    <tr class="order-row status-${escapeHtml(statusKey(o))} market-row-${escapeHtml(marketVisualKey(o.market))}" data-id="${escapeHtml(o.id)}">
+      <td data-label="상태"><span class="status-pill status-${escapeHtml(statusKey(o))}">${escapeHtml(labelFor(o))}</span></td>
       <td data-label="일시">${escapeHtml(dateValue(o).replace('T',' ').slice(0,16))}</td>
-      <td data-label="쇼핑몰">${escapeHtml(o.market||'')}</td>
+      <td data-label="쇼핑몰">${renderMarketBadge(o.market||'')}</td>
       <td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td>
       <td data-label="상품명" class="product-cell">${renderOrderProductCell(o)}</td>
       <td data-label="수량">${Number(o.qty||0)}</td>
@@ -2424,7 +2504,7 @@ function renderStats(){
   groups.forEach(group=>{
     const allocated=allocatedGroupLineAmounts(group);
     group.lines.forEach((line,index)=>{
-      const name=line.product||'상품명 없음';
+      const name=orderProductName(line);
 
       if(!products[name]){
         products[name]={
@@ -2543,7 +2623,7 @@ function statsExportDataset(groups){
     marketSummary.sales+=Number(group.amount||0);
 
     lines.forEach((line,index)=>{
-      const product=safeSpreadsheetText(line.product||'상품명 없음');
+      const product=safeSpreadsheetText(orderProductName(line));
       const key=String(product).trim().toLowerCase();
       if(!productMap.has(key)){
         productMap.set(key,{
@@ -2895,7 +2975,7 @@ function renderTodayAnalytics(){
   groups.forEach(group=>{
     const allocated=allocatedGroupLineAmounts(group);
     group.lines.forEach((line,index)=>{
-      const name=line.product||'상품명 없음';
+      const name=orderProductName(line);
       if(!products[name]) products[name]={lines:new Set(),qty:0,sales:0};
       products[name].lines.add(engineLineKey(line));
       products[name].qty+=Number(line.qty||1);
@@ -3686,7 +3766,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.25-active-thumbnail-backfill',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.26-readable-status-market-ui',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

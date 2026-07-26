@@ -444,3 +444,87 @@ input::placeholder,textarea::placeholder{font-size:inherit}
   .stats-export-note{font-size:10px}
   .image-preview-frame{min-height:220px}
 }
+
+
+/* v7.7.26 상태별 배경·쇼핑몰 아이콘·상품명·최대 가독성 */
+body{font-size:18px;line-height:1.58}
+.section{padding:22px}
+.section-head h2{font-size:27px;letter-spacing:-.7px}
+.section-kicker{font-size:13px}
+.brand-title{font-size:34px}
+.brand-sub,.subtle,.workflow-note{font-size:15px}
+.btn{font-size:16px;min-height:50px}
+.metric span{font-size:16px}.metric strong{font-size:39px}.metric small{font-size:14px}
+.alert-card{padding:16px 7px}.alert-card span{font-size:15px}.alert-card strong{font-size:32px}
+.shop-table th,.shop-table td{font-size:13.5px;line-height:1.45}
+.market-name{font-size:15px}.order-sales-cell strong{font-size:18px}.order-sales-cell small{font-size:12.5px}
+.toolbar input,.toolbar select{font-size:16px;min-height:50px}
+.result-badge{font-size:15px;padding:9px 13px}
+.order-table{min-width:1160px}
+.order-table th{font-size:14px;padding:15px 10px}
+.order-table td{font-size:14.5px;padding:14px 10px;vertical-align:middle;line-height:1.48}
+.order-table tr.order-row{transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}
+.order-table tr.order-row:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(28,58,82,.11);filter:saturate(1.04)}
+.order-table tr.order-row.status-new{background:#eaf5ff!important;box-shadow:inset 6px 0 0 #2087d4}
+.order-table tr.order-row.status-shipping_wait{background:#eafaf4!important;box-shadow:inset 6px 0 0 #11a57c}
+.order-table tr.order-row.status-cancel{background:#fff0f2!important;box-shadow:inset 6px 0 0 #dc4354}
+.order-table tr.order-row.status-return{background:#fff5e7!important;box-shadow:inset 6px 0 0 #e68a25}
+.order-table tr.order-row.status-exchange{background:#f1efff!important;box-shadow:inset 6px 0 0 #7063da}
+.order-table tr.order-row.status-inquiry{background:#eaf9fc!important;box-shadow:inset 6px 0 0 #2599b5}
+.status-pill{font-size:14px;padding:8px 12px;border:2px solid transparent;box-shadow:0 2px 6px rgba(20,45,65,.08)}
+.status-pill.status-new{background:#d5ebff;color:#075e9f;border-color:#9bcdf3}
+.status-pill.status-shipping_wait{background:#d6f5e9;color:#087357;border-color:#91d8bd}
+.status-pill.status-cancel{background:#ffdce1;color:#aa2333;border-color:#f3a7b1}
+.status-pill.status-return{background:#ffe8c9;color:#a95a08;border-color:#f1bd75}
+.status-pill.status-exchange{background:#e4e0ff;color:#5144b9;border-color:#b5acf2}
+.status-pill.status-inquiry{background:#d8f2f7;color:#087187;border-color:#91d5e2}
+.market-badge{display:inline-flex;align-items:center;gap:8px;justify-content:flex-start;min-width:112px;font-size:14px;font-weight:1000;white-space:nowrap}
+.market-badge i{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;color:#fff;font-style:normal;font-size:12px;font-weight:1000;box-shadow:0 3px 8px rgba(20,45,65,.16)}
+.market-badge b{font-size:14px}
+.market-badge.market-coupang i{background:linear-gradient(135deg,#ed1c24,#ff6b35)}
+.market-badge.market-coupang b{color:#c52a2f}
+.market-badge.market-smartstore i{background:linear-gradient(135deg,#03c75a,#00a94f)}
+.market-badge.market-smartstore b{color:#048a43}
+.market-badge.market-elevenst i{background:linear-gradient(135deg,#ff3b30,#ff6a00)}
+.market-badge.market-elevenst b{color:#d83b22}
+.market-badge.market-gmarket i{background:linear-gradient(135deg,#16a34a,#69b929)}
+.market-badge.market-gmarket b{color:#27813b}
+.market-badge.market-auction i{background:linear-gradient(135deg,#e5232e,#b80d18)}
+.market-badge.market-auction b{color:#b71922}
+.market-badge.market-lotteon i{background:linear-gradient(135deg,#f02338,#e0002a)}
+.market-badge.market-lotteon b{color:#ce1730}
+.market-badge.market-other i{background:#75879a}
+.product-cell-inner{gap:14px}
+.order-thumb-btn{flex-basis:72px;width:72px;height:72px;border-radius:14px}
+.product-copy>strong{font-size:17px;line-height:1.45;color:#10243a}
+.product-copy small{font-size:14px;line-height:1.4}
+.product-note{font-weight:800}
+.mini-btn{font-size:14px;min-height:40px;padding:8px 12px}
+
+@media(max-width:760px){
+  body{font-size:17px}
+  .app{padding:10px 8px 70px}
+  .section{padding:15px 10px}
+  .section-head h2{font-size:23px}
+  .section-kicker{font-size:11px}
+  .brand-title{font-size:29px}
+  .brand-sub,.subtle,.workflow-note{font-size:13px}
+  .btn{font-size:14px;min-height:48px}
+  .metric span{font-size:14px}.metric strong{font-size:32px}.metric small{font-size:12px}
+  .alert-card span{font-size:13px}.alert-card strong{font-size:27px}
+  .shop-table th,.shop-table td{font-size:11px;line-height:1.38;padding:10px 2px}
+  .market-name{font-size:11px}.order-sales-cell strong{font-size:14px}.order-sales-cell small{font-size:9.5px}
+  .toolbar input,.toolbar select{font-size:14px;min-height:48px}
+  .order-table{min-width:0}
+  .order-table tbody{gap:12px;padding:8px 3px;background:transparent}
+  .order-table tr.order-row{grid-template-columns:1fr;border-width:2px;border-radius:16px;box-shadow:0 5px 15px rgba(30,60,80,.08)!important}
+  .order-table td{grid-template-columns:88px minmax(0,1fr);font-size:14px;padding:10px 12px;border-bottom:1px solid rgba(120,145,165,.18)}
+  .order-table td:before{font-size:12.5px;align-self:center}
+  .order-table td.product-cell,.order-table td[data-label="관리"]{grid-column:1}
+  .status-pill{font-size:13.5px;padding:8px 12px}
+  .market-badge{min-width:0;font-size:14px}.market-badge i{width:32px;height:32px}.market-badge b{font-size:14px}
+  .order-thumb-btn{flex-basis:82px;width:82px;height:82px}
+  .product-copy>strong{font-size:16px;line-height:1.48}
+  .product-copy small{font-size:13px}
+  .mini-btn{font-size:14px;min-height:44px;width:100%}
+}
