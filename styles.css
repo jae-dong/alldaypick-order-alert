@@ -620,3 +620,32 @@ body{font-size:18px;line-height:1.58}
   .detail-grid dd.detail-long-text{font-size:14.5px;line-height:1.72}
   #detailDialogTitle{font-size:22px}
 }
+
+
+/* v7.7.30 진행목록 스크롤 성능 + 쇼핑몰 바로처리 */
+.order-thumb-img{opacity:0;transition:opacity .16s ease;contain:strict}
+.order-thumb-img.is-loaded{opacity:1}
+.product-copy{min-width:0;flex:1}
+.product-market-link{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}
+.product-market-link strong{display:block;font-size:inherit;line-height:1.35;color:var(--text);word-break:keep-all;overflow-wrap:anywhere}
+.product-market-link:hover strong{text-decoration:underline;text-underline-offset:3px}
+.market-action-hint{display:inline-flex;align-items:center;gap:4px;margin-top:2px;padding:4px 8px;border-radius:999px;background:#0d6fc7;color:#fff;font-size:12px;font-weight:900;line-height:1}
+.order-manage-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:92px}
+.market-open-btn{border-color:#0d6fc7!important;background:#e9f5ff!important;color:#075da9!important;font-weight:900!important;white-space:nowrap}
+.market-open-btn:hover{background:#d6edff!important}
+.market-action-primary{background:#0d6fc7!important;border-color:#0d6fc7!important;color:#fff!important;font-weight:900!important}
+.detail-action-buttons{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(100px,.7fr);gap:10px}
+
+@media (hover:none),(pointer:coarse){
+  .order-table tr.order-row:hover{transform:none;box-shadow:0 5px 15px rgba(30,60,80,.08)!important;filter:none}
+}
+
+@media(max-width:760px){
+  .order-table tr.order-row{content-visibility:auto;contain-intrinsic-size:520px;contain:layout paint style}
+  .product-market-link strong{font-size:17px;line-height:1.42}
+  .market-action-hint{font-size:14px;padding:6px 10px}
+  .order-manage-actions{display:grid;grid-template-columns:1fr 1fr;min-width:0;width:100%}
+  .order-manage-actions .mini-btn{min-height:46px;font-size:15px}
+  .detail-action-buttons{grid-template-columns:1fr}
+  .detail-action-buttons .btn{min-height:52px;font-size:17px}
+}

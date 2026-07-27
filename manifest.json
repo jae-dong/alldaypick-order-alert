@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.29 문의·반품·교환 상세내용 표시",
-  "short_name": "주문알림 v7.7.29",
-  "start_url": "./?v=v7.7.29-cs-detail-display",
+  "name": "올데이픽 주문알림 v7.7.30 빠른 스크롤·쇼핑몰 바로처리",
+  "short_name": "주문알림 v7.7.30",
+  "start_url": "./?v=v7.7.30-fast-scroll-market-action",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

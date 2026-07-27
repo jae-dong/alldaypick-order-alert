@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f4c81">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>올데이픽 주문알림 · v7.7.29 문의·반품·교환 상세내용 표시</title>
-<link rel="manifest" href="./manifest.json?v=v7.7.29-cs-detail-display">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.29-cs-detail-display">
-<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.29-cs-detail-display">
-<link rel="stylesheet" href="./styles.css?v=v7.7.29-cs-detail-display">
+<title>올데이픽 주문알림 · v7.7.30 빠른 스크롤·쇼핑몰 바로처리</title>
+<link rel="manifest" href="./manifest.json?v=v7.7.30-fast-scroll-market-action">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.30-fast-scroll-market-action">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.30-fast-scroll-market-action">
+<link rel="stylesheet" href="./styles.css?v=v7.7.30-fast-scroll-market-action">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -23,7 +23,7 @@
 <div class="brand-kicker">ALLDAYPICK ORDER DESK</div>
 <div class="brand-title">
         올데이픽 주문알림
-        <button type="button" id="versionBadge" class="version-badge">v7.7.29 문의·반품·교환 상세내용 표시</button>
+        <button type="button" id="versionBadge" class="version-badge">v7.7.30 빠른 스크롤·쇼핑몰 바로처리</button>
       </div>
 <div class="brand-sub">
 <span class="dot" id="cloudDot"></span>
@@ -122,13 +122,13 @@
 <dialog id="detailDialog"><div class="modal"><h3 id="detailDialogTitle">주문 상세정보</h3><dl class="detail-grid" id="detailGrid"></dl>
 <div class="copy-grid"><button class="btn" id="copyOrderNoBtn" type="button">주문번호 복사</button><button class="btn" id="copyBuyerBtn" type="button">구매자 복사</button><button class="btn" id="copyPhoneBtn" type="button">연락처 복사</button><button class="btn" id="copyProductBtn" type="button">상품명 복사</button><button class="btn" id="copyInvoiceBtn" type="button">운송장번호 복사</button></div>
 <div class="workflow-panel"><textarea class="note-area" id="detailNote" placeholder="이 주문에 대한 메모를 입력하세요."></textarea><div class="note-actions"><button class="btn primary" id="saveNoteBtn" type="button">메모 저장</button></div></div>
-<div class="modal-actions"><button class="btn primary" id="closeDetailBtn" type="button">닫기</button></div></div></dialog>
+<div class="modal-actions detail-action-buttons"><button class="btn market-action-primary" id="openMarketBtn" type="button">쇼핑몰에서 처리</button><button class="btn primary" id="closeDetailBtn" type="button">닫기</button></div></div></dialog>
 <dialog id="imageDialog"><div class="modal image-preview-modal"><h3 id="imageDialogTitle">상품 사진</h3><div class="image-preview-frame"><img id="imageDialogImg" alt="상품 사진 크게 보기"></div><div class="modal-actions"><button class="btn primary" id="closeImageDialogBtn" type="button">닫기</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 
 
 
-<script src="./state-engine.js?v=v7.7.29-cs-detail-display" defer></script>
-<script src="./app.js?v=v7.7.29-cs-detail-display" defer></script>
+<script src="./state-engine.js?v=v7.7.30-fast-scroll-market-action" defer></script>
+<script src="./app.js?v=v7.7.30-fast-scroll-market-action" defer></script>
 </body>
 </html>

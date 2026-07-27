@@ -1,4 +1,4 @@
-const APP_VERSION='v7.7.29 문의·반품·교환 상세내용 표시';
+const APP_VERSION='v7.7.30 빠른 스크롤·쇼핑몰 바로처리';
 const BUILD_DATE='2026-07-27';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -38,7 +38,14 @@ const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['ca
 let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,unsubscribeSyncedOrders=null,collectUnsub=null;
 let monthOrderMap=new Map(),activeOrderMap=new Map(),syncedOrderMap=new Map();
 let statisticsOrderMap=new Map(),statisticsLoaded=false,statisticsLoading=false,statisticsLoadedAt=0,statisticsLoadToken=0;
-const PAGE_SIZE=40;
+const DESKTOP_PAGE_SIZE=40;
+const MOBILE_PAGE_SIZE=20;
+let orderImageObserver=null;
+function currentPageSize(){
+  return window.matchMedia('(max-width: 760px)').matches
+    ?MOBILE_PAGE_SIZE
+    :DESKTOP_PAGE_SIZE;
+}
 
 function toast(text){const el=$('toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 function dateValue(o){const v=o.metricDate||o.businessDate||o.orderDate||o.orderAt||o.orderedAt||o.paymentDate||o.paymentAt||o.paidAt||o.orderDateTime||o.paymentDateTime||o.datetime||o.createdAt?.toDate?.()?.toISOString?.()||o.updatedAt?.toDate?.()?.toISOString?.()||'';return String(v)}
@@ -159,14 +166,14 @@ function orderImageUrl(order={}){
 }
 
 function orderImageVersion(order={}){
+  // 주문 동기화 시각은 수시로 변하므로 이미지 주소의 캐시 키로 사용하지 않습니다.
+  // 실제 대표사진을 다시 조회한 시각만 사용해 스크롤 때마다 이미지를 재다운로드하지 않게 합니다.
   const candidates=[
     order.thumbnailRefreshedAt,
     order.imageUpdatedAt,
-    order.sourceUpdatedAt,
-    order.statusUpdatedAt,
-    order.syncedAt,
-    order.updatedAt,
-    order.createdAt
+    order.productImageUpdatedAt,
+    order.representativeImageUpdatedAt,
+    order.sourceImageUpdatedAt
   ];
 
   for(const value of candidates){
@@ -177,7 +184,7 @@ function orderImageVersion(order={}){
     }
   }
 
-  return todayKey().replace(/-/g,'');
+  return '';
 }
 
 function displayOrderImageUrl(order={}){
@@ -187,22 +194,127 @@ function displayOrderImageUrl(order={}){
   if(/[?&](?:x-amz-|signature=|token=|expires=|policy=|key-pair-id=)/i.test(url)){
     return url;
   }
+  const version=orderImageVersion(order);
+  if(!version) return url;
   const joiner=url.includes('?')?'&':'?';
-  return `${url}${joiner}adp_thumb=${encodeURIComponent(orderImageVersion(order))}`;
+  return `${url}${joiner}adp_thumb=${encodeURIComponent(version)}`;
+}
+
+const MARKET_SELLER_PORTALS={
+  coupang:'https://wing.coupang.com/',
+  smartstore:'https://sell.smartstore.naver.com/',
+  elevenst:'https://login.soffice.11st.co.kr/auth/front/selleroffice/logincheck.tmall',
+  gmarket:'https://www.esmplus.com/',
+  auction:'https://www.esmplus.com/',
+  lotteon:'https://store.lotteon.com/',
+  other:''
+};
+
+function marketplaceActionLabel(order={}){
+  return {
+    new:'주문 확인',
+    shipping_wait:'발송 처리',
+    cancel:'취소 처리',
+    return:'반품 처리',
+    exchange:'교환 처리',
+    inquiry:'문의 답변'
+  }[statusKey(order)]||'쇼핑몰에서 처리';
+}
+
+function marketplaceLookupValue(order={}){
+  const market=marketVisualKey(order.market||order.source||'');
+  if(market==='smartstore'){
+    return String(order.productOrderId||order.orderNo||order.orderId||order.claimId||order.inquiryId||'').trim();
+  }
+  if(statusKey(order)==='inquiry'){
+    return String(order.orderNo||order.inquiryId||order.claimId||order.orderId||'').trim();
+  }
+  return String(order.orderNo||order.orderId||order.claimId||order.inquiryId||'').trim();
+}
+
+function marketplacePortalUrl(order={}){
+  const direct=[order.sellerActionUrl,order.managementUrl,order.sellerManagementUrl,order.orderManagementUrl]
+    .map(value=>String(value||'').trim())
+    .find(value=>/^https:\/\//i.test(value));
+  if(direct) return direct;
+  return MARKET_SELLER_PORTALS[marketVisualKey(order.market||order.source||'')]||'';
+}
+
+function openMarketplaceForOrder(order={}){
+  const url=marketplacePortalUrl(order);
+  if(!url){
+    toast('연결할 쇼핑몰 판매자센터 주소가 없습니다.');
+    return;
+  }
+
+  // 클릭 순간 새 창을 먼저 열어 모바일 브라우저의 팝업 차단을 피합니다.
+  const popup=window.open(url,'_blank');
+  if(popup) popup.opener=null;
+  const lookup=marketplaceLookupValue(order);
+  if(lookup&&navigator.clipboard?.writeText){
+    navigator.clipboard.writeText(lookup).catch(()=>{});
+  }
+
+  if(!popup){
+    window.location.href=url;
+    return;
+  }
+
+  const market=order.market||'쇼핑몰';
+  const action=marketplaceActionLabel(order);
+  toast(lookup
+    ?`${market} ${action} 화면 열기 · 조회번호 복사 완료`
+    :`${market} ${action} 화면을 열었습니다.`);
+}
+
+function ensureOrderImageObserver(){
+  if(orderImageObserver||!('IntersectionObserver' in window)) return orderImageObserver;
+  orderImageObserver=new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      if(!entry.isIntersecting) return;
+      const img=entry.target;
+      orderImageObserver.unobserve(img);
+      const src=img.dataset.src||'';
+      if(src&&!img.src) img.src=src;
+    });
+  },{rootMargin:'320px 0px',threshold:.01});
+  return orderImageObserver;
+}
+
+function activateOrderImages(root){
+  if(orderImageObserver) orderImageObserver.disconnect();
+  const observer=ensureOrderImageObserver();
+  root.querySelectorAll('.order-thumb-img[data-src]').forEach(img=>{
+    img.onload=()=>img.classList.add('is-loaded');
+    img.onerror=()=>{
+      if(img.dataset.fallback&&!img.dataset.fallbackUsed){
+        img.dataset.fallbackUsed='1';
+        img.src=img.dataset.fallback;
+        return;
+      }
+      img.classList.add('is-missing');
+    };
+    if(observer){
+      observer.observe(img);
+    }else{
+      img.src=img.dataset.src||'';
+    }
+  });
 }
 
 function renderOrderProductCell(order={}){
   const rawImage=orderImageUrl(order);
   const displayImage=displayOrderImageUrl(order);
   const product=orderProductName(order);
+  const action=marketplaceActionLabel(order);
   const note=order.workflowNote
     ?`<small class="product-note">${escapeHtml(order.workflowNote)}</small>`
     :'';
   const thumb=rawImage
-    ?`<button type="button" class="order-thumb-btn" data-image="${escapeHtml(rawImage)}" data-product="${escapeHtml(product)}" aria-label="상품 사진 크게 보기"><span class="order-thumb-placeholder">사진</span><img class="order-thumb-img" src="${escapeHtml(displayImage)}" data-fallback="${escapeHtml(rawImage)}" alt="${escapeHtml(product)} 상품 썸네일" loading="lazy"></button>`
+    ?`<button type="button" class="order-thumb-btn" data-image="${escapeHtml(rawImage)}" data-product="${escapeHtml(product)}" aria-label="상품 사진 크게 보기"><span class="order-thumb-placeholder">사진</span><img class="order-thumb-img" data-src="${escapeHtml(displayImage)}" data-fallback="${escapeHtml(rawImage)}" alt="${escapeHtml(product)} 상품 썸네일" loading="lazy" decoding="async" fetchpriority="low" width="82" height="82"></button>`
     :`<span class="order-thumb-btn is-empty" aria-hidden="true"><span class="order-thumb-placeholder">사진 없음</span></span>`;
 
-  return `<div class="product-cell-inner">${thumb}<div class="product-copy"><strong>${isImportant(order)?'⭐ ':''}${escapeHtml(product)}</strong>${order.option?`<small class="product-option">${escapeHtml(order.option)}</small>`:''}${note}</div></div>`;
+  return `<div class="product-cell-inner">${thumb}<div class="product-copy"><button type="button" class="product-market-link" data-market-open-id="${escapeHtml(order.id)}" title="${escapeHtml(order.market||'쇼핑몰')} 판매자센터에서 ${escapeHtml(action)}"><strong>${isImportant(order)?'⭐ ':''}${escapeHtml(product)}</strong>${order.option?`<small class="product-option">${escapeHtml(order.option)}</small>`:''}<span class="market-action-hint">↗ ${escapeHtml(action)}</span></button>${note}</div></div>`;
 }
 
 function requestText(value){
@@ -2521,9 +2633,10 @@ function filteredOrders(){
 
 function renderOrders(){
   const all=filteredOrders();
-  const pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
+  const pageSize=currentPageSize();
+  const pages=Math.max(1,Math.ceil(all.length/pageSize));
   currentPage=Math.min(Math.max(currentPage,1),pages);
-  const list=all.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
+  const list=all.slice((currentPage-1)*pageSize,currentPage*pageSize);
 
   $('orderResultCount').textContent=all.length+'건';
 
@@ -2548,24 +2661,20 @@ function renderOrders(){
       <td data-label="수량">${Number(o.qty||0)}</td>
       <td data-label="구매자">${escapeHtml(o.buyer||'')}</td>
       <td data-label="금액">${fmt(displayOrderAmount(o))}</td>
-      <td data-label="관리"><button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></td>
+      <td data-label="관리"><div class="order-manage-actions"><button class="mini-btn market-open-btn" data-market-open-id="${escapeHtml(o.id)}">${escapeHtml(marketplaceActionLabel(o))}</button><button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></div></td>
     </tr>`).join(''):`<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
 
-  $('orderBody').querySelectorAll('.order-thumb-img').forEach(img=>{
-    img.onerror=()=>{
-      if(img.dataset.fallback&&!img.dataset.fallbackUsed){
-        img.dataset.fallbackUsed='1';
-        img.src=img.dataset.fallback;
-        return;
-      }
-      img.classList.add('is-missing');
-    };
-    if(img.complete&&!img.naturalWidth) img.onerror();
-  });
+  activateOrderImages($('orderBody'));
 
   $('orderBody').querySelectorAll('.order-thumb-btn[data-image]').forEach(btn=>btn.onclick=e=>{
     e.stopPropagation();
     openImagePreview(btn.dataset.image,btn.dataset.product||'상품 사진');
+  });
+
+  $('orderBody').querySelectorAll('[data-market-open-id]').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    const order=orders.find(item=>item.id===btn.dataset.marketOpenId);
+    if(order) openMarketplaceForOrder(order);
   });
 
   $('orderBody').querySelectorAll('.request-detail-open[data-detail-id]').forEach(btn=>btn.onclick=e=>{
@@ -2589,7 +2698,7 @@ function renderOrders(){
   });
 
   $('orderBody').querySelectorAll('.order-row').forEach(row=>row.onclick=e=>{
-    if(!e.target.closest('button')) openDetail(row.dataset.id);
+    if(!e.target.closest('button,a')) openDetail(row.dataset.id);
   });
 
   $('pageInfo').textContent=`${currentPage} / ${pages}`;
@@ -3266,6 +3375,11 @@ function openDetail(id){
 
   $('detailGrid').innerHTML=fields.map(([k,v,long])=>`<dt>${escapeHtml(k)}</dt><dd class="${long?'detail-long-text':''}">${escapeHtml(v)}</dd>`).join('');
   $('detailNote').value=o.workflowNote||'';
+  const marketButton=$('openMarketBtn');
+  if(marketButton){
+    marketButton.textContent=`${o.market||'쇼핑몰'}에서 ${marketplaceActionLabel(o)}`;
+    marketButton.disabled=!marketplacePortalUrl(o);
+  }
   $('detailDialog').showModal();
 }
 
@@ -3972,10 +4086,11 @@ $('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();r
 $('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
 $('closeDetailBtn').onclick=()=>$('detailDialog').close();$('closeImageDialogBtn').onclick=()=>$('imageDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
 $('saveNoteBtn').onclick=saveCurrentNote;
+$('openMarketBtn').onclick=()=>{if(currentDetail) openMarketplaceForOrder(currentDetail)};
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.29-cs-detail-display',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.30-fast-scroll-market-action',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
@@ -3991,7 +4106,6 @@ $('cloudStatus').onclick=()=>{
   cloudMessage('수동 재연결 중',false);
   initCloud();
 };
-
 
 restoreCloudCache();
 if($('statsMonth')&&!$('statsMonth').value) $('statsMonth').value=monthKey();

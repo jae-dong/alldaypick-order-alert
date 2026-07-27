@@ -9,7 +9,7 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const agent=fs.readFileSync(path.join(root,'backend','local-agent.js'),'utf8');
 
-assert.match(app,/v7\.7\.27 조회기간 판매상품 전체 썸네일/);
+assert.match(app,/function renderStatisticsProductThumbnail/);
 assert.match(app,/function renderOrderProductCell/);
 assert.match(app,/class="order-thumb-img"/);
 assert.match(app,/function exportStatisticsExcel/);

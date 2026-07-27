@@ -1,0 +1,18 @@
+v7.7.30 배포 전 검증 결과
+
+통과
+- app.js, state-engine.js, backend/local-agent.js, backend/product-image.js JavaScript 문법 검사
+- manifest.json, backend/package.json, backend/package-lock.json JSON 검사
+- state-engine 테스트
+- workflow-model 테스트
+- 기존 썸네일·엑셀 기능 계약 검사
+- 진행목록 썸네일 자동채우기 계약 검사
+- 상태색상·마켓 UI 계약 검사
+- 조회기간 전체 썸네일 계약 검사
+- 억 단위 금액 표시 계약 검사
+- 문의·반품·교환 상세내용 계약 검사
+- v7.7.30 지연 이미지 로딩·모바일 페이지 수·쇼핑몰 바로처리 계약 검사
+
+검증 제한
+- 전체 npm 통합검사는 제작 컨테이너에 firebase-admin 패키지가 설치되어 있지 않아 중간에 중단되었습니다.
+- 실제 쇼핑몰 로그인 후 주문번호 검색과 업무처리는 사용자 PC의 로그인 세션에서 최종 확인해야 합니다.

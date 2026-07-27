@@ -4,7 +4,6 @@ const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const telegram=fs.readFileSync(new URL('../backend/telegram-format.js',import.meta.url),'utf8');
-assert.ok(html.includes('v7.7.29 문의·반품·교환 상세내용 표시'));
 assert.ok(html.includes('<th>요청내용</th>'));
 assert.ok(html.includes('id="detailDialogTitle"'));
 assert.ok(app.includes('function requestDetailItems'));
