@@ -19,5 +19,5 @@ for(const market of ['coupang','smartstore','elevenst','gmarket','auction','lott
   assert.match(css,new RegExp(`market-${market}`));
 }
 assert.match(agent,/patch\.product=resolvedProduct/);
-assert.match(agent,/active-list-backfill-v7\.7\.26/);
-console.log('v7.7.26 readable status and market UI contract passed');
+assert.match(agent,/active-list-backfill-v7\.7\.27/);
+console.log('v7.7.27 readable status and market UI contract passed');

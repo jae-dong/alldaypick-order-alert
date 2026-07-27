@@ -10,7 +10,7 @@ for(const required of [
   'backfillActiveOrderThumbnails',
   "where('activeState','==',true)",
   'latestImageUrl:photoUrl',
-  "thumbnailSource:'active-list-backfill-v7.7.26'",
+  "thumbnailSource:'active-list-backfill-v7.7.27'",
   "scheduleActiveThumbnailBackfill(source,1500)",
   "scheduleActiveThumbnailBackfill('immediate'"
 ]){
@@ -28,4 +28,4 @@ for(const required of [
   if(!app.includes(required)) throw new Error(`missing frontend thumbnail contract: ${required}`);
 }
 
-console.log('v7.7.26 active thumbnail backfill contract passed');
+console.log('v7.7.27 active thumbnail backfill contract passed');

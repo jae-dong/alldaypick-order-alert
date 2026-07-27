@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.26-readable-status-market-ui-20260726-v1';
+const CACHE='alldaypick-v7.7.27-stats-all-thumbnails-20260727-v1';
 const STATIC=[
   './',
   './index.html',

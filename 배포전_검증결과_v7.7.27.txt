@@ -1,0 +1,14 @@
+v7.7.27 배포 전 검증 결과
+
+통과
+- app.js JavaScript 문법검사
+- backend/local-agent.js JavaScript 문법검사
+- manifest.json, backend/package.json, backend/package-lock.json JSON 검사
+- 조회기간 판매상품 전체 썸네일 전용 계약 테스트
+- 전체기간 통계 계약 테스트
+- 기존 진행목록 썸네일·엑셀·가독성 UI 계약 테스트
+- 진행률·소스·상태엔진·텔레그램 형식·워크플로 모델 테스트
+
+확인 필요
+- 실제 쇼핑몰 상품 API를 이용한 과거 통계 썸네일 자동채우기는 사용자 PC에서 START_AGENT 실행 후 최종 확인
+- firebase-admin 의존성이 필요한 전체 백엔드 실통합 테스트는 이 제작 환경에 패키지가 없어 실행하지 못함

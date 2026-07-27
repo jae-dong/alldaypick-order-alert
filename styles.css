@@ -528,3 +528,22 @@ body{font-size:18px;line-height:1.58}
   .product-copy small{font-size:13px}
   .mini-btn{font-size:14px;min-height:44px;width:100%}
 }
+
+
+/* v7.7.27 조회기간 판매상품 전체 썸네일 */
+.rank-row.stats-product-row{grid-template-columns:42px 82px minmax(0,1fr) auto;gap:15px;padding:14px;min-height:92px}
+.stats-thumb-btn{position:relative;display:grid;place-items:center;width:76px;height:76px;padding:0;overflow:hidden;border:1px solid #cbd9e4;border-radius:14px;background:#f3f7fa;cursor:pointer;box-shadow:0 3px 10px rgba(25,55,78,.08)}
+.stats-thumb-btn.is-empty{cursor:default}
+.stats-thumb-placeholder{padding:4px;color:#708295;font-size:11px;font-weight:900;text-align:center;line-height:1.25}
+.stats-thumb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#fff}
+.stats-thumb-img.is-missing{display:none}
+.rank-sales{font-size:17px;white-space:nowrap;color:#10243a}
+.stats-product-row .rank-name strong{font-size:17px;line-height:1.42}
+.stats-product-row .rank-name small{font-size:13px;line-height:1.45}
+@media(max-width:760px){
+  .rank-row.stats-product-row{grid-template-columns:34px 72px minmax(0,1fr);gap:10px;padding:12px 8px;align-items:center}
+  .stats-thumb-btn{width:68px;height:68px;border-radius:12px}
+  .stats-product-row .rank-name strong{font-size:15px}
+  .stats-product-row .rank-name small{font-size:12px}
+  .rank-sales{grid-column:2/4;justify-self:end;font-size:16px;margin-top:-3px}
+}

@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.26 상태색상·마켓아이콘·상품명·가독성 개선",
-  "short_name": "주문알림 v7.7.26",
-  "start_url": "./?v=v7.7.26-readable-status-market-ui",
+  "name": "올데이픽 주문알림 v7.7.27 조회기간 판매상품 전체 썸네일",
+  "short_name": "주문알림 v7.7.27",
+  "start_url": "./?v=v7.7.27-stats-all-thumbnails",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

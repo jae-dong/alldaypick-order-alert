@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.26 상태색상·마켓아이콘·상품명·가독성 개선';
-const BUILD_DATE='2026-07-26';
+const APP_VERSION='v7.7.27 조회기간 판매상품 전체 썸네일';
+const BUILD_DATE='2026-07-27';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -2476,6 +2476,40 @@ function renderOrders(){
   $('prevPageBtn').disabled=currentPage<=1;
   $('nextPageBtn').disabled=currentPage>=pages;
 }
+function normalizedStatisticsProductKey(name=''){
+  return String(name||'')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toLowerCase();
+}
+
+function statisticsProductImageLookup(){
+  const lookup=new Map();
+
+  statisticsSourceOrders().forEach(order=>{
+    if(!orderImageUrl(order)) return;
+    const key=normalizedStatisticsProductKey(orderProductName(order));
+    if(!key) return;
+    const current=lookup.get(key);
+    if(!current||timestampValue(order)>=timestampValue(current)){
+      lookup.set(key,order);
+    }
+  });
+
+  return lookup;
+}
+
+function renderStatisticsProductThumbnail(order={},productName='상품'){
+  const rawImage=orderImageUrl(order);
+  const displayImage=displayOrderImageUrl(order);
+
+  if(!rawImage){
+    return `<span class="stats-thumb-btn is-empty" aria-hidden="true"><span class="stats-thumb-placeholder">사진 없음</span></span>`;
+  }
+
+  return `<button type="button" class="stats-thumb-btn" data-image="${escapeHtml(rawImage)}" data-product="${escapeHtml(productName)}" aria-label="${escapeHtml(productName)} 상품 사진 크게 보기"><span class="stats-thumb-placeholder">사진</span><img class="stats-thumb-img" src="${escapeHtml(displayImage)}" data-fallback="${escapeHtml(rawImage)}" alt="${escapeHtml(productName)} 상품 썸네일" loading="lazy"></button>`;
+}
+
 function renderStats(){
   const period=$('statsPeriod').value;
   const groups=statsGroupsForPeriod(period);
@@ -2500,6 +2534,7 @@ function renderStats(){
   );
 
   const products={};
+  const globalImageLookup=statisticsProductImageLookup();
 
   groups.forEach(group=>{
     const allocated=allocatedGroupLineAmounts(group);
@@ -2510,25 +2545,40 @@ function renderStats(){
         products[name]={
           lines:new Set(),
           qty:0,
-          sales:0
+          sales:0,
+          markets:new Set(),
+          imageOrder:null
         };
       }
 
       products[name].lines.add(engineLineKey(line));
       products[name].qty+=Number(line.qty||1);
       products[name].sales+=Number(allocated[index]||0);
+      if(line.market) products[name].markets.add(String(line.market));
+
+      if(orderImageUrl(line)){
+        const current=products[name].imageOrder;
+        if(!current||timestampValue(line)>=timestampValue(current)){
+          products[name].imageOrder=line;
+        }
+      }
     });
   });
 
   const productRows=Object.entries(products)
-    .map(([name,value])=>[
-      name,
-      {
-        count:value.lines.size,
-        qty:value.qty,
-        sales:value.sales
-      }
-    ])
+    .map(([name,value])=>{
+      const lookupKey=normalizedStatisticsProductKey(name);
+      return [
+        name,
+        {
+          count:value.lines.size,
+          qty:value.qty,
+          sales:value.sales,
+          markets:[...value.markets],
+          imageOrder:value.imageOrder||globalImageLookup.get(lookupKey)||null
+        }
+      ];
+    })
     .sort(
       (a,b)=>
         b[1].count-a[1].count||
@@ -2543,24 +2593,41 @@ function renderStats(){
   }
   const count=$('statsProductCount');
   if(count){
-    count.textContent=`${productRows.length}종 전체 표시`;
+    count.textContent=`${productRows.length}종 전체 표시 · 썸네일 포함`;
   }
 
   $('productRank').innerHTML=
     productRows
       .map(([name,value],index)=>`
-        <div class="rank-row">
+        <div class="rank-row stats-product-row">
           <span class="rank-no">${index+1}</span>
+          ${renderStatisticsProductThumbnail(value.imageOrder||{},name)}
           <div class="rank-name">
             <strong>${escapeHtml(name)}</strong>
             <small>
-              상품주문 ${value.count}건 · 판매 ${value.qty}개
+              ${value.markets.length?`${escapeHtml(value.markets.join(' · '))} · `:''}상품주문 ${value.count}건 · 판매 ${value.qty}개
             </small>
           </div>
-          <strong>${fmt(value.sales)}</strong>
+          <strong class="rank-sales">${fmt(value.sales)}</strong>
         </div>
       `).join('')||
     '<div class="subtle">해당 기간의 주문이 없습니다.</div>';
+
+  $('productRank').querySelectorAll('.stats-thumb-img').forEach(img=>{
+    img.onerror=()=>{
+      if(img.dataset.fallback&&!img.dataset.fallbackUsed){
+        img.dataset.fallbackUsed='1';
+        img.src=img.dataset.fallback;
+        return;
+      }
+      img.classList.add('is-missing');
+    };
+    if(img.complete&&!img.naturalWidth) img.onerror();
+  });
+
+  $('productRank').querySelectorAll('.stats-thumb-btn[data-image]').forEach(btn=>btn.onclick=()=>{
+    openImagePreview(btn.dataset.image,btn.dataset.product||'상품 사진');
+  });
 }
 
 
@@ -3766,7 +3833,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.26-readable-status-market-ui',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.27-stats-all-thumbnails',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

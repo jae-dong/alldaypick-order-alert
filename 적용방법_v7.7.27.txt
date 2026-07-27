@@ -1,0 +1,11 @@
+v7.7.27 적용 방법
+
+1. 실행 중인 START_AGENT 검은 창을 닫습니다.
+2. 압축을 풀고 기존 프로젝트 폴더에 모두 덮어씁니다.
+3. .git, backend\.env.local, backend\firebase-service-account.json은 기존 파일을 유지합니다.
+4. GitHub Desktop Summary: v7.7.27 조회기간 판매상품 전체 썸네일
+5. Commit to main → Push origin → Render 배포 완료 확인
+6. START_AGENT.cmd 실행
+7. 웹앱 Ctrl+F5
+8. 주문 통계에서 조회기간을 선택하고 판매상품 전체 목록의 썸네일을 확인합니다.
+9. 검은 창의 조회기간 판매상품 썸네일 채우기 완료 로그를 확인합니다.
