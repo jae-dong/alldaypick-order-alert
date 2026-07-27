@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f4c81">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>올데이픽 주문알림 · v7.7.28 억단위 매출 숫자 자동맞춤</title>
-<link rel="manifest" href="./manifest.json?v=v7.7.28-billion-safe-metrics">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.28-billion-safe-metrics">
-<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.28-billion-safe-metrics">
-<link rel="stylesheet" href="./styles.css?v=v7.7.28-billion-safe-metrics">
+<title>올데이픽 주문알림 · v7.7.29 문의·반품·교환 상세내용 표시</title>
+<link rel="manifest" href="./manifest.json?v=v7.7.29-cs-detail-display">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-son-v775-192.png?v=v7.7.29-cs-detail-display">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-son-v775-180.png?v=v7.7.29-cs-detail-display">
+<link rel="stylesheet" href="./styles.css?v=v7.7.29-cs-detail-display">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -23,7 +23,7 @@
 <div class="brand-kicker">ALLDAYPICK ORDER DESK</div>
 <div class="brand-title">
         올데이픽 주문알림
-        <button type="button" id="versionBadge" class="version-badge">v7.7.28 억단위 매출 숫자 자동맞춤</button>
+        <button type="button" id="versionBadge" class="version-badge">v7.7.29 문의·반품·교환 상세내용 표시</button>
       </div>
 <div class="brand-sub">
 <span class="dot" id="cloudDot"></span>
@@ -98,7 +98,7 @@
 <select id="readFilter"><option value="">전체 확인상태</option><option value="unread">미확인</option><option value="read">확인완료</option></select>
 <select id="workflowFilter"><option value="">전체 상태</option><option value="pending">미완료 주문</option></select>
 </div>
-<div class="table-wrap"><table class="order-table"><thead><tr><th>상태</th><th>일시</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead><tbody id="orderBody"></tbody></table></div>
+<div class="table-wrap"><table class="order-table"><thead><tr><th>상태</th><th>일시</th><th>쇼핑몰</th><th>주문번호</th><th>상품명</th><th>요청내용</th><th>수량</th><th>구매자</th><th>금액</th><th>관리</th></tr></thead><tbody id="orderBody"></tbody></table></div>
 <div class="pagination"><button class="btn" id="prevPageBtn">이전</button><span id="pageInfo">1 / 1</span><button class="btn" id="nextPageBtn">다음</button></div>
 </section>
 </div>
@@ -119,7 +119,7 @@
 <select id="fMarket"><option>쿠팡</option><option>스마트스토어</option><option>11번가</option><option>G마켓</option><option>옥션</option><option>롯데온</option></select>
 <input id="fOrderNo" placeholder="주문번호" required=""/><input id="fProduct" placeholder="상품명" required=""/><input id="fQty" min="1" required="" type="number" value="1"/><input id="fBuyer" placeholder="구매자"/><input id="fAmount" min="0" type="number" value="0"/>
 <div class="modal-actions"><button class="btn" id="cancelAddBtn" type="button">취소</button><button class="btn primary">저장</button></div></form></div></dialog>
-<dialog id="detailDialog"><div class="modal"><h3>주문 상세정보</h3><dl class="detail-grid" id="detailGrid"></dl>
+<dialog id="detailDialog"><div class="modal"><h3 id="detailDialogTitle">주문 상세정보</h3><dl class="detail-grid" id="detailGrid"></dl>
 <div class="copy-grid"><button class="btn" id="copyOrderNoBtn" type="button">주문번호 복사</button><button class="btn" id="copyBuyerBtn" type="button">구매자 복사</button><button class="btn" id="copyPhoneBtn" type="button">연락처 복사</button><button class="btn" id="copyProductBtn" type="button">상품명 복사</button><button class="btn" id="copyInvoiceBtn" type="button">운송장번호 복사</button></div>
 <div class="workflow-panel"><textarea class="note-area" id="detailNote" placeholder="이 주문에 대한 메모를 입력하세요."></textarea><div class="note-actions"><button class="btn primary" id="saveNoteBtn" type="button">메모 저장</button></div></div>
 <div class="modal-actions"><button class="btn primary" id="closeDetailBtn" type="button">닫기</button></div></div></dialog>
@@ -128,7 +128,7 @@
 
 
 
-<script src="./state-engine.js?v=v7.7.28-billion-safe-metrics" defer></script>
-<script src="./app.js?v=v7.7.28-billion-safe-metrics" defer></script>
+<script src="./state-engine.js?v=v7.7.29-cs-detail-display" defer></script>
+<script src="./app.js?v=v7.7.29-cs-detail-display" defer></script>
 </body>
 </html>

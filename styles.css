@@ -587,3 +587,36 @@ body{font-size:18px;line-height:1.58}
   .metric strong.metric-value-xl{font-size:22px}
   .metric strong.metric-value-xxl{font-size:18px}
 }
+
+
+/* v7.7.29 문의내용·반품·교환 상세사유 가독성 표시 */
+.order-table{min-width:1460px}
+.request-detail-cell{min-width:320px;max-width:420px;text-align:left!important;white-space:normal!important;vertical-align:top!important}
+.request-detail-none{color:#9aa8b5;font-weight:900}
+.request-detail-preview{display:grid;gap:8px;padding:11px 12px;border:1px solid #d8e3ec;border-radius:13px;background:rgba(255,255,255,.76);box-shadow:0 3px 10px rgba(22,50,72,.06)}
+.request-detail-preview.is-empty{color:#718295}
+.request-detail-preview.request-inquiry{border-color:#91d5e2;background:#eefbfe}
+.request-detail-preview.request-return{border-color:#efbf7f;background:#fffaf0}
+.request-detail-preview.request-exchange{border-color:#b9b1f2;background:#f8f6ff}
+.request-detail-preview.request-cancel{border-color:#efabb4;background:#fff7f8}
+.request-detail-line{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;align-items:start}
+.request-detail-line b{font-size:13px;line-height:1.5;color:#52677a;white-space:nowrap}
+.request-detail-line span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3;white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.55;font-weight:800;color:#173047}
+.request-detail-open{justify-self:start;border:0;border-radius:9px;padding:7px 10px;background:#173f61;color:#fff;font-size:12px;font-weight:1000;cursor:pointer}
+.request-detail-open:hover{filter:brightness(1.08)}
+.detail-grid dd.detail-long-text{white-space:pre-wrap;word-break:break-word;line-height:1.7;font-size:15px;font-weight:750;background:#fbfdff}
+#detailDialog .modal{width:min(94vw,820px)}
+#detailDialogTitle{font-size:25px}
+
+@media(max-width:760px){
+  .order-table{min-width:0}
+  .order-table td.request-detail-cell{grid-column:1!important;display:block!important;padding:12px!important}
+  .order-table td.request-detail-cell:before{display:block;margin-bottom:8px;font-size:13px}
+  .request-detail-preview{gap:9px;padding:12px;border-radius:14px}
+  .request-detail-line{grid-template-columns:78px minmax(0,1fr);gap:8px}
+  .request-detail-line b{font-size:13.5px}
+  .request-detail-line span{font-size:14.5px;-webkit-line-clamp:5;line-height:1.6}
+  .request-detail-open{width:100%;min-height:42px;font-size:14px}
+  .detail-grid dd.detail-long-text{font-size:14.5px;line-height:1.72}
+  #detailDialogTitle{font-size:22px}
+}

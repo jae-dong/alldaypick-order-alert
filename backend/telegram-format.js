@@ -126,9 +126,56 @@ function telegramAmount(order={}){
   return unit*Math.max(1,Number(order.qty||order.quantity||1));
 }
 
+function telegramDetailText(value,maxLength=700){
+  const text=String(value??'')
+    .replace(/\r\n?/g,'\n')
+    .replace(/[ \t]+\n/g,'\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+  if(text.length<=maxLength) return text;
+  return `${text.slice(0,Math.max(0,maxLength-1)).trim()}…`;
+}
+
+function telegramEventType(order={}){
+  const eventType=String(order.eventType||'').trim().toLowerCase();
+  const status=String(order.status||'').trim().toLowerCase();
+  if(eventType==='inquiry'||status==='inquiry') return 'inquiry';
+  if(eventType==='return'||status.includes('return')) return 'return';
+  if(eventType==='exchange'||status.includes('exchange')) return 'exchange';
+  if(eventType==='cancel'||status.includes('cancel')) return 'cancel';
+  return 'order';
+}
+
 export function telegramOrderBody(order){
   const orderedAt=formatTelegramOrderDate(order);
   const amount=telegramAmount(order);
+  const type=telegramEventType(order);
+  const reason=telegramDetailText(
+    order?.reason||order?.reasonText||order?.claimReason||order?.reasonCodeText||''
+  );
+  const reasonDetail=telegramDetailText(
+    order?.reasonDetail||order?.claimDetailedReason||order?.claimReasonDetail||
+    order?.reasonEtcDetail||order?.reasonMemo||''
+  );
+  const inquiryContent=telegramDetailText(
+    order?.content||order?.inquiryContent||order?.question||order?.questionContent||''
+  );
+  const detailLines=[];
+
+  if(type==='inquiry'){
+    if(reason) detailLines.push(`📂 문의유형: ${reason}`);
+    if(inquiryContent) detailLines.push(`💬 문의내용: ${inquiryContent}`);
+  }else if(type==='return'){
+    if(reason) detailLines.push(`↩️ 반품사유: ${reason}`);
+    if(reasonDetail) detailLines.push(`📝 상세사유: ${reasonDetail}`);
+  }else if(type==='exchange'){
+    if(reason) detailLines.push(`🔄 교환사유: ${reason}`);
+    if(reasonDetail) detailLines.push(`📝 상세사유: ${reasonDetail}`);
+  }else if(type==='cancel'){
+    if(reason) detailLines.push(`❌ 취소사유: ${reason}`);
+    if(reasonDetail) detailLines.push(`📝 상세사유: ${reasonDetail}`);
+  }
+
   const lines=[
     `📦 ${String(order?.product||'상품명 없음').replace(/\s+/g,' ').trim()}`,
     order?.option?`⚙️ 옵션: ${order.option}`:'',
@@ -137,11 +184,10 @@ export function telegramOrderBody(order){
     order?.buyer?`👤 구매자: ${order.buyer}`:'',
     order?.orderNo?`🧾 주문번호: ${order.orderNo}`:'',
     orderedAt?`🕒 주문일시: ${orderedAt}`:'',
-    order?.reason?`📝 사유: ${order.reason}`:'',
-    order?.reasonDetail?`📝 상세: ${order.reasonDetail}`:''
+    ...detailLines
   ].filter(Boolean);
 
   return lines.join('\n');
 }
 
-export const telegramFormatTestHelpers={positiveMoney,telegramAmount};
+export const telegramFormatTestHelpers={positiveMoney,telegramAmount,telegramDetailText,telegramEventType};

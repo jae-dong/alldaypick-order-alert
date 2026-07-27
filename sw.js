@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.28-billion-safe-metrics-20260727-v1';
+const CACHE='alldaypick-v7.7.29-cs-detail-display-20260727-v1';
 const STATIC=[
   './',
   './index.html',

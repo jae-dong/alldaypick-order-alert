@@ -1,4 +1,4 @@
-const APP_VERSION='v7.7.28 억단위 매출 숫자 자동맞춤';
+const APP_VERSION='v7.7.29 문의·반품·교환 상세내용 표시';
 const BUILD_DATE='2026-07-27';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
@@ -203,6 +203,92 @@ function renderOrderProductCell(order={}){
     :`<span class="order-thumb-btn is-empty" aria-hidden="true"><span class="order-thumb-placeholder">사진 없음</span></span>`;
 
   return `<div class="product-cell-inner">${thumb}<div class="product-copy"><strong>${isImportant(order)?'⭐ ':''}${escapeHtml(product)}</strong>${order.option?`<small class="product-option">${escapeHtml(order.option)}</small>`:''}${note}</div></div>`;
+}
+
+function requestText(value){
+  return String(value??'')
+    .replace(/\r\n?/g,'\n')
+    .replace(/[ \t]+\n/g,'\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
+function firstRequestText(order={},keys=[]){
+  for(const key of keys){
+    const value=requestText(order?.[key]);
+    if(value) return value;
+  }
+  return '';
+}
+
+function requestDetailItems(order={}){
+  const status=statusKey(order);
+  const reason=firstRequestText(order,[
+    'reason','reasonText','claimReason','claimReasonText','reasonCodeText',
+    'receiptCategory','inquiryCategory','categoryName'
+  ]);
+  const detail=firstRequestText(order,[
+    'reasonDetail','claimDetailedReason','claimReasonDetail','reasonMemo',
+    'reasonEtcDetail','detailReason','detailedReason'
+  ]);
+  const content=firstRequestText(order,[
+    'content','inquiryContent','question','questionContent','customerQuestion',
+    'qnaContent','message','body'
+  ]);
+
+  if(status==='inquiry'){
+    return [
+      reason?{label:'문의유형',text:reason}:null,
+      content?{label:'문의내용',text:content}:null
+    ].filter(Boolean);
+  }
+
+  if(status==='return'){
+    return [
+      reason?{label:'반품사유',text:reason}:null,
+      detail?{label:'상세사유',text:detail}:null
+    ].filter(Boolean);
+  }
+
+  if(status==='exchange'){
+    return [
+      reason?{label:'교환사유',text:reason}:null,
+      detail?{label:'상세사유',text:detail}:null
+    ].filter(Boolean);
+  }
+
+  if(status==='cancel'){
+    return [
+      reason?{label:'취소사유',text:reason}:null,
+      detail?{label:'상세사유',text:detail}:null
+    ].filter(Boolean);
+  }
+
+  return [];
+}
+
+function requestDetailTitle(order={}){
+  const status=statusKey(order);
+  return {
+    inquiry:'문의내용',
+    return:'반품 상세사유',
+    exchange:'교환 상세사유',
+    cancel:'취소 상세사유'
+  }[status]||'요청 상세내용';
+}
+
+function renderRequestDetailPreview(order={}){
+  const status=statusKey(order);
+  const applies=['inquiry','return','exchange','cancel'].includes(status);
+  if(!applies) return '<span class="request-detail-none">-</span>';
+
+  const items=requestDetailItems(order);
+  if(!items.length){
+    return `<div class="request-detail-preview request-${escapeHtml(status)} is-empty"><strong>${escapeHtml(requestDetailTitle(order))}</strong><span>상세내용 확인 중</span></div>`;
+  }
+
+  const lines=items.map(item=>`<div class="request-detail-line"><b>${escapeHtml(item.label)}</b><span>${escapeHtml(item.text)}</span></div>`).join('');
+  return `<div class="request-detail-preview request-${escapeHtml(status)}">${lines}<button type="button" class="request-detail-open" data-detail-id="${escapeHtml(order.id)}">내용 전체보기</button></div>`;
 }
 
 function hasShipmentEvidence(order){
@@ -2390,7 +2476,8 @@ function filteredOrders(){
       order.buyer,
       order.phone,
       order.invoiceNumber,
-      order.workflowNote
+      order.workflowNote,
+      ...requestDetailItems(order).map(item=>item.text)
     ].some(value=>
       String(value||'').toLowerCase().includes(q)
     );
@@ -2457,11 +2544,12 @@ function renderOrders(){
       <td data-label="쇼핑몰">${renderMarketBadge(o.market||'')}</td>
       <td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td>
       <td data-label="상품명" class="product-cell">${renderOrderProductCell(o)}</td>
+      <td data-label="요청내용" class="request-detail-cell">${renderRequestDetailPreview(o)}</td>
       <td data-label="수량">${Number(o.qty||0)}</td>
       <td data-label="구매자">${escapeHtml(o.buyer||'')}</td>
       <td data-label="금액">${fmt(displayOrderAmount(o))}</td>
       <td data-label="관리"><button class="mini-btn read-btn" data-id="${escapeHtml(o.id)}">${isUnread(o)?'확인':'미확인'}</button></td>
-    </tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
+    </tr>`).join(''):`<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:28px">해당 주문이 없습니다.</td></tr>`;
 
   $('orderBody').querySelectorAll('.order-thumb-img').forEach(img=>{
     img.onerror=()=>{
@@ -2478,6 +2566,11 @@ function renderOrders(){
   $('orderBody').querySelectorAll('.order-thumb-btn[data-image]').forEach(btn=>btn.onclick=e=>{
     e.stopPropagation();
     openImagePreview(btn.dataset.image,btn.dataset.product||'상품 사진');
+  });
+
+  $('orderBody').querySelectorAll('.request-detail-open[data-detail-id]').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    openDetail(btn.dataset.detailId);
   });
 
   $('orderBody').querySelectorAll('.read-btn').forEach(btn=>btn.onclick=e=>{
@@ -3138,18 +3231,40 @@ function openDetail(id){
   if(!o)return;
 
   currentDetail=o;
-
+  const requestItems=requestDetailItems(o);
+  const status=statusKey(o);
+  const requestLabels=new Set(requestItems.map(item=>item.label));
   const fields=[
     ['상태',labelFor(o)],['쇼핑몰',o.market||''],['주문번호',o.orderNo||''],
-    ['상품명',o.product||''],['옵션',o.option||''],['수량',Number(o.qty||0)],
+    ['상품명',orderProductName(o)],['옵션',o.option||''],['수량',Number(o.qty||0)],
     ['구매자',o.buyer||''],['연락처',o.phone||''],['주소',o.address||''],
     ['배송메모',o.deliveryMemo||''],['금액',fmt(displayOrderAmount(o))],
     ['주문시간',dateValue(o).replace('T',' ').slice(0,19)],
-    ['택배사',o.deliveryCompanyName||''],['운송장번호',o.invoiceNumber||''],
-    ['사유',o.reason||''],['상세사유',o.reasonDetail||'']
+    ['택배사',o.deliveryCompanyName||''],['운송장번호',o.invoiceNumber||'']
   ];
 
-  $('detailGrid').innerHTML=fields.map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('');
+  requestItems.forEach(item=>fields.push([item.label,item.text,true]));
+
+  // 이전 저장형식의 데이터도 상세창에서 빠지지 않도록 보완합니다.
+  const rawReason=requestText(o.reason);
+  const rawDetail=requestText(o.reasonDetail);
+  const rawContent=firstRequestText(o,['content','inquiryContent','question','questionContent']);
+  if(rawReason&&!requestLabels.has('문의유형')&&!requestLabels.has('반품사유')&&!requestLabels.has('교환사유')&&!requestLabels.has('취소사유')){
+    fields.push(['사유',rawReason,true]);
+  }
+  if(rawDetail&&!requestLabels.has('상세사유')) fields.push(['상세사유',rawDetail,true]);
+  if(rawContent&&!requestLabels.has('문의내용')) fields.push(['문의내용',rawContent,true]);
+
+  const title={
+    inquiry:'문의사항 상세내용',
+    return:'반품요청 상세내용',
+    exchange:'교환요청 상세내용',
+    cancel:'주문취소 상세내용'
+  }[status]||'주문 상세정보';
+  const titleEl=$('detailDialogTitle');
+  if(titleEl) titleEl.textContent=title;
+
+  $('detailGrid').innerHTML=fields.map(([k,v,long])=>`<dt>${escapeHtml(k)}</dt><dd class="${long?'detail-long-text':''}">${escapeHtml(v)}</dd>`).join('');
   $('detailNote').value=o.workflowNote||'';
   $('detailDialog').showModal();
 }
@@ -3860,7 +3975,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.28-billion-safe-metrics',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.29-cs-detail-display',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

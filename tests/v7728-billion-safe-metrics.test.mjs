@@ -8,5 +8,5 @@ assert.ok(app.includes("metric-value-xxl"));
 assert.ok(app.includes("setMetricValue('monthSales',monthTotals.sales,{currency:true})"));
 assert.ok(css.includes('.metric strong.metric-value-xl'));
 assert.ok(css.includes('white-space:nowrap'));
-assert.ok(html.includes('v7.7.28 억단위 매출 숫자 자동맞춤'));
-console.log('v7.7.28 billion-safe metric contract passed');
+assert.ok(html.includes('id="monthSales"')); // prior billion-safe metric feature remains
+console.log('billion-safe metric contract passed');

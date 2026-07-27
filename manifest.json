@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.28 억단위 매출 숫자 자동맞춤",
-  "short_name": "주문알림 v7.7.28",
-  "start_url": "./?v=v7.7.28-billion-safe-metrics",
+  "name": "올데이픽 주문알림 v7.7.29 문의·반품·교환 상세내용 표시",
+  "short_name": "주문알림 v7.7.29",
+  "start_url": "./?v=v7.7.29-cs-detail-display",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

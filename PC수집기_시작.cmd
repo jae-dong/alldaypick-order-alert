@@ -1,6 +1,6 @@
 ﻿@echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ALLDAYPICK ORDER AGENT v7.7.28 BILLION SAFE METRICS
+title ALLDAYPICK ORDER AGENT v7.7.29 CS DETAIL DISPLAY
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -92,7 +92,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.28 BILLION SAFE METRICS...
+echo Starting ALLDAYPICK order agent v7.7.29 CS DETAIL DISPLAY...
 echo Keep this window open.
 echo.
 call npm run agent

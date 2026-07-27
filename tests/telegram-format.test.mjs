@@ -61,4 +61,34 @@ const fallbackBody=telegramOrderBody({
 });
 assert.match(fallbackBody,/💰 금액: 21,600원/,'Telegram amount must fall back to unit price × quantity');
 
+
+
+const inquiryBody=telegramOrderBody({
+  eventType:'inquiry',
+  product:'문의 상품',
+  reason:'배송',
+  content:'언제 출고되나요?\n빠른 확인 부탁드립니다.'
+});
+assert.match(inquiryBody,/📂 문의유형: 배송/);
+assert.match(inquiryBody,/💬 문의내용: 언제 출고되나요\?/);
+assert.match(inquiryBody,/빠른 확인 부탁드립니다/);
+
+const returnBody=telegramOrderBody({
+  eventType:'return',
+  product:'반품 상품',
+  reason:'상품 파손',
+  reasonDetail:'박스 안에서 내용물이 깨져 있었습니다.'
+});
+assert.match(returnBody,/↩️ 반품사유: 상품 파손/);
+assert.match(returnBody,/📝 상세사유: 박스 안에서 내용물이 깨져 있었습니다/);
+
+const exchangeBody=telegramOrderBody({
+  eventType:'exchange',
+  product:'교환 상품',
+  reason:'옵션 변경',
+  reasonDetail:'M 사이즈를 L 사이즈로 바꿔 주세요.'
+});
+assert.match(exchangeBody,/🔄 교환사유: 옵션 변경/);
+assert.match(exchangeBody,/M 사이즈를 L 사이즈로 바꿔 주세요/);
+
 console.log('telegram-format tests passed');

@@ -1,0 +1,10 @@
+v7.7.29 적용 방법
+
+1. 실행 중인 START_AGENT 검은 창을 닫습니다.
+2. 압축파일을 새 폴더에 해제합니다.
+3. 기존 GitHub 프로젝트 폴더에 모두 복사해 덮어씁니다.
+4. .git, backend\.env.local, backend\firebase-service-account.json은 기존 파일을 유지합니다.
+5. GitHub Desktop Summary: v7.7.29 문의·반품·교환 상세내용 표시
+6. Commit to main → Push origin → Render 배포 완료 확인
+7. START_AGENT.cmd 실행
+8. 웹앱에서 Ctrl+F5 또는 주소 끝에 ?v=7.7.29를 붙여 새로고침
