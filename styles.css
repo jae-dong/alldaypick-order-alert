@@ -547,3 +547,43 @@ body{font-size:18px;line-height:1.58}
   .stats-product-row .rank-name small{font-size:12px}
   .rank-sales{grid-column:2/4;justify-self:end;font-size:16px;margin-top:-3px}
 }
+
+
+/* v7.7.28 억단위까지 잘리지 않는 핵심 매출 숫자 자동맞춤 */
+.metric strong{
+  max-width:100%;
+  white-space:nowrap;
+  overflow:visible;
+  text-wrap:nowrap;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1;
+  letter-spacing:-1.5px;
+}
+.metric strong.metric-value-medium{font-size:35px;letter-spacing:-1.6px}
+.metric strong.metric-value-wide{font-size:31px;letter-spacing:-1.7px}
+.metric strong.metric-value-xl{font-size:27px;letter-spacing:-1.8px}
+.metric strong.metric-value-xxl{font-size:23px;letter-spacing:-1.7px}
+
+@media(max-width:960px){
+  .metric{padding-left:14px;padding-right:12px}
+  .metric strong{font-size:34px}
+  .metric strong.metric-value-medium{font-size:31px}
+  .metric strong.metric-value-wide{font-size:28px}
+  .metric strong.metric-value-xl{font-size:25px}
+  .metric strong.metric-value-xxl{font-size:21px}
+}
+
+@media(max-width:760px){
+  .metric{padding-left:11px;padding-right:9px}
+  .metric strong{font-size:32px}
+  .metric strong.metric-value-medium{font-size:29px}
+  .metric strong.metric-value-wide{font-size:26px}
+  .metric strong.metric-value-xl{font-size:23px}
+  .metric strong.metric-value-xxl{font-size:19px}
+}
+
+@media(max-width:430px){
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric strong.metric-value-xl{font-size:22px}
+  .metric strong.metric-value-xxl{font-size:18px}
+}

@@ -1,0 +1,9 @@
+v7.7.28 적용 방법
+
+1. 실행 중인 START_AGENT 검은 창을 닫습니다.
+2. 압축을 풀고 기존 프로젝트 폴더에 전부 덮어씁니다.
+3. .git, backend\.env.local, backend\firebase-service-account.json은 기존 파일을 유지합니다.
+4. GitHub Desktop Summary: v7.7.28 억단위 매출 숫자 자동맞춤
+5. Commit to main, Push origin 후 Render 배포를 확인합니다.
+6. START_AGENT.cmd를 실행합니다.
+7. 모바일 브라우저에서 강력 새로고침하거나 주소 끝에 ?v=7.7.28을 붙여 엽니다.

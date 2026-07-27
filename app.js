@@ -1,10 +1,37 @@
-const APP_VERSION='v7.7.27 조회기간 판매상품 전체 썸네일';
+const APP_VERSION='v7.7.28 억단위 매출 숫자 자동맞춤';
 const BUILD_DATE='2026-07-27';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
 const $=id=>document.getElementById(id);
 const fmt=n=>Number(n||0).toLocaleString('ko-KR')+'원';
+
+function setMetricValue(id,value,{currency=false}={}){
+  const target=$(id);
+  if(!target) return;
+
+  const numeric=Number(value||0);
+  const text=currency?fmt(numeric):numeric.toLocaleString('ko-KR');
+  target.textContent=text;
+  target.classList.remove(
+    'metric-value-medium',
+    'metric-value-wide',
+    'metric-value-xl',
+    'metric-value-xxl'
+  );
+
+  const length=text.replace(/\s/g,'').length;
+  if(length>=15){
+    target.classList.add('metric-value-xxl');
+  }else if(length>=12){
+    target.classList.add('metric-value-xl');
+  }else if(length>=10){
+    target.classList.add('metric-value-wide');
+  }else if(length>=8){
+    target.classList.add('metric-value-medium');
+  }
+}
+
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['elevenst','11번가'],['gmarket','G마켓'],['auction','옥션'],['lotteon','롯데온']];
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
@@ -2217,10 +2244,10 @@ function renderMetrics(){
   const monthTotals=correctedMonthTotals();
   const month=monthKey();
 
-  $('todayCount').textContent=todayTotals.count;
-  $('todaySales').textContent=fmt(todayTotals.sales);
-  $('monthCount').textContent=monthTotals.count;
-  $('monthSales').textContent=fmt(monthTotals.sales);
+  setMetricValue('todayCount',todayTotals.count);
+  setMetricValue('todaySales',todayTotals.sales,{currency:true});
+  setMetricValue('monthCount',monthTotals.count);
+  setMetricValue('monthSales',monthTotals.sales,{currency:true});
 
   const monthNote=
     `${Number(month.slice(5,7))}월 1일부터 오늘까지`;
@@ -3833,7 +3860,7 @@ $('saveNoteBtn').onclick=saveCurrentNote;
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.27-stats-all-thumbnails',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.28-billion-safe-metrics',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{
