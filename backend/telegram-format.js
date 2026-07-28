@@ -163,8 +163,18 @@ export function telegramOrderBody(order){
   const detailLines=[];
 
   if(type==='inquiry'){
+    const kind=String(order?.inquiryKind||'').toLowerCase();
+    const sourceStatus=String(order?.sourceStatus||order?.partnerCounselingStatus||'').toUpperCase();
+    const callCenter=kind.startsWith('call_center')||String(order?.inquiryChannel||'').toLowerCase()==='call_center';
+    const confirm=kind==='call_center_confirm'||sourceStatus==='TRANSFER';
+    const counselorContent=telegramDetailText(
+      order?.counselorContent||order?.transferContent||order?.agentMessage||''
+    );
+    detailLines.push(`${callCenter?'📞':'💬'} 문의구분: ${callCenter?'쿠팡 고객센터 문의':'쿠팡 고객문의'}`);
     if(reason) detailLines.push(`📂 문의유형: ${reason}`);
-    if(inquiryContent) detailLines.push(`💬 문의내용: ${inquiryContent}`);
+    if(inquiryContent) detailLines.push(`${callCenter?'☎️':'💬'} 문의내용: ${callCenter?'[고객센터]':'[고객문의]'} ${inquiryContent}`);
+    if(counselorContent&&counselorContent!==inquiryContent) detailLines.push(`🧑‍💼 상담사 전달: ${counselorContent}`);
+    detailLines.push(`✅ 처리방법: ${confirm?'판매자 확인 필요':callCenter?'판매자 답변 필요':'고객문의 답변 필요'}`);
   }else if(type==='return'){
     if(reason) detailLines.push(`↩️ 반품사유: ${reason}`);
     if(reasonDetail) detailLines.push(`📝 상세사유: ${reasonDetail}`);

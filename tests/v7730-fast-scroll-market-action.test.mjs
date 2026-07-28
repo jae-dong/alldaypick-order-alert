@@ -3,7 +3,7 @@ import fs from 'node:fs';
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-assert.ok(html.includes('v7.7.30 빠른 스크롤·쇼핑몰 바로처리'));
+assert.ok(html.includes('v7.7.31 쿠팡 문의 2종 분리'));
 assert.ok(html.includes('id="openMarketBtn"'));
 assert.ok(app.includes('IntersectionObserver'));
 assert.ok(app.includes('data-src='));

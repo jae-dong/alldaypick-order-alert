@@ -649,3 +649,29 @@ body{font-size:18px;line-height:1.58}
   .detail-action-buttons{grid-template-columns:1fr}
   .detail-action-buttons .btn{min-height:52px;font-size:17px}
 }
+
+
+/* v7.7.31 쿠팡 고객문의·고객센터 문의 분리 */
+.status-pill.inquiry-customer{
+  background:#e6f8f1;
+  color:#08765d;
+  border-color:#8bd7c1;
+}
+.status-pill.inquiry-call-center-answer{
+  background:#fff2dd;
+  color:#9a5700;
+  border-color:#f2c27f;
+}
+.status-pill.inquiry-call-center-confirm{
+  background:#f3eafe;
+  color:#6c33a6;
+  border-color:#c9a5ed;
+}
+.order-row.inquiry-customer{background:linear-gradient(90deg,rgba(19,166,125,.08),transparent 42%)}
+.order-row.inquiry-call-center-answer{background:linear-gradient(90deg,rgba(245,156,35,.10),transparent 42%)}
+.order-row.inquiry-call-center-confirm{background:linear-gradient(90deg,rgba(126,73,184,.11),transparent 42%)}
+.order-row.inquiry-call-center-confirm .market-open-btn{font-weight:900}
+
+.alert-card .alert-breakdown{display:block;margin-top:4px;font-size:9px;line-height:1.25;color:#65778a;font-weight:900;white-space:nowrap}
+.alert-card.active .alert-breakdown{color:#dcecff}
+@media(max-width:700px){.alert-card .alert-breakdown{font-size:8px;white-space:normal}}

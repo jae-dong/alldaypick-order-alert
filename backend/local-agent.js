@@ -1618,6 +1618,13 @@ function telegramAlertTitle(order,marketName){
   }
 
   if(type==='inquiry'){
+    if(marketName==='쿠팡'){
+      const kind=String(order?.inquiryKind||'').toLowerCase();
+      const sourceStatus=String(order?.sourceStatus||order?.partnerCounselingStatus||'').toUpperCase();
+      if(kind==='call_center_confirm'||sourceStatus==='TRANSFER') return '📞 쿠팡 고객센터 문의 · 확인 필요';
+      if(kind==='call_center_answer'||String(order?.inquiryChannel||'').toLowerCase()==='call_center') return '📞 쿠팡 고객센터 문의 · 답변 필요';
+      return '💬 쿠팡 고객문의';
+    }
     return `💬 ${marketName} 문의사항`;
   }
 
@@ -2600,7 +2607,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.30',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.31',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2620,7 +2627,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.30',
+    version:'FINAL-7.7.31',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

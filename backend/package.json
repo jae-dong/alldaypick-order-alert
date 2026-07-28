@@ -1,11 +1,11 @@
 {
   "name": "alldaypick-order-alert",
-  "version": "7.7.30",
+  "version": "7.7.31",
   "private": true,
   "type": "module",
   "scripts": {
     "agent": "node local-agent.js",
-    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/elevenst-status.test.mjs && node ../tests/lotteon-status.test.mjs && node ../tests/coupang-exchange.test.mjs && node ../tests/exchange-baseline.test.mjs && node ../tests/exchange-zero-reconcile.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs && node ../tests/progress-contract.test.mjs && node ../tests/telegram-format.test.mjs && node ../tests/parent-order-context.test.mjs && node ../tests/product-image.test.mjs && node ../tests/market-image-resolver.test.mjs && node ../tests/v7717-market-recovery.test.mjs && node ../tests/daily-metrics-ledger.test.mjs && node ../tests/full-stats-range.test.mjs && node ../tests/v7724-thumbnail-excel.test.mjs && node ../tests/v7725-active-thumbnail-backfill.test.mjs && node ../tests/v7726-readable-ui.test.mjs && node ../tests/v7727-stats-thumbnails.test.mjs && node ../tests/v7728-billion-safe-metrics.test.mjs && node ../tests/v7729-cs-detail-display.test.mjs && node ../tests/v7730-fast-scroll-market-action.test.mjs"
+    "test": "node ../tests/state-engine.test.mjs && node ../tests/workflow-model.test.mjs && node ../tests/order-store.test.mjs && node ../tests/free-tier-cache.test.mjs && node ../tests/smartstore-inquiry.test.mjs && node ../tests/elevenst-status.test.mjs && node ../tests/lotteon-status.test.mjs && node ../tests/coupang-exchange.test.mjs && node ../tests/exchange-baseline.test.mjs && node ../tests/exchange-zero-reconcile.test.mjs && node ../tests/quota-guard.test.mjs && node ../tests/source-contract.test.mjs && node ../tests/progress-contract.test.mjs && node ../tests/telegram-format.test.mjs && node ../tests/parent-order-context.test.mjs && node ../tests/product-image.test.mjs && node ../tests/market-image-resolver.test.mjs && node ../tests/v7717-market-recovery.test.mjs && node ../tests/daily-metrics-ledger.test.mjs && node ../tests/full-stats-range.test.mjs && node ../tests/v7724-thumbnail-excel.test.mjs && node ../tests/v7725-active-thumbnail-backfill.test.mjs && node ../tests/v7726-readable-ui.test.mjs && node ../tests/v7727-stats-thumbnails.test.mjs && node ../tests/v7728-billion-safe-metrics.test.mjs && node ../tests/v7729-cs-detail-display.test.mjs && node ../tests/v7730-fast-scroll-market-action.test.mjs && node ../tests/v7731-coupang-dual-inquiry.test.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

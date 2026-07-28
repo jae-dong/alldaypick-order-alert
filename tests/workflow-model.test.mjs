@@ -7,6 +7,8 @@ assert.equal(isClaimTerminal({sourceStatus:'RETURNS_COMPLETED'}),true);
 assert.equal(isClaimTerminal({answered:true}),true);
 assert.equal(isClaimTerminal({claimStatus:'교환완료'}),true);
 assert.equal(isClaimTerminal({sourceStatus:'NO_ANSWER'}),false);
+assert.equal(isClaimTerminal({source:'coupang',eventType:'inquiry',sourceStatus:'TRANSFER',inquiryStatus:'complete',activeState:true}),false);
+assert.equal(isClaimTerminal({source:'coupang',eventType:'inquiry',sourceStatus:'ANSWER',activeState:true}),true);
 
 const order=workflowFields({source:'coupang',orderNo:'1',lineId:'2',eventType:'order'});
 assert.equal(order.workflowType,'order');

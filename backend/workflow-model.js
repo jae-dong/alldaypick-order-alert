@@ -21,6 +21,24 @@ export function claimKey(source,eventType,claimId){
   return `${cleanText(source).toLowerCase()}|${cleanText(eventType).toLowerCase()}|${cleanText(claimId)}`;
 }
 
+function isOpenCoupangInquiry(value={}){
+  const source=cleanText(value?.source||value?.market).toLowerCase();
+  const eventType=cleanText(value?.eventType).toLowerCase();
+  if(eventType!=='inquiry'||!(source==='coupang'||source==='쿠팡')) return false;
+
+  const actionable=upperText(
+    value?.sourceStatus,
+    value?.partnerCounselingStatus,
+    value?.inquiryStatus,
+    value?.inquiryAction,
+    value?.partnerTransferStatus
+  );
+  const tokens=actionable.split(/[^A-Z0-9_가-힣]+/).filter(Boolean);
+  return ['NOANSWER','NO_ANSWER','TRANSFER','REQUESTANSWER']
+    .some(token=>tokens.includes(token))&&
+    !['ANSWERED','문의완료','답변완료'].some(token=>actionable.includes(token));
+}
+
 export function isClaimTerminal(value){
   const text=upperText(
     value?.sourceStatus,
@@ -39,6 +57,11 @@ export function isClaimTerminal(value){
 
   if(value?.activeState===false||value?.answered===true){
     return true;
+  }
+
+  // 쿠팡 고객센터 TRANSFER는 상담사의 상담이 complete여도 판매자 확인이 남은 미처리 건입니다.
+  if(isOpenCoupangInquiry(value)){
+    return false;
   }
 
   const exactTerminal=[

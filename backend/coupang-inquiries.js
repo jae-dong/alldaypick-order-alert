@@ -71,12 +71,26 @@ function productDocument(row){
   return {
     id:`coupang-inquiry-product-${claimId}`,source:'coupang',market:'쿠팡',eventType:'inquiry',
     ...workflowFields({source:'coupang',orderNo,lineId,eventType:'inquiry',claimId}),
-    orderNo,claimId,inquiryId,vendorItemId:lineId,product:row.itemName||row.productName||'쿠팡 상품문의',
+    orderNo,claimId,inquiryId,vendorItemId:lineId,product:row.itemName||row.productName||'쿠팡 고객문의',
     qty:1,buyer:'',phone:'',amount:0,datetime:row.inquiryAt||new Date().toISOString(),inquiryAt:row.inquiryAt||'',
-    status:'inquiry',statusLabel:'문의사항',sourceStatus:'NOANSWER',inquiryStatus:'NOANSWER',
-    inquiryKind:'product',content:row.content||'',activeState:true,answered:false,
+    status:'inquiry',statusLabel:'고객문의',sourceStatus:'NOANSWER',inquiryStatus:'NOANSWER',
+    inquiryKind:'product',inquiryChannel:'customer',inquiryTypeLabel:'쿠팡 고객문의',
+    inquiryAction:'answer',content:row.content||'',activeState:true,answered:false,
     stateAuthority:'coupang-inquiry-api',stateVerifiedAt:new Date().toISOString(),verificationBucket:Math.floor(Date.now()/(2*60*60*1000)),apiVerifiedOpen:true,
     sourceUpdatedAt:row.inquiryAt||new Date().toISOString(),syncedAt:new Date().toISOString()
+  };
+}
+function callCenterTransferDetails(row={}){
+  const replies=Array.isArray(row.replies)?row.replies:[];
+  const pending=[...replies].reverse().find(reply=>{
+    const transfer=String(reply?.partnerTransferStatus||'').toLowerCase();
+    return transfer==='requestanswer'||reply?.needAnswer===true;
+  })||[...replies].reverse().find(reply=>String(reply?.answerType||'').toLowerCase()==='csagent')||null;
+  return {
+    answerId:String(pending?.answerId||''),
+    parentAnswerId:String(pending?.answerId||pending?.parentAnswerId||''),
+    partnerTransferStatus:String(pending?.partnerTransferStatus||''),
+    counselorContent:String(pending?.content||'').trim()
   };
 }
 function callCenterDocument(row,queryStatus='NO_ANSWER'){
@@ -86,16 +100,26 @@ function callCenterDocument(row,queryStatus='NO_ANSWER'){
   const vendorItems=Array.isArray(row.vendorItemId)?row.vendorItemId:row.vendorItemId?[row.vendorItemId]:[];
   const lineId=String(vendorItems[0]||'inquiry');
   const counselingStatus=String(row.csPartnerCounselingStatus||row.partnerCounselingStatus||queryStatus);
-  const inquiryStatus=String(row.inquiryStatus||'progress');
+  const rawInquiryStatus=String(row.inquiryStatus||'progress');
+  const transfer=callCenterTransferDetails(row);
+  const confirmationRequired=queryStatus==='TRANSFER';
+  const inquiryKind=confirmationRequired?'call_center_confirm':'call_center_answer';
   return {
     id:`coupang-inquiry-call-${claimId}`,source:'coupang',market:'쿠팡',eventType:'inquiry',
     ...workflowFields({source:'coupang',orderNo,lineId,eventType:'inquiry',claimId}),
     orderNo,claimId,inquiryId,vendorItemId:lineId,product:row.itemName||'쿠팡 고객센터 문의',
     qty:1,buyer:'',phone:row.buyerPhone||'',amount:0,datetime:row.inquiryAt||new Date().toISOString(),inquiryAt:row.inquiryAt||'',
-    status:'inquiry',statusLabel:'문의사항',sourceStatus:queryStatus,
-    inquiryStatus,partnerCounselingStatus:queryStatus,csPartnerCounselingStatus:counselingStatus,
-    inquiryKind:queryStatus==='TRANSFER'?'call_center_confirm':'call_center_answer',
-    content:row.content||'',reason:row.receiptCategory||'',activeState:true,answered:false,
+    status:'inquiry',statusLabel:confirmationRequired?'고객센터 확인':'고객센터 문의',sourceStatus:queryStatus,
+    // TRANSFER는 쿠팡 상담이 완료됐다는 뜻이어도 판매자의 확인이 남아 있는 미처리 건입니다.
+    // 원본 inquiryStatus는 별도 보존하고, 공통 워크플로에는 공식 미처리 상태를 넣습니다.
+    inquiryStatus:queryStatus,coupangInquiryStatus:rawInquiryStatus,
+    partnerCounselingStatus:queryStatus,csPartnerCounselingStatus:counselingStatus,
+    partnerTransferStatus:transfer.partnerTransferStatus,
+    answerId:transfer.answerId,parentAnswerId:transfer.parentAnswerId,
+    inquiryKind,inquiryChannel:'call_center',inquiryTypeLabel:'쿠팡 고객센터 문의',
+    inquiryAction:confirmationRequired?'confirm':'answer',confirmationRequired,
+    content:row.content||'',counselorContent:transfer.counselorContent,
+    reason:row.receiptCategory||'',activeState:true,answered:false,
     stateAuthority:'coupang-inquiry-api',stateVerifiedAt:new Date().toISOString(),verificationBucket:Math.floor(Date.now()/(2*60*60*1000)),apiVerifiedOpen:true,
     sourceUpdatedAt:row.inquiryAt||new Date().toISOString(),syncedAt:new Date().toISOString()
   };

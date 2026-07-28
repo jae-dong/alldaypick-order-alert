@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.30 빠른 스크롤·쇼핑몰 바로처리';
-const BUILD_DATE='2026-07-27';
+const APP_VERSION='v7.7.31 쿠팡 문의 2종 분리';
+const BUILD_DATE='2026-07-28';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -210,14 +210,42 @@ const MARKET_SELLER_PORTALS={
   other:''
 };
 
+function inquiryVariant(order={}){
+  const kind=String(order.inquiryKind||'').toLowerCase();
+  const channel=String(order.inquiryChannel||'').toLowerCase();
+  const sourceStatus=String(order.sourceStatus||order.partnerCounselingStatus||'').toUpperCase();
+  const source=String(order.source||order.market||'').toLowerCase();
+  const coupang=['coupang','쿠팡'].includes(source);
+  if(kind==='call_center_confirm'||(coupang&&sourceStatus==='TRANSFER')) return 'call-center-confirm';
+  if(kind==='call_center_answer'||channel==='call_center'||(coupang&&sourceStatus==='NO_ANSWER')) return 'call-center-answer';
+  return 'customer';
+}
+
+function inquiryTypeLabel(order={}){
+  if(statusKey(order)!=='inquiry') return '';
+  const variant=inquiryVariant(order);
+  if(variant==='call-center-confirm') return '고객센터 확인';
+  if(variant==='call-center-answer') return '고객센터 문의';
+  return ['coupang','쿠팡'].includes(String(order.source||order.market||'').toLowerCase())?'쿠팡 고객문의':'고객문의';
+}
+
+function inquiryVisualClass(order={}){
+  return statusKey(order)==='inquiry'?`inquiry-${inquiryVariant(order)}`:'';
+}
+
 function marketplaceActionLabel(order={}){
+  if(statusKey(order)==='inquiry'){
+    const variant=inquiryVariant(order);
+    if(variant==='call-center-confirm') return '고객센터 확인';
+    if(variant==='call-center-answer') return '고객센터 답변';
+    return '고객문의 답변';
+  }
   return {
     new:'주문 확인',
     shipping_wait:'발송 처리',
     cancel:'취소 처리',
     return:'반품 처리',
-    exchange:'교환 처리',
-    inquiry:'문의 답변'
+    exchange:'교환 처리'
   }[statusKey(order)]||'쇼핑몰에서 처리';
 }
 
@@ -227,7 +255,8 @@ function marketplaceLookupValue(order={}){
     return String(order.productOrderId||order.orderNo||order.orderId||order.claimId||order.inquiryId||'').trim();
   }
   if(statusKey(order)==='inquiry'){
-    return String(order.orderNo||order.inquiryId||order.claimId||order.orderId||'').trim();
+    // 문의 처리 화면에서는 주문번호가 아니라 실제 문의번호를 우선 복사합니다.
+    return String(order.inquiryId||order.questionId||order.claimId||order.orderNo||order.orderId||'').trim();
   }
   return String(order.orderNo||order.orderId||order.claimId||order.inquiryId||'').trim();
 }
@@ -349,9 +378,21 @@ function requestDetailItems(order={}){
   ]);
 
   if(status==='inquiry'){
+    const variant=inquiryVariant(order);
+    const counselorContent=firstRequestText(order,[
+      'counselorContent','transferContent','agentMessage','counselorMessage'
+    ]);
+    const actionText=variant==='call-center-confirm'
+      ?'판매자 확인 필요'
+      :variant==='call-center-answer'
+        ?'판매자 답변 필요'
+        :'고객문의 답변 필요';
     return [
+      {label:'문의구분',text:inquiryTypeLabel(order)},
       reason?{label:'문의유형',text:reason}:null,
-      content?{label:'문의내용',text:content}:null
+      content?{label:variant==='customer'?'고객문의 내용':'고객센터 문의내용',text:content}:null,
+      counselorContent&&counselorContent!==content?{label:'상담사 전달내용',text:counselorContent}:null,
+      {label:'처리방법',text:actionText}
     ].filter(Boolean);
   }
 
@@ -381,8 +422,8 @@ function requestDetailItems(order={}){
 
 function requestDetailTitle(order={}){
   const status=statusKey(order);
+  if(status==='inquiry') return `${inquiryTypeLabel(order)} 상세내용`;
   return {
-    inquiry:'문의내용',
     return:'반품 상세사유',
     exchange:'교환 상세사유',
     cancel:'취소 상세사유'
@@ -533,7 +574,10 @@ function statusKey(o){
 
   return status||'';
 }
-function labelFor(o){return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문'}
+function labelFor(o){
+  if(statusKey(o)==='inquiry') return inquiryTypeLabel(o);
+  return Object.fromEntries(STATUS_ITEMS)[statusKey(o)]||o.statusLabel||'주문';
+}
 function isUnread(o){return o.readStatus!=='read'}
 function isProcessed(o){
   return Boolean(o.workflowProcessed);
@@ -838,6 +882,15 @@ function isCompletedClaim(order){
 
   if(isProcessed(order)){
     return true;
+  }
+
+  // 쿠팡 고객센터 TRANSFER는 inquiryStatus=complete가 함께 와도 판매자 확인 전까지 진행 중입니다.
+  if(statusKey(order)==='inquiry'&&['coupang','쿠팡'].includes(String(order.source||order.market||'').toLowerCase())){
+    const state=[order.sourceStatus,order.partnerCounselingStatus,order.inquiryStatus,order.inquiryAction,order.partnerTransferStatus]
+      .filter(Boolean).join(' ').toUpperCase();
+    if(/(?:^|[^A-Z0-9_])(NOANSWER|NO_ANSWER|TRANSFER|REQUESTANSWER)(?:$|[^A-Z0-9_])/.test(state)){
+      return false;
+    }
   }
 
   const text=terminalStatusText(order);
@@ -2455,6 +2508,11 @@ function renderMetrics(){
 }
 function renderStatus(){
   const counts=engineUnresolvedCounts();
+  const inquiryItems=authoritativeCurrentStatusPerOrder().filter(order=>
+    statusKey(order)==='inquiry'&&isActiveClaimWork(order)
+  );
+  const inquiryCustomerCount=inquiryItems.filter(order=>inquiryVariant(order)==='customer').length;
+  const inquiryCenterCount=inquiryItems.length-inquiryCustomerCount;
   const statusGrid=$('statusGrid');
 
   if(!statusGrid){
@@ -2469,6 +2527,7 @@ function renderStatus(){
       >
         <span>${label}</span>
         <strong>${Number(counts[key]||0)}</strong>
+        ${key==='inquiry'?`<small class="alert-breakdown">고객문의 ${inquiryCustomerCount} · 고객센터 ${inquiryCenterCount}</small>`:''}
       </button>
     `
   ).join('');
@@ -2651,8 +2710,8 @@ function renderOrders(){
   $('filterText').textContent=labels.length?labels.join(' · ')+'만 표시 중':'';
 
   $('orderBody').innerHTML=list.length?list.map(o=>`
-    <tr class="order-row status-${escapeHtml(statusKey(o))} market-row-${escapeHtml(marketVisualKey(o.market))}" data-id="${escapeHtml(o.id)}">
-      <td data-label="상태"><span class="status-pill status-${escapeHtml(statusKey(o))}">${escapeHtml(labelFor(o))}</span></td>
+    <tr class="order-row status-${escapeHtml(statusKey(o))} ${escapeHtml(inquiryVisualClass(o))} market-row-${escapeHtml(marketVisualKey(o.market))}" data-id="${escapeHtml(o.id)}">
+      <td data-label="상태"><span class="status-pill status-${escapeHtml(statusKey(o))} ${escapeHtml(inquiryVisualClass(o))}">${escapeHtml(labelFor(o))}</span></td>
       <td data-label="일시">${escapeHtml(dateValue(o).replace('T',' ').slice(0,16))}</td>
       <td data-label="쇼핑몰">${renderMarketBadge(o.market||'')}</td>
       <td data-label="주문번호">${escapeHtml(o.orderNo||'')}</td>
@@ -3345,6 +3404,7 @@ function openDetail(id){
   const requestLabels=new Set(requestItems.map(item=>item.label));
   const fields=[
     ['상태',labelFor(o)],['쇼핑몰',o.market||''],['주문번호',o.orderNo||''],
+    ...(status==='inquiry'?[['문의번호',o.inquiryId||''],['문의구분',inquiryTypeLabel(o)],['처리방법',marketplaceActionLabel(o)]]:[]),
     ['상품명',orderProductName(o)],['옵션',o.option||''],['수량',Number(o.qty||0)],
     ['구매자',o.buyer||''],['연락처',o.phone||''],['주소',o.address||''],
     ['배송메모',o.deliveryMemo||''],['금액',fmt(displayOrderAmount(o))],
@@ -3365,7 +3425,7 @@ function openDetail(id){
   if(rawContent&&!requestLabels.has('문의내용')) fields.push(['문의내용',rawContent,true]);
 
   const title={
-    inquiry:'문의사항 상세내용',
+    inquiry:`${inquiryTypeLabel(o)} 상세내용`,
     return:'반품요청 상세내용',
     exchange:'교환요청 상세내용',
     cancel:'주문취소 상세내용'
@@ -4090,7 +4150,7 @@ $('openMarketBtn').onclick=()=>{if(currentDetail) openMarketplaceForOrder(curren
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.30-fast-scroll-market-action',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.31-coupang-dual-inquiry',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

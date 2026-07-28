@@ -118,6 +118,17 @@
   function terminalClaim(item){
     if(item?.activeState===false||item?.answered===true)return true;
 
+    if(eventType(item)==='inquiry'&&isCoupang(item)){
+      const inquiryState=text([
+        item?.sourceStatus,item?.partnerCounselingStatus,item?.inquiryStatus,
+        item?.inquiryAction,item?.partnerTransferStatus
+      ].filter(Boolean).join(' ')).toUpperCase();
+      const tokens=inquiryState.split(/[^A-Z0-9_가-힣]+/).filter(Boolean);
+      if(['NOANSWER','NO_ANSWER','TRANSFER','REQUESTANSWER'].some(value=>tokens.includes(value))){
+        return false;
+      }
+    }
+
     // 쿠팡 교환은 공식 상태 RECEIPT/PROGRESS만 현재 처리 중입니다.
     // 이전 버전에서 남은 EXCHANGE_REQUEST/빈 상태 캐시는 화면에서 제외하고,
     // 실제 진행 중 교환은 다음 API 동기화에서 공식 상태로 다시 활성화됩니다.

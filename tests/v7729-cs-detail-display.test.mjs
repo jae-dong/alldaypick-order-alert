@@ -13,7 +13,7 @@ assert.ok(app.includes('교환사유'));
 assert.ok(app.includes('request-detail-open'));
 assert.ok(css.includes('.request-detail-preview'));
 assert.ok(css.includes('.detail-long-text'));
-assert.ok(telegram.includes('💬 문의내용'));
+assert.ok(telegram.includes('문의내용:'));
 assert.ok(telegram.includes('↩️ 반품사유'));
 assert.ok(telegram.includes('🔄 교환사유'));
 console.log('v7.7.29 CS detail display contract passed');

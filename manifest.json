@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.30 빠른 스크롤·쇼핑몰 바로처리",
-  "short_name": "주문알림 v7.7.30",
-  "start_url": "./?v=v7.7.30-fast-scroll-market-action",
+  "name": "올데이픽 주문알림 v7.7.31 쿠팡 문의 2종 분리",
+  "short_name": "주문알림 v7.7.31",
+  "start_url": "./?v=v7.7.31-coupang-dual-inquiry",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

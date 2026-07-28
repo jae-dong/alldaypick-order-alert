@@ -70,7 +70,7 @@ const inquiryBody=telegramOrderBody({
   content:'언제 출고되나요?\n빠른 확인 부탁드립니다.'
 });
 assert.match(inquiryBody,/📂 문의유형: 배송/);
-assert.match(inquiryBody,/💬 문의내용: 언제 출고되나요\?/);
+assert.match(inquiryBody,/💬 문의내용: \[고객문의\] 언제 출고되나요\?/);
 assert.match(inquiryBody,/빠른 확인 부탁드립니다/);
 
 const returnBody=telegramOrderBody({
