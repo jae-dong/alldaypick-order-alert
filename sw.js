@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.31-coupang-dual-inquiry-20260728-v1';
+const CACHE='alldaypick-v7.7.33-agent-self-heal-20260820-v1';
 const STATIC=[
   './',
   './index.html',

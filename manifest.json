@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.31 쿠팡 문의 2종 분리",
-  "short_name": "주문알림 v7.7.31",
-  "start_url": "./?v=v7.7.31-coupang-dual-inquiry",
+  "name": "올데이픽 주문알림 v7.7.33 수집기 자동복구",
+  "short_name": "주문알림 v7.7.33",
+  "start_url": "./?v=v7.7.33-agent-self-heal",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

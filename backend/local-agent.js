@@ -39,6 +39,7 @@ import { resolveTelegramProductImage,invalidateTelegramProductImageCache } from 
 import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
 import { rebuildDailyMetrics } from './daily-metrics-ledger.js';
 import { closePreBaselineExchangeDocuments,EXCHANGE_BASELINE_CUTOFF_ISO } from './exchange-baseline.js';
+import { telegramAlertType } from './telegram-alert-policy.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
@@ -1555,48 +1556,6 @@ function telegramStatusIcon(status,eventType){
   return icons[status]||'📌';
 }
 
-function telegramAlertType(order){
-  const eventType=String(order?.eventType||'order');
-  const status=String(order?.status||'');
-
-  if(eventType==='order'){
-    return 'new_order';
-  }
-
-  if(
-    eventType==='cancel' ||
-    status==='cancel' ||
-    status==='cancel_request'
-  ){
-    return 'cancel';
-  }
-
-  if(
-    eventType==='return' ||
-    status==='return' ||
-    status==='return_request'
-  ){
-    return 'return';
-  }
-
-  if(
-    eventType==='exchange' ||
-    status==='exchange' ||
-    status==='exchange_request'
-  ){
-    return 'exchange';
-  }
-
-  if(
-    eventType==='inquiry' ||
-    status==='inquiry'
-  ){
-    return 'inquiry';
-  }
-
-  return '';
-}
-
 function telegramAlertTitle(order,marketName){
   const type=telegramAlertType(order);
   const icon=telegramMarketIcon(marketName);
@@ -2607,7 +2566,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.31',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.33',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2627,7 +2586,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.31',
+    version:'FINAL-7.7.33',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

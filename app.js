@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.31 쿠팡 문의 2종 분리';
-const BUILD_DATE='2026-07-28';
+const APP_VERSION='v7.7.33 수집기 자동복구';
+const BUILD_DATE='2026-08-20';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -3684,45 +3684,61 @@ function watchAgentHeartbeat(){
   const indicator=$('agentStatus');
   const telegram=$('telegramState');
 
-  function parseHeartbeat(data={}){
-    const candidates=[
-      data.lastSeenEpoch,
-      data.lastSeenIso,
-      data.lastSeen?.toDate?.()?.getTime?.()
-    ];
-
-    for(const value of candidates){
-      if(typeof value==='number'&&Number.isFinite(value)){
-        return value;
-      }
-
-      if(typeof value==='string'){
-        const parsed=new Date(value).getTime();
-        if(Number.isFinite(parsed)){
-          return parsed;
-        }
-      }
+  function parseTime(value){
+    if(typeof value==='number'&&Number.isFinite(value)){
+      return value;
     }
-
+    if(value?.toDate){
+      const time=value.toDate().getTime();
+      return Number.isFinite(time)?time:0;
+    }
+    if(typeof value==='string'){
+      const time=new Date(value).getTime();
+      return Number.isFinite(time)?time:0;
+    }
     return 0;
+  }
+
+  function parseHeartbeat(data={}){
+    return Math.max(
+      parseTime(data.lastSeenEpoch),
+      parseTime(data.lastSeenIso),
+      parseTime(data.lastSeen)
+    );
+  }
+
+  function latestIntegrationTime(){
+    return Math.max(
+      0,
+      ...Object.values(integrations||{}).flatMap(info=>[
+        parseTime(info?.lastRun),
+        parseTime(info?.lastSuccess),
+        parseTime(info?.updatedAt)
+      ])
+    );
   }
 
   function showAgentState(data={}){
     const heartbeat=parseHeartbeat(data);
-    const age=heartbeat
-      ?Math.max(0,Date.now()-heartbeat)
-      :Infinity;
+    const integrationTime=latestIntegrationTime();
+    const freshest=Math.max(heartbeat,integrationTime);
+    const heartbeatAge=heartbeat?Math.max(0,Date.now()-heartbeat):Infinity;
+    const freshestAge=freshest?Math.max(0,Date.now()-freshest):Infinity;
 
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<=6*60*1000){
+      if(heartbeatAge<=7*60*1000){
         indicator.textContent=
-          `PC 수집기 정상 · ${relativeTime(new Date(Date.now()-age).toISOString())}`;
+          `PC 수집기 정상 · ${relativeTime(new Date(heartbeat).toISOString())}`;
         indicator.classList.add('ok');
-      }else if(age<=12*60*1000){
+      }else if(freshestAge<=15*60*1000){
         indicator.textContent=
-          `PC 수집기 지연 · ${relativeTime(new Date(Date.now()-age).toISOString())}`;
+          `PC 수집기 수집 확인 · ${relativeTime(new Date(freshest).toISOString())}`;
+        indicator.classList.add('ok');
+      }else if(freshestAge<=35*60*1000){
+        indicator.textContent=
+          `PC 수집기 지연 · ${relativeTime(new Date(freshest).toISOString())}`;
         indicator.classList.add('warning');
       }else{
         indicator.textContent='PC 수집기 응답 없음';
@@ -3749,23 +3765,10 @@ function watchAgentHeartbeat(){
   }
 
   function showIntegrationFallback(){
-    const timestamps=Object.values(integrations||{})
-      .flatMap(info=>[
-        info?.lastRun,
-        info?.lastSuccess,
-        info?.updatedAt
-      ])
-      .filter(Boolean)
-      .map(value=>{
-        if(value?.toDate){
-          return value.toDate().getTime();
-        }
+    const latest=latestIntegrationTime();
+    const age=latest?Date.now()-latest:Infinity;
 
-        return new Date(value).getTime();
-      })
-      .filter(Number.isFinite);
-
-    if(!timestamps.length){
+    if(!latest){
       if(indicator){
         indicator.textContent='PC 수집기 상태 확인 중';
         indicator.classList.remove('ok','error','warning');
@@ -3773,18 +3776,17 @@ function watchAgentHeartbeat(){
       return;
     }
 
-    const latest=Math.max(...timestamps);
-    const age=Date.now()-latest;
-
     if(indicator){
       indicator.classList.remove('ok','error','warning');
 
-      if(age<25*60*1000){
+      if(age<=15*60*1000){
         indicator.textContent=
-          `PC 수집기 수집 확인 · ${relativeTime(
-            new Date(latest).toISOString()
-          )}`;
+          `PC 수집기 수집 확인 · ${relativeTime(new Date(latest).toISOString())}`;
         indicator.classList.add('ok');
+      }else if(age<=35*60*1000){
+        indicator.textContent=
+          `PC 수집기 지연 · ${relativeTime(new Date(latest).toISOString())}`;
+        indicator.classList.add('warning');
       }else{
         indicator.textContent='PC 수집기 응답 없음';
         indicator.classList.add('error');
@@ -3815,7 +3817,6 @@ function watchAgentHeartbeat(){
       }
     );
 }
-
 function stopCloudListeners(){
   if(unsubscribeOrders){
     unsubscribeOrders();
@@ -4150,7 +4151,7 @@ $('openMarketBtn').onclick=()=>{if(currentDetail) openMarketplaceForOrder(curren
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.31-coupang-dual-inquiry',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.33-agent-self-heal',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

@@ -675,3 +675,5 @@ body{font-size:18px;line-height:1.58}
 .alert-card .alert-breakdown{display:block;margin-top:4px;font-size:9px;line-height:1.25;color:#65778a;font-weight:900;white-space:nowrap}
 .alert-card.active .alert-breakdown{color:#dcecff}
 @media(max-width:700px){.alert-card .alert-breakdown{font-size:8px;white-space:normal}}
+
+/* v7.7.32 완료/철회/거부 CS 텔레그램 알림 차단 */

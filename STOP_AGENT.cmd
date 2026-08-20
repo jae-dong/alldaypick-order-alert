@@ -1,9 +1,14 @@
 @echo off
 setlocal
-set "LOCK=%~dp0backend\.agent-running.lock"
+set "BACKEND=%~dp0backend"
+set "LOCK=%BACKEND%\.agent-running.lock"
+set "STOPMARK=%BACKEND%\.agent-stop-requested"
+
+>"%STOPMARK%" echo stop
 
 if not exist "%LOCK%" (
   echo No running ALLDAYPICK agent lock was found.
+  echo Stop request marker created so auto-restart will not relaunch it.
   pause
   exit /b 0
 )
