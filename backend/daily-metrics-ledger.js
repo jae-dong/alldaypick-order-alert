@@ -1,9 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import { activeBusinessKey,documentBusinessKey } from './business-profile.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
-const LEDGER_PATH=path.join(BACKEND_DIR,'.daily-order-ledger-v2.json');
+function ledgerPath(){
+  const business=activeBusinessKey(process.env);
+  if(business==='alldaypick') return path.join(BACKEND_DIR,'.daily-order-ledger-v2.json');
+  return path.join(BACKEND_DIR,`.daily-order-ledger-v2-${business}.json`);
+}
 const SOURCES=[
   ['coupang','쿠팡'],
   ['smartstore','스마트스토어'],
@@ -192,23 +197,29 @@ function emptyLedger(day=kstDay()){
 }
 function loadLedger(day=kstDay()){
   try{
-    if(!fs.existsSync(LEDGER_PATH)) return emptyLedger(day);
-    const parsed=JSON.parse(fs.readFileSync(LEDGER_PATH,'utf8'));
+    const file=ledgerPath();
+    if(!fs.existsSync(file)) return emptyLedger(day);
+    const parsed=JSON.parse(fs.readFileSync(file,'utf8'));
     if(parsed?.version!==2||parsed?.day!==day) return emptyLedger(day);
     return {...emptyLedger(day),...parsed,rows:parsed.rows||{}};
   }catch{return emptyLedger(day);}
 }
 function saveLedger(ledger){
-  const temporary=`${LEDGER_PATH}.tmp`;
+  const file=ledgerPath();
+  const temporary=`${file}.tmp`;
   fs.writeFileSync(temporary,JSON.stringify(ledger,null,2),'utf8');
-  fs.renameSync(temporary,LEDGER_PATH);
+  fs.renameSync(temporary,file);
 }
 async function sourceDocuments(db,source){
   let query=db.collection('orders').where('source','==',source);
   if(typeof query.limit==='function') query=query.limit(MAX_SOURCE_DOCS);
   const snapshot=await query.get();
   const documents=[];
-  snapshot.forEach(doc=>documents.push({id:doc.id,...(doc.data()||{})}));
+  const business=activeBusinessKey(process.env);
+  snapshot.forEach(doc=>{
+    const data={id:doc.id,...(doc.data()||{})};
+    if(documentBusinessKey(data)===business) documents.push(data);
+  });
   return documents;
 }
 export function buildDailySnapshot(rows,{day=kstDay(),generatedAt=new Date().toISOString()}={}){
@@ -223,7 +234,7 @@ export function buildDailySnapshot(rows,{day=kstDay(),generatedAt=new Date().toI
   }
   const allRows=active.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
   return {
-    version:2,appVersion:'v7.7.25',day,generatedAt,
+    version:2,appVersion:'v7.7.34',businessKey:activeBusinessKey(process.env),day,generatedAt,
     basis:'공식 API 저장 상품주문 행 일일 원장 · 송장번호/주문자 수가 아닌 상품주문 처리행 기준',
     excludedMarkets:['G마켓','옥션'],
     count:allRows.length,

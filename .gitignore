@@ -46,3 +46,7 @@ backend/.daily-order-ledger-v2.json
 backend/.daily-order-ledger-v2.json.tmp
 backend/.telegram-product-image-cache-v11.json
 backend/.telegram-product-image-cache-v11.json.tmp
+
+backend/.daily-order-ledger-v2-*.json
+backend/.smartstore-inquiry-state-*.json
+backend/.telegram-alert-ledger-*.json

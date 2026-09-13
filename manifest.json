@@ -1,7 +1,7 @@
 {
-  "name": "올데이픽 주문알림 v7.7.33 수집기 자동복구",
-  "short_name": "주문알림 v7.7.33",
-  "start_url": "./?v=v7.7.33-agent-self-heal",
+  "name": "주문알림 v7.7.34 사업자 프로필",
+  "short_name": "주문알림 v7.7.34",
+  "start_url": "./?v=v7.7.34-business-profile",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",

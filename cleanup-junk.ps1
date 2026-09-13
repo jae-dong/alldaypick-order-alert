@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = 'SilentlyContinue'
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
-$currentNote = '변경내역_v7.7.33.txt'
+$currentNote = '변경내역_v7.7.34.txt'
 
 $patterns = @(
   '배포전_검증결과*.txt',

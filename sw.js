@@ -1,4 +1,4 @@
-const CACHE='alldaypick-v7.7.33-agent-self-heal-20260820-v1';
+const CACHE='alldaypick-v7.7.34-business-profile-20260913-v1';
 const STATIC=[
   './',
   './index.html',

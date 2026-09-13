@@ -3,6 +3,7 @@ import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
 import { isBeforeExchangeBaseline } from './exchange-baseline.js';
+import { documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -365,7 +366,7 @@ async function forceCloseStaleSmartstoreExchanges(db,currentDocuments,{complete=
   const activeIdentities=new Set();
   for(const item of currentDocuments||[]){
     if(item?.activeState===false) continue;
-    if(item?.id) activeIds.add(String(item.id));
+    if(item?.id) activeIds.add(namespaceDocumentId(String(item.id)));
     const identity=smartstoreExchangeIdentity(item,item?.id);
     if(identity) activeIdentities.add(identity);
   }
@@ -376,8 +377,9 @@ async function forceCloseStaleSmartstoreExchanges(db,currentDocuments,{complete=
   const stale=[];
   snapshot.forEach(doc=>{
     const data=doc.data()||{};
+    if(!documentBelongsToActiveBusiness(data)) return;
     if(!isSmartstoreExchangeDocument(data,doc.id)) return;
-    if(activeIds.has(doc.id)) return;
+    if(activeIds.has(doc.id)||activeIds.has(namespaceDocumentId(doc.id))) return;
     const identity=smartstoreExchangeIdentity(data,doc.id);
     if(identity&&activeIdentities.has(identity)) return;
     stale.push(doc.ref);

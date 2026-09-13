@@ -3,6 +3,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import admin from 'firebase-admin';
 import { isClaimTerminal } from './workflow-model.js';
+import {
+  activeBusinessKey,decorateBusinessDocument,documentBusinessKey,namespaceDocumentId
+} from './business-profile.js';
 
 const DELETE=admin.firestore.FieldValue.delete();
 const CACHE_VERSION=3;
@@ -215,7 +218,7 @@ function isOpenOrderDocument(document={}){
 }
 
 function normalizeDocument(raw){
-  const document=sanitizeFirestoreValue(raw);
+  const document=sanitizeFirestoreValue(decorateBusinessDocument(raw));
   if(!document?.id) return null;
   const terminal=document.eventType!=='order'&&isClaimTerminal(document);
   if(document.eventType!=='order') document.activeState=!terminal;
@@ -505,12 +508,14 @@ async function reconcileOpenDocumentsCached(db,{
 
   const hydration=await hydrateActiveCache(db);
   const cache=loadMirrorCache();
-  const activeIds=new Set((currentIds||[]).map(String));
+  const businessKey=activeBusinessKey(process.env);
+  const activeIds=new Set((currentIds||[]).map(id=>namespaceDocumentId(id,businessKey)));
   const cutoff=valueTime(from);
   const stale=[];
 
   for(const [id,entry] of Object.entries(cache.docs||{})){
     const data=entry?.semantic||{};
+    if(documentBusinessKey(data)!==businessKey) continue;
     if(String(entry?.source||data.source||'')!==String(source)) continue;
     if(String(entry?.eventType||data.eventType||'order')!==String(eventType)) continue;
     if(sourceStatus&&String(entry?.sourceStatus||data.sourceStatus||'').toUpperCase()!==String(sourceStatus).toUpperCase()) continue;
@@ -551,7 +556,8 @@ async function reconcileOpenDocumentsLegacy(db,{
   reason='현재 미처리 API 목록에서 제외됨',sourceStatus=''
 }){
   if(!complete) return {deactivated:0,skipped:true};
-  const activeIds=new Set((currentIds||[]).map(String));
+  const businessKey=activeBusinessKey(process.env);
+  const activeIds=new Set((currentIds||[]).map(id=>namespaceDocumentId(id,businessKey)));
   const cutoff=valueTime(from);
   const collection=db.collection('orders');
   let snapshot;
@@ -570,6 +576,7 @@ async function reconcileOpenDocumentsLegacy(db,{
 
   snapshot.forEach(doc=>{
     const data=doc.data()||{};
+    if(documentBusinessKey(data)!==businessKey) return;
     if(String(data.eventType||'order')!==String(eventType)) return;
     if(sourceStatus&&String(data.sourceStatus||'').toUpperCase()!==String(sourceStatus).toUpperCase()) return;
     if(data.activeState===false) return;
@@ -615,6 +622,8 @@ export async function migrateLegacyDocuments(db){
       const update={};
 
       if(!data.schemaVersion) update.schemaVersion=2;
+      if(!data.businessKey) update.businessKey='alldaypick';
+      if(!data.businessName) update.businessName='올데이픽';
       if(!data.workflowType) update.workflowType=eventType==='order'?'order':eventType==='inquiry'?'inquiry':'claim';
       if(!data.activeState&&data.activeState!==false) update.activeState=true;
 
@@ -674,7 +683,7 @@ export function resetOrderStoreCacheForTests(){
 }
 
 export async function getCachedDocuments(db,{
-  source='',eventType='',activeOnly=true,hydrate=true
+  source='',eventType='',activeOnly=true,hydrate=true,businessKey=activeBusinessKey(process.env)
 }={}){
   let cloudReads=0;
   if(productionCacheSupported(db)&&hydrate){
@@ -689,6 +698,7 @@ export async function getCachedDocuments(db,{
     const documents=[];
     snapshot.forEach(doc=>{
       const data={id:doc.id,...doc.data()};
+      if(businessKey&&documentBusinessKey(data)!==businessKey) return;
       if(eventType&&String(data.eventType||'order')!==String(eventType)) return;
       if(activeOnly&&data.activeState===false) return;
       documents.push(data);
@@ -700,6 +710,7 @@ export async function getCachedDocuments(db,{
   const documents=[];
   for(const [id,entry] of Object.entries(cache.docs||{})){
     const data={id,...(entry?.semantic||{})};
+    if(businessKey&&documentBusinessKey(data)!==businessKey) continue;
     if(source&&String(data.source||'')!==String(source)) continue;
     if(eventType&&String(data.eventType||'order')!==String(eventType)) continue;
     if(activeOnly&&data.activeState===false) continue;

@@ -57,10 +57,10 @@ const directAudit=read('direct-audit-store.js');
 const telegramPolicy=read('telegram-alert-policy.js');
 assert.match(agent,/recordDirectAudit/,'Agent must persist marketplace-direct audit results');
 assert.match(directAudit,/market-direct-audit\.json/,'Direct API audit must create a local sanitized result file');
-assert.match(directAudit,/gmarket:'API 승인 전 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
-assert.match(directAudit,/auction:'API 승인 전 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
+assert.match(directAudit,/gmarket:'현재 주문 API 없음 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
+assert.match(directAudit,/auction:'현재 주문 API 없음 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.33'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.34'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');

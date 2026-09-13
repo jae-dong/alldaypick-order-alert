@@ -1,6 +1,6 @@
-@echo off
+﻿@echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ALLDAYPICK ORDER AGENT v7.7.33 SELF HEAL
+title ORDER ALERT AGENT v7.7.34 BUSINESS PROFILE
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -75,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.33 SELF HEAL...
+echo Starting ALLDAYPICK order agent v7.7.34 BUSINESS PROFILE...
 echo Keep this window open. If the agent crashes, it will restart automatically.
 echo.
 call npm run agent

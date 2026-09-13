@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
+import { documentBelongsToActiveBusiness } from './business-profile.js';
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
 
@@ -828,7 +829,10 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
       if(typeof query.limit==='function') query=query.limit(500);
       const snapshot=await query.get();
       const remote=[];
-      snapshot.forEach(doc=>remote.push({id:doc.id,...(doc.data()||{})}));
+      snapshot.forEach(doc=>{
+        const data={id:doc.id,...(doc.data()||{})};
+        if(documentBelongsToActiveBusiness(data)) remote.push(data);
+      });
       existing=[...new Map([...existing,...remote].map(item=>[String(item.id),item])).values()];
     }catch(error){
       console.warn('11번가 과거 상태 보정 조회 건너뜀:',error instanceof Error?error.message:String(error));

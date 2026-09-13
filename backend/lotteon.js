@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments } from './order-store.js';
+import { activeBusinessProfile } from './business-profile.js';
 
 const API_BASE = 'https://openapi.lotteon.com';
 const ORDER_PATH =
@@ -1029,6 +1030,8 @@ export async function saveLotteonIntegration(
   await db.collection('system').doc('integrations').set({
     lotteon: {
       name: '롯데온',
+      businessKey: activeBusinessProfile(process.env).key,
+      businessName: activeBusinessProfile(process.env).name,
       connected: true,
       configured: true,
       lastRun: new Date().toISOString(),
@@ -1070,6 +1073,8 @@ export async function saveLotteonError(
   await db.collection('system').doc('integrations').set({
     lotteon: {
       name: '롯데온',
+      businessKey: activeBusinessProfile(process.env).key,
+      businessName: activeBusinessProfile(process.env).name,
       connected: false,
       configured: isLotteonConfigured(config),
       lastRun: new Date().toISOString(),

@@ -1,10 +1,22 @@
-const APP_VERSION='v7.7.33 수집기 자동복구';
+const APP_VERSION='v7.7.34 사업자 프로필';
 const BUILD_DATE='2026-08-20';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
 const $=id=>document.getElementById(id);
 const fmt=n=>Number(n||0).toLocaleString('ko-KR')+'원';
+
+function normalizedBusinessKey(value=''){
+  const raw=String(value||'').trim().toLowerCase().replace(/[\s_-]+/g,'');
+  return ['dailypick','데일리픽','daily'].includes(raw)?'dailypick':'alldaypick';
+}
+function orderBusinessKey(order={}){
+  return normalizedBusinessKey(order.businessKey||order.businessName||order.business||'alldaypick');
+}
+function isCurrentBusinessOrder(order={}){
+  return orderBusinessKey(order)===currentBusinessKey;
+}
+
 
 function setMetricValue(id,value,{currency=false}={}){
   const target=$(id);
@@ -36,6 +48,7 @@ const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;'
 const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['elevenst','11번가'],['gmarket','G마켓'],['auction','옥션'],['lotteon','롯데온']];
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
 let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,unsubscribeSyncedOrders=null,collectUnsub=null;
+let currentBusinessKey='alldaypick',currentBusinessName='올데이픽';
 let monthOrderMap=new Map(),activeOrderMap=new Map(),syncedOrderMap=new Map();
 let statisticsOrderMap=new Map(),statisticsLoaded=false,statisticsLoading=false,statisticsLoadedAt=0,statisticsLoadToken=0;
 const DESKTOP_PAGE_SIZE=40;
@@ -1231,7 +1244,7 @@ function statisticsSourceOrders(){
     merged.set(key,item);
   });
 
-  return [...merged.values()];
+  return [...merged.values()].filter(isCurrentBusinessOrder);
 }
 
 function selectedStatsMonth(){
@@ -2487,7 +2500,7 @@ function renderCoverageNote(){
 
 
 function renderIntegrations(){
-  $('integrationGrid').innerHTML=MARKETS.map(([key,name])=>{const info=integrations[key]||{},ok=Boolean(info.connected);return`<div class="integration"><strong>${name}</strong><span class="connection ${ok?'ok':''}">${ok?'연결됨':'미연결'}</span><small>${relativeTime(info.lastRun)}</small></div>`}).join('');
+  $('integrationGrid').innerHTML=MARKETS.map(([key,name])=>{const info=integrations[key]||{},ok=Boolean(info.connected);return`<div class="integration"><strong>${currentBusinessName} · ${name}</strong><span class="connection ${ok?'ok':''}">${ok?'연결됨':'미연결'}</span><small>${relativeTime(info.lastRun)}</small></div>`}).join('');
   renderCoverageNote();
 }
 function renderMetrics(){
@@ -3869,6 +3882,7 @@ function refreshOrdersFromCloudMaps(){
     merged.set(id,item);
   }
   orders=[...merged.values()]
+    .filter(isCurrentBusinessOrder)
     .sort((a,b)=>timestampValue(b)-timestampValue(a));
   saveCloudCache();
   render();
@@ -3963,6 +3977,12 @@ function startCloudListeners(){
     .onSnapshot(
       snapshot=>{
         integrations=snapshot.exists?snapshot.data():{};
+        const business=integrations.activeBusiness||{};
+        currentBusinessKey=normalizedBusinessKey(business.key||business.name||'alldaypick');
+        currentBusinessName=String(business.name|| (currentBusinessKey==='dailypick'?'데일리픽':'올데이픽'));
+        refreshOrdersFromCloudMaps();
+        statisticsLoaded=false;
+        statisticsOrderMap=new Map();
         saveCloudCache();
         // 공식 API 직접검증 orderLines가 갱신되면 오늘/월 주문·매출도 즉시 다시 계산합니다.
         render();
@@ -4144,14 +4164,14 @@ async function requestTelegramTest(){
 
 
 $('ordersTab').onclick=showOrdersTab;$('statsTab').onclick=()=>{showStatsTab();renderStats()};$('clearFilterBtn').onclick=()=>{activeStatus='';activeMarket='';$('marketFilter').value='';$('workflowFilter').value='';currentPage=1;render()};$('searchInput').oninput=()=>{currentPage=1;renderOrders()};$('marketFilter').onchange=()=>{currentPage=1;renderOrders()};$('readFilter').onchange=()=>{currentPage=1;renderOrders()};$('workflowFilter').onchange=()=>{currentPage=1;renderOrders()};$('statsPeriod').onchange=()=>{syncStatsMonthVisibility();renderStats();loadAllStatisticsOrders()};$('statsMonth').onchange=()=>{renderStats();loadAllStatisticsOrders()};$('exportStatsExcelBtn').onclick=exportStatisticsExcel;$('prevPageBtn').onclick=()=>{if(currentPage>1){currentPage--;renderOrders()}};$('nextPageBtn').onclick=()=>{currentPage++;renderOrders()};$('collectNowBtn').onclick=requestCollect;$('telegramTestBtn').onclick=requestTelegramTest;
-$('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
+$('addBtn').onclick=()=>$('orderDialog').showModal();$('cancelAddBtn').onclick=()=>$('orderDialog').close();$('orderForm').onsubmit=async e=>{e.preventDefault();const id=crypto.randomUUID?.()||String(Date.now());await db.collection('orders').doc(id).set({id,businessKey:currentBusinessKey,businessName:currentBusinessName,eventType:$('fEvent').value,market:$('fMarket').value,orderNo:$('fOrderNo').value.trim(),product:$('fProduct').value.trim(),qty:Number($('fQty').value),buyer:$('fBuyer').value.trim(),amount:Number($('fAmount').value),datetime:new Date().toISOString(),status:'new',readStatus:'unread',createdAt:firebase.firestore.FieldValue.serverTimestamp()});$('orderDialog').close();$('orderForm').reset()};
 $('closeDetailBtn').onclick=()=>$('detailDialog').close();$('closeImageDialogBtn').onclick=()=>$('imageDialog').close();$('copyOrderNoBtn').onclick=()=>copyText(currentDetail?.orderNo,'주문번호');$('copyBuyerBtn').onclick=()=>copyText(currentDetail?.buyer,'구매자');$('copyPhoneBtn').onclick=()=>copyText(currentDetail?.phone,'연락처');$('copyProductBtn').onclick=()=>copyText(currentDetail?.product,'상품명');$('copyInvoiceBtn').onclick=()=>copyText(currentDetail?.invoiceNumber,'운송장번호');
 $('saveNoteBtn').onclick=saveCurrentNote;
 $('openMarketBtn').onclick=()=>{if(currentDetail) openMarketplaceForOrder(currentDetail)};
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.33-agent-self-heal',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.34-business-profile',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

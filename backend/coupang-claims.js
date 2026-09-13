@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,invalidateOrderStoreMirrorCache } from './order-store.js';
+import { documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
 import { isBeforeExchangeBaseline } from './exchange-baseline.js';
 
@@ -391,7 +392,7 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
   const activeClaims=new Set();
   for(const item of currentDocuments||[]){
     if(item?.activeState===false) continue;
-    if(item?.id) activeIds.add(String(item.id));
+    if(item?.id) activeIds.add(namespaceDocumentId(String(item.id)));
     const identity=exchangeClaimIdentity(item,item?.id);
     if(identity) activeClaims.add(identity);
   }
@@ -406,13 +407,14 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
   const stale=[];
   snapshot.forEach(doc=>{
     const data=doc.data()||{};
+    if(!documentBelongsToActiveBusiness(data)) return;
     if(!isCoupangExchangeDocument(data,doc.id)) return;
     if(data.activeState===false) return;
     const businessTime=new Date(
       data.claimRequestedAt||data.datetime||data.createdAt||data.sourceUpdatedAt||0
     ).getTime()||0;
     if(cutoff&&businessTime&&businessTime<cutoff) return;
-    if(activeIds.has(doc.id)) return;
+    if(activeIds.has(doc.id)||activeIds.has(namespaceDocumentId(doc.id))) return;
     const identity=exchangeClaimIdentity(data,doc.id);
     if(identity&&activeClaims.has(identity)) return;
     stale.push(doc.ref);

@@ -1,5 +1,4 @@
 import {
-  lotteonConfigFromEnv,
   isLotteonConfigured,
   testLotteonConnection,
   syncLotteonOrders,
@@ -13,15 +12,9 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
-import {
-  esmConfigFromEnv,
-  updateEsmConnectionStatus
-} from './esm.js';
-
 import { pollCoupangStatuses } from './coupang.js';
 import { syncSmartstore,syncSmartstoreInquiries,retireLegacySmartstoreInquiryCache,resolveSmartstoreProductImage } from './smartstore.js';
 import {
-  elevenstConfigFromEnv,
   isElevenstConfigured,
   syncElevenstOrders,
   syncElevenstStatuses
@@ -40,9 +33,16 @@ import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
 import { rebuildDailyMetrics } from './daily-metrics-ledger.js';
 import { closePreBaselineExchangeDocuments,EXCHANGE_BASELINE_CUTOFF_ISO } from './exchange-baseline.js';
 import { telegramAlertType } from './telegram-alert-policy.js';
+import { activeBusinessProfile,documentBelongsToActiveBusiness } from './business-profile.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
+
+const ACTIVE_BUSINESS=activeBusinessProfile(process.env);
+const activeMarket=key=>ACTIVE_BUSINESS.markets[key]||{enabled:false,configured:false,config:{}};
+const marketEnabled=key=>activeMarket(key).enabled===true;
+const marketLabel=key=>activeMarket(key).name||key;
+
 
 const fastPollMinutes=Number(process.env.FAST_POLL_MINUTES||10);
 const fullSyncEvery=Number(process.env.FULL_SYNC_EVERY||4);
@@ -72,20 +72,42 @@ function serviceAccount(){
 }
 
 function coupang(){
-  const config={
-    accessKey:process.env.COUPANG_ACCESS_KEY,
-    secretKey:process.env.COUPANG_SECRET_KEY,
-    vendorId:process.env.COUPANG_VENDOR_ID
-  };
+  const config={...activeMarket('coupang').config};
+  if(!marketEnabled('coupang')){
+    throw new Error(`${ACTIVE_BUSINESS.name}에서 쿠팡 수집이 비활성입니다.`);
+  }
   if(!config.accessKey||!config.secretKey||!config.vendorId){
-    throw new Error('.env.local의 쿠팡 키 3개를 확인하세요.');
+    throw new Error(`${ACTIVE_BUSINESS.name} 쿠팡 API 키 3개를 확인하세요.`);
   }
   return config;
+}
+
+function disabledMarketResult(key){
+  return {
+    disabled:true,connected:false,found:0,created:0,existing:0,statusChanged:0,
+    createdOrders:[],createdClaims:[],changedOrders:[],counts:{ACCEPT:0,INSTRUCT:0},
+    message:`${ACTIVE_BUSINESS.name}에서 ${marketLabel(key)} 수집 비활성`
+  };
+}
+
+async function saveDisabledMarketIntegration(key,message=''){
+  const info=activeMarket(key);
+  await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
+    [key]:{
+      name:info.name||key,connected:false,configured:Boolean(info.configured),disabled:true,
+      businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
+      lastRun:new Date().toISOString(),
+      message:message||info.reason||`${ACTIVE_BUSINESS.name}에서 사용 안 함`
+    }
+  },{merge:true});
 }
 
 admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 
 const db=admin.firestore();
+
+console.log(`활성 사업자: ${ACTIVE_BUSINESS.name} (${ACTIVE_BUSINESS.key})`);
+
 
 const DAILY_METRICS_MARKETS={
   coupang:'쿠팡',smartstore:'스마트스토어',elevenst:'11번가',lotteon:'롯데온'
@@ -144,7 +166,12 @@ async function publishDailyMetrics(summary={},forceRemote=false){
 const HEARTBEAT_INTERVAL_MS=5*60*1000;
 const QUOTA_STATE_PATH=path.join(BACKEND_DIR,'.firestore-quota-cooldown.json');
 const SYSTEM_WRITE_CACHE_PATH=path.join(BACKEND_DIR,'.firestore-system-write-cache.json');
-const SMARTSTORE_INQUIRY_STATE_PATH=path.join(BACKEND_DIR,'.smartstore-inquiry-state.json');
+const SMARTSTORE_INQUIRY_STATE_PATH=path.join(
+  BACKEND_DIR,
+  ACTIVE_BUSINESS.key==='alldaypick'
+    ?'.smartstore-inquiry-state.json'
+    :`.smartstore-inquiry-state-${ACTIVE_BUSINESS.key}.json`
+);
 const SMARTSTORE_INQUIRY_INTERVAL_MS=Math.max(
   30,
   Number(process.env.SMARTSTORE_INQUIRY_INTERVAL_MINUTES||60)
@@ -541,7 +568,12 @@ async function updateCollectProgress(source,percent,step){
 
 
 
-const TELEGRAM_LEDGER_PATH=path.join(BACKEND_DIR,'.telegram-alert-ledger.json');
+const TELEGRAM_LEDGER_PATH=path.join(
+  BACKEND_DIR,
+  ACTIVE_BUSINESS.key==='alldaypick'
+    ?'.telegram-alert-ledger.json'
+    :`.telegram-alert-ledger-${ACTIVE_BUSINESS.key}.json`
+);
 const AGENT_STARTED_AT=Date.now();
 const TELEGRAM_NEW_EVENT_GRACE_MS=10*60*1000;
 const TELEGRAM_LEDGER_MAX=5000;
@@ -704,6 +736,7 @@ function telegramAlertKey(order,marketName){
   ).trim();
 
   return [
+    String(order?.businessKey||ACTIVE_BUSINESS.key||'alldaypick'),
     marketName,
     type,
     orderNo,
@@ -951,7 +984,7 @@ async function sendOrderTelegramAlert(
     coupangConfig:marketName==='쿠팡'?coupang():null,
     smartstoreConfig:marketName==='스마트스토어'?smartstoreConfig():null,
     smartstoreResolver:resolveSmartstoreProductImage,
-    lotteonConfig:marketName==='롯데온'?lotteonConfigFromEnv():null,
+    lotteonConfig:marketName==='롯데온'?lotteonConfig():null,
     lotteonResolver:resolveLotteonProductImage,
     // 판매자가 대표사진을 교체한 경우 예전 30일 캐시나 주문 당시 URL을 사용하지 않고
     // 알림 직전에 마켓의 현재 대표사진을 다시 확인합니다.
@@ -1054,6 +1087,7 @@ async function backfillActiveOrderThumbnails(reason='startup'){
     const candidates=[];
     snapshot.docs.forEach(doc=>{
       const order={id:doc.id,...(doc.data()||{})};
+      if(!documentBelongsToActiveBusiness(order)) return;
       const marketName=activeThumbnailMarketName(order);
       if(!marketName) return;
       const currentUrl=activeThumbnailCurrentUrl(order);
@@ -1087,7 +1121,7 @@ async function backfillActiveOrderThumbnails(reason='startup'){
           coupangConfig:first.marketName==='쿠팡'?coupang():null,
           smartstoreConfig:first.marketName==='스마트스토어'?smartstoreConfig():null,
           smartstoreResolver:resolveSmartstoreProductImage,
-          lotteonConfig:first.marketName==='롯데온'?lotteonConfigFromEnv():null,
+          lotteonConfig:first.marketName==='롯데온'?lotteonConfig():null,
           lotteonResolver:resolveLotteonProductImage,
           forceRefresh:true
         });
@@ -1173,6 +1207,7 @@ async function backfillStatisticsOrderThumbnails(reason='startup'){
     const groups=new Map();
     snapshot.docs.forEach(doc=>{
       const order={id:doc.id,...(doc.data()||{})};
+      if(!documentBelongsToActiveBusiness(order)) return;
       const marketName=activeThumbnailMarketName(order);
       if(!marketName) return;
       const key=statisticsThumbnailIdentity(order,marketName);
@@ -1220,7 +1255,7 @@ async function backfillStatisticsOrderThumbnails(reason='startup'){
           coupangConfig:first.marketName==='쿠팡'?coupang():null,
           smartstoreConfig:first.marketName==='스마트스토어'?smartstoreConfig():null,
           smartstoreResolver:resolveSmartstoreProductImage,
-          lotteonConfig:first.marketName==='롯데온'?lotteonConfigFromEnv():null,
+          lotteonConfig:first.marketName==='롯데온'?lotteonConfig():null,
           lotteonResolver:resolveLotteonProductImage,
           forceRefresh:false
         });
@@ -1559,32 +1594,34 @@ function telegramStatusIcon(status,eventType){
 function telegramAlertTitle(order,marketName){
   const type=telegramAlertType(order);
   const icon=telegramMarketIcon(marketName);
+  const businessName=String(order?.businessName||ACTIVE_BUSINESS.name||'').trim();
+  const marketTitle=businessName?`${businessName} · ${marketName}`:marketName;
 
   if(type==='new_order'){
-    return `${icon} ${marketName} 신규주문`;
+    return `${icon} ${marketTitle} 신규주문`;
   }
 
   if(type==='cancel'){
-    return `❌ ${marketName} 주문취소`;
+    return `❌ ${marketTitle} 주문취소`;
   }
 
   if(type==='return'){
-    return `↩️ ${marketName} 반품요청`;
+    return `↩️ ${marketTitle} 반품요청`;
   }
 
   if(type==='exchange'){
-    return `🔄 ${marketName} 교환요청`;
+    return `🔄 ${marketTitle} 교환요청`;
   }
 
   if(type==='inquiry'){
     if(marketName==='쿠팡'){
       const kind=String(order?.inquiryKind||'').toLowerCase();
       const sourceStatus=String(order?.sourceStatus||order?.partnerCounselingStatus||'').toUpperCase();
-      if(kind==='call_center_confirm'||sourceStatus==='TRANSFER') return '📞 쿠팡 고객센터 문의 · 확인 필요';
-      if(kind==='call_center_answer'||String(order?.inquiryChannel||'').toLowerCase()==='call_center') return '📞 쿠팡 고객센터 문의 · 답변 필요';
-      return '💬 쿠팡 고객문의';
+      if(kind==='call_center_confirm'||sourceStatus==='TRANSFER') return `📞 ${marketTitle} 고객센터 문의 · 확인 필요`;
+      if(kind==='call_center_answer'||String(order?.inquiryChannel||'').toLowerCase()==='call_center') return `📞 ${marketTitle} 고객센터 문의 · 답변 필요`;
+      return `💬 ${marketTitle} 고객문의`;
     }
-    return `💬 ${marketName} 문의사항`;
+    return `💬 ${marketTitle} 문의사항`;
   }
 
   return '';
@@ -1657,6 +1694,7 @@ async function withTimeout(label,promise,ms=45000){
 }
 
 async function fastSync(source='interval'){
+  if(!marketEnabled('coupang')) return disabledMarketResult('coupang');
   const reconcile=source==='reconcile';
 
   const result=await withTimeout(
@@ -1676,6 +1714,7 @@ async function fastSync(source='interval'){
 
 
 async function quickCurrentCoupangSync(source='immediate'){
+  if(!marketEnabled('coupang')) return disabledMarketResult('coupang');
   const days=Math.max(3,Math.min(14,Number(process.env.MANUAL_FAST_LOOKBACK_DAYS||7)));
   const maxPages=Math.max(2,Math.min(8,Number(process.env.MANUAL_FAST_MAX_PAGES||4)));
 
@@ -1701,6 +1740,7 @@ async function quickCurrentCoupangSync(source='immediate'){
 
 
 async function fullCoupangStatusSync(source='interval'){
+  if(!marketEnabled('coupang')) return disabledMarketResult('coupang');
   const reconcile=source==='reconcile';
   const statuses=[...FAST,...SLOW];
 
@@ -1725,6 +1765,7 @@ async function fullCoupangStatusSync(source='interval'){
 
 
 async function slowSync(){
+  if(!marketEnabled('coupang')) return disabledMarketResult('coupang');
   const status=SLOW[slowIndex%SLOW.length];
   slowIndex=(slowIndex+1)%SLOW.length;
 
@@ -1738,6 +1779,10 @@ async function slowSync(){
 }
 
 async function saveIntegration(fast,slow){
+  if(fast?.disabled){
+    await saveDisabledMarketIntegration('coupang');
+    return;
+  }
   if(fast?.directAudit){
     recordDirectAudit('coupang','orders',fast.directAudit);
   }
@@ -1748,6 +1793,7 @@ async function saveIntegration(fast,slow){
   await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
     coupang:{
       name:'쿠팡',
+      businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
       connected:true,
       lastRun:new Date().toISOString(),
       message:[
@@ -1817,6 +1863,7 @@ async function sendClaimPush(
 
 
 async function syncAllClaimTypes(source='interval',types=CLAIM_TYPES){
+  if(!marketEnabled('coupang')) return [];
   const reconcile=['reconcile','startup','immediate'].includes(source);
   const results=[];
 
@@ -1854,6 +1901,7 @@ async function syncAllClaimTypes(source='interval',types=CLAIM_TYPES){
 
 
 function refreshClaimsInBackground(source='immediate',types=CLAIM_TYPES){
+  if(!marketEnabled('coupang')) return;
   if(backgroundClaimsRunning||inQuotaCooldown()) return;
   backgroundClaimsRunning=true;
 
@@ -1883,6 +1931,7 @@ function refreshClaimsInBackground(source='immediate',types=CLAIM_TYPES){
 
 
 async function syncOneClaimType(source='interval'){
+  if(!marketEnabled('coupang')) return {...disabledMarketResult('coupang'),claimType:'disabled',push:{sent:0,failed:0,skipped:1}};
   const reconcile=['reconcile','startup','immediate'].includes(source);
   const type=CLAIM_TYPES[claimIndex%CLAIM_TYPES.length];
   claimIndex=(claimIndex+1)%CLAIM_TYPES.length;
@@ -1951,15 +2000,15 @@ function connectedMarketLookbackMinutes(source){
 }
 
 function smartstoreConfig(){
-  return {
-    clientId:process.env.NAVER_CLIENT_ID||'',
-    clientSecret:process.env.NAVER_CLIENT_SECRET||''
-  };
+  return {...activeMarket('smartstore').config};
 }
+
+function elevenstConfig(){ return {...activeMarket('elevenst').config}; }
+function lotteonConfig(){ return {...activeMarket('lotteon').config}; }
 
 function smartstoreConfigured(){
   const config=smartstoreConfig();
-  return Boolean(config.clientId&&config.clientSecret);
+  return marketEnabled('smartstore')&&Boolean(config.clientId&&config.clientSecret);
 }
 
 
@@ -2077,16 +2126,21 @@ async function sendElevenstStatusPush(
 let elevenstRunning=false;
 
 async function syncElevenstSafe(source){
+  if(!marketEnabled('elevenst')){
+    await saveDisabledMarketIntegration('elevenst');
+    return disabledMarketResult('elevenst');
+  }
   if(elevenstRunning) return null;
   elevenstRunning=true;
 
   try{
-    const config=elevenstConfigFromEnv(process.env);
+    const config=elevenstConfig();
 
     if(!isElevenstConfigured(config)){
       await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
         elevenst:{
           name:'11번가',
+          businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
           connected:false,
           lastRun:new Date().toISOString(),
           message:'Open API 키 등록 필요'
@@ -2203,6 +2257,10 @@ async function syncElevenstSafe(source){
 
 
 async function syncSmartstoreSafe(source){
+  if(!marketEnabled('smartstore')){
+    await saveDisabledMarketIntegration('smartstore');
+    return disabledMarketResult('smartstore');
+  }
   if(smartstoreRunning) return null;
   smartstoreRunning=true;
 
@@ -2310,7 +2368,7 @@ async function syncSmartstoreSafe(source){
 
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
-        name:'스마트스토어',connected:true,lastRun:new Date().toISOString(),
+        name:'스마트스토어',businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,connected:true,lastRun:new Date().toISOString(),
         message:`공식 API 직접조회 · 주문문서 ${result.found} · 오늘전체대조 ${smartstoreConditionLabel} · 상태변경 ${result.statusChanged} · 미답변문의 ${inquiryStatusLabel} · 문의정리 ${inquiryResult.deactivated||0}`,
         lastResult:{
           found:result.found,created:result.created,existing:result.existing,statusChanged:result.statusChanged,
@@ -2359,6 +2417,7 @@ async function syncSmartstoreSafe(source){
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       smartstore:{
         name:'스마트스토어',
+        businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
         connected:false,
         lastRun:new Date().toISOString(),
         message
@@ -2415,10 +2474,14 @@ async function sendLotteonStatusPush(
 let lotteonRunning=false;
 
 async function syncLotteonSafe(source){
+  if(!marketEnabled('lotteon')){
+    await saveDisabledMarketIntegration('lotteon');
+    return disabledMarketResult('lotteon');
+  }
   if(lotteonRunning) return null;
   lotteonRunning=true;
 
-  const config=lotteonConfigFromEnv(process.env);
+  const config=lotteonConfig();
 
   try{
     if(!isLotteonConfigured(config)){
@@ -2503,14 +2566,26 @@ async function syncLotteonSafe(source){
 
 async function refreshEsmStatus(){
   try{
-    await updateEsmConnectionStatus(
-      db,
-      esmConfigFromEnv(process.env)
-    );
+    await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
+      activeBusiness:{
+        key:ACTIVE_BUSINESS.key,name:ACTIVE_BUSINESS.name,
+        updatedAt:new Date().toISOString()
+      },
+      gmarket:{
+        name:'G마켓',connected:false,configured:false,disabled:true,
+        businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
+        lastRun:new Date().toISOString(),message:'현재 주문 API 없음 · 미연동'
+      },
+      auction:{
+        name:'옥션',connected:false,configured:false,disabled:true,
+        businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
+        lastRun:new Date().toISOString(),message:'현재 주문 API 없음 · 미연동'
+      }
+    },{merge:true});
   }catch(error){
     if(markQuotaCooldown(error)) return;
     console.error(
-      'ESM 연결상태 확인 실패:',
+      '사업자/ESM 연결상태 저장 실패:',
       error instanceof Error?error.message:String(error)
     );
   }
@@ -2566,7 +2641,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.33',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.34',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2586,10 +2661,11 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.33',
+    version:'FINAL-7.7.34',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,
+    businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
     heartbeatIntervalSeconds:60,
     lastSeen:admin.firestore.FieldValue.serverTimestamp(),
     lastSeenIso:now.toISOString(),
@@ -2628,7 +2704,7 @@ async function runTelegramTest(requestId=''){
 
   try{
     const result=await sendTelegram(
-      '✅ 올데이픽 텔레그램 테스트',
+      `✅ ${ACTIVE_BUSINESS.name} 텔레그램 테스트`,
       [
         '텔레그램 주문알림 연결이 정상입니다.',
         `테스트 시각: ${new Date().toLocaleString('ko-KR')}`,
@@ -2747,6 +2823,7 @@ async function syncCoupangCurrentSafe(source='immediate'){
 
 
 function refreshCurrentOrdersInBackground(source='immediate'){
+  if(!marketEnabled('coupang')) return;
   if(backgroundCurrentOrdersRunning||inQuotaCooldown()) return;
   backgroundCurrentOrdersRunning=true;
   setTimeout(async()=>{
@@ -2843,6 +2920,11 @@ async function runImmediateMarketCollection(summary){
   // 스마트스토어 교환은 위 syncSmartstoreSafe('immediate')의 reconcile에서 이미 정리됩니다.
   await updateCollectProgress('immediate',90,'교환 처리완료 확인 중');
   try{
+    if(!marketEnabled('coupang')){
+      summary.exchangeState={...disabledMarketResult('coupang'),skipped:true};
+      await updateCollectProgress('immediate',94,'쿠팡 미사용 · 교환 확인 생략');
+      return;
+    }
     const exchangeResult=await withTimeout(
       '쿠팡 교환 처리상태 즉시확인',
       syncExchanges(db,coupang(),true),
@@ -3214,7 +3296,7 @@ console.log(
   `생존신호 5분 · 무료한도 최적화`
 );
 console.log(`마켓 공식 API 직접검증 결과: ${DIRECT_AUDIT_PATH}`);
-console.log('G마켓·옥션은 API 승인 전이므로 직접검증·집계에서 제외');
+console.log('G마켓·옥션은 현재 주문 API가 없어 직접검증·집계에서 제외');
 
 run('startup').catch(error=>{
   console.error(
