@@ -12,8 +12,8 @@ function defaultAudit(){
     generatedAt:'',
     basis:'각 쇼핑몰 공식 API 직접조회',
     excludedMarkets:{
-      gmarket:'현재 주문 API 없음 · 집계 제외',
-      auction:'현재 주문 API 없음 · 집계 제외'
+      gmarket:'ESM API 승인 대기 · 집계 제외',
+      auction:'ESM API 승인 대기 · 집계 제외'
     },
     markets:{}
   };

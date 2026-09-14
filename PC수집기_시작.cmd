@@ -1,6 +1,6 @@
-﻿@echo off
+@echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title ORDER ALERT AGENT v7.7.34 BUSINESS PROFILE
+title ORDER ALERT AGENT v7.7.35 DAILYPICK ONLY
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -75,7 +75,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo Starting ALLDAYPICK order agent v7.7.34 BUSINESS PROFILE...
+echo Starting ORDER ALERT agent v7.7.35 DAILYPICK ONLY...
 echo Keep this window open. If the agent crashes, it will restart automatically.
 echo.
 call npm run agent

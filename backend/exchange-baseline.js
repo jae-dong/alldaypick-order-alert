@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { invalidateOrderStoreMirrorCache } from './order-store.js';
-import { documentBelongsToActiveBusiness } from './business-profile.js';
+import { activeBusinessKey,documentBelongsToActiveBusiness } from './business-profile.js';
 
 // v7.7.22 배포 시점에 판매자센터에서 실제 미처리 교환이 0건임을 확인했습니다.
 // 이 시각 이전에 생성·수정된 legacy 교환 문서는 API가 오래된 PROGRESS 값을
@@ -59,9 +59,9 @@ export function isTrackedExchangeDocument(data={},documentId=''){
 }
 
 export async function closePreBaselineExchangeDocuments(db,{reason='v7.7.22 교환 0건 기준선 정리'}={}){
-  const snapshot=await db.collection('orders')
-    .where('activeState','==',true)
-    .get();
+  let query=db.collection('orders').where('activeState','==',true);
+  if(activeBusinessKey(process.env)==='dailypick') query=query.where('businessKey','==','dailypick');
+  const snapshot=await query.get();
   const stale=[];
 
   snapshot.forEach(doc=>{

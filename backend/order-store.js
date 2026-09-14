@@ -9,8 +9,12 @@ import {
 
 const DELETE=admin.firestore.FieldValue.delete();
 const CACHE_VERSION=3;
+const CACHE_BUSINESS_KEY=activeBusinessKey(process.env);
+const DEFAULT_CACHE_FILE=CACHE_BUSINESS_KEY==='alldaypick'
+  ?'.firestore-mirror-cache.json'
+  :`.firestore-mirror-cache-${CACHE_BUSINESS_KEY}.json`;
 const CACHE_PATH=path.resolve(
-  process.env.FIRESTORE_MIRROR_CACHE_FILE||'.firestore-mirror-cache.json'
+  process.env.FIRESTORE_MIRROR_CACHE_FILE||DEFAULT_CACHE_FILE
 );
 const ACTIVE_CACHE_MAX_AGE_MS=6*60*60*1000;
 const CACHE_RETENTION_MS=120*24*60*60*1000;
@@ -459,7 +463,10 @@ async function hydrateActiveCache(db){
     return {reads:0,skipped:true};
   }
 
+  const businessKey=activeBusinessKey(process.env);
   let query=db.collection('orders').where('activeState','==',true);
+  // 데일리픽 운영 중에는 서버 쿼리 단계에서 올데이픽 문서를 읽지 않습니다.
+  if(businessKey==='dailypick') query=query.where('businessKey','==','dailypick');
   if(typeof query.limit==='function') query=query.limit(2000);
   const snapshot=await query.get();
   const staleActiveOrders=[];

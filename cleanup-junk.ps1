@@ -1,11 +1,11 @@
-﻿param(
+param(
   [Parameter(Mandatory=$true)]
   [string]$ProjectDir
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
-$currentNote = '변경내역_v7.7.34.txt'
+$currentNote = '변경내역_v7.7.35.txt'
 
 $patterns = @(
   '배포전_검증결과*.txt',

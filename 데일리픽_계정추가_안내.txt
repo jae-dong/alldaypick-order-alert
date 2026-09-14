@@ -1,27 +1,16 @@
-﻿[v7.7.34 데일리픽 계정 추가 순서]
+﻿[v7.7.35 데일리픽 운영]
 
-중요: 먼저 v7.7.34를 복붙해 실행해도 기본 프로필은 ALLDAYPICK이라 기존 v7.7.33과 같은 올데이픽 계정으로 동작합니다.
+현재 기본 운영은 데일리픽만 ON, 올데이픽은 OFF입니다.
+.env.local의 데일리픽 스마트스토어/11번가/롯데온 API 값은 그대로 유지하세요.
 
-1) backend\.env.local을 메모장으로 엽니다.
-2) 기존 API 키는 지우지 않습니다.
-3) 아래 데일리픽 항목을 파일 맨 아래에 추가하고 실제 API 값을 입력합니다.
+현재 권장값:
+ORDER_ALERT_BUSINESS_PROFILE=DAILYPICK
+ALLDAYPICK_PROFILE_ENABLED=0
+DAILYPICK_PROFILE_ENABLED=1
 
+나중에 올데이픽을 다시 사용할 때:
+ALLDAYPICK_PROFILE_ENABLED=1
 ORDER_ALERT_BUSINESS_PROFILE=ALLDAYPICK
-DAILYPICK_COUPANG_ENABLED=0
-DAILYPICK_SMARTSTORE_ENABLED=1
-DAILYPICK_ELEVENST_ENABLED=1
-DAILYPICK_LOTTEON_ENABLED=1
-DAILYPICK_NAVER_CLIENT_ID=
-DAILYPICK_NAVER_CLIENT_SECRET=
-DAILYPICK_ELEVENST_API_KEY=
-DAILYPICK_ELEVENST_SELLER_ID=
-DAILYPICK_LOTTEON_API_KEY=
-DAILYPICK_LOTTEON_SELLER_ID=
-DAILYPICK_LOTTEON_LOGIN_ID=
+으로 변경 후 수집기를 재시작하면 됩니다.
 
-4) API 값 입력과 연결검증이 끝나기 전에는 ORDER_ALERT_BUSINESS_PROFILE=ALLDAYPICK을 유지합니다.
-5) 준비가 끝난 뒤 ORDER_ALERT_BUSINESS_PROFILE=DAILYPICK으로 바꾸고 수집기를 재시작합니다.
-6) 다시 올데이픽으로 돌아갈 때는 값을 ALLDAYPICK으로 되돌리고 재시작하면 됩니다.
-
-G마켓/옥션: 현재 주문 API가 없어 미연동 상태로 유지합니다.
-비밀번호, API Secret 등은 채팅이나 Google Drive 백업에 넣지 않습니다.
+G마켓/옥션은 ESM API 승인 전까지 미연동입니다.

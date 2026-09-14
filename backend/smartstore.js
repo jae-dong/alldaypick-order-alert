@@ -3,7 +3,7 @@ import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
 import { isBeforeExchangeBaseline } from './exchange-baseline.js';
-import { documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
+import { activeBusinessKey,documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
 
 const API_BASE='https://api.commerce.naver.com/external';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -371,9 +371,9 @@ async function forceCloseStaleSmartstoreExchanges(db,currentDocuments,{complete=
     if(identity) activeIdentities.add(identity);
   }
 
-  const snapshot=await db.collection('orders')
-    .where('activeState','==',true)
-    .get();
+  let query=db.collection('orders').where('activeState','==',true);
+  if(activeBusinessKey(process.env)==='dailypick') query=query.where('businessKey','==','dailypick');
+  const snapshot=await query.get();
   const stale=[];
   snapshot.forEach(doc=>{
     const data=doc.data()||{};

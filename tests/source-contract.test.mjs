@@ -57,10 +57,10 @@ const directAudit=read('direct-audit-store.js');
 const telegramPolicy=read('telegram-alert-policy.js');
 assert.match(agent,/recordDirectAudit/,'Agent must persist marketplace-direct audit results');
 assert.match(directAudit,/market-direct-audit\.json/,'Direct API audit must create a local sanitized result file');
-assert.match(directAudit,/gmarket:'현재 주문 API 없음 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
-assert.match(directAudit,/auction:'현재 주문 API 없음 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
+assert.match(directAudit,/gmarket:'ESM API 승인 대기 · 집계 제외'/,'Gmarket must remain explicitly excluded until API approval');
+assert.match(directAudit,/auction:'ESM API 승인 대기 · 집계 제외'/,'Auction must remain explicitly excluded until API approval');
 assert.match(agent,/HEARTBEAT_INTERVAL_MS=5\*60\*1000/,'Agent heartbeat must run every five minutes in free-tier mode');
-assert.match(agent,/version:'FINAL-7\.7\.34'/,'Agent diagnostics version must match release');
+assert.match(agent,/version:'FINAL-7\.7\.35'/,'Agent diagnostics version must match release');
 
 
 assert.match(agent,/SMARTSTORE_INQUIRY_INTERVAL_MS/,'Smartstore inquiries must use a protected polling interval');
@@ -83,7 +83,7 @@ assert.match(orderStore,/FIRESTORE_MIRROR_CACHE_FILE/,'Order store must persist 
 assert.match(orderStore,/cacheHits/,'Order store must report cache hits');
 assert.match(orderStore,/stateVerifiedAt/,'Verification timestamps must not trigger repeated Firestore writes');
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
-assert.match(app,/where\('datetime','>=',monthStartIso\(\)\)/,'Web app must subscribe only to the current month');
+assert.match(app,/where\('datetime','>=',startIso\)/,'Web app must subscribe only to the active business window');
 assert.match(app,/where\('activeState','==',true\)/,'Web app must separately subscribe to unresolved items');
 assert.match(agent,/publishDailyMetrics/,'Agent must publish the authoritative daily product-order ledger');
 assert.match(agent,/rebuildDailyMetrics/,'Agent must rebuild daily metrics from persisted marketplace rows');

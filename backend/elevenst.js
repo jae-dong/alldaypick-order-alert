@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,getCachedDocuments } from './order-store.js';
-import { documentBelongsToActiveBusiness } from './business-profile.js';
+import { activeBusinessKey,documentBelongsToActiveBusiness } from './business-profile.js';
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
 
@@ -826,6 +826,7 @@ export async function syncElevenstStatuses(db,config,{repair=false}={}){
   if(repair&&typeof db?.collection==='function'){
     try{
       let query=db.collection('orders').where('source','==','elevenst');
+      if(activeBusinessKey(process.env)==='dailypick') query=query.where('businessKey','==','dailypick');
       if(typeof query.limit==='function') query=query.limit(500);
       const snapshot=await query.get();
       const remote=[];

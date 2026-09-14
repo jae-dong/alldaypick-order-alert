@@ -33,12 +33,13 @@ import { recordDirectAudit,DIRECT_AUDIT_PATH } from './direct-audit-store.js';
 import { rebuildDailyMetrics } from './daily-metrics-ledger.js';
 import { closePreBaselineExchangeDocuments,EXCHANGE_BASELINE_CUTOFF_ISO } from './exchange-baseline.js';
 import { telegramAlertType } from './telegram-alert-policy.js';
-import { activeBusinessProfile,documentBelongsToActiveBusiness } from './business-profile.js';
+import { activeBusinessProfile,businessProfilesState,documentBelongsToActiveBusiness } from './business-profile.js';
 
 const BACKEND_DIR=path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({path:path.join(BACKEND_DIR,'.env.local')});
 
 const ACTIVE_BUSINESS=activeBusinessProfile(process.env);
+const BUSINESS_PROFILES=businessProfilesState(process.env);
 const activeMarket=key=>ACTIVE_BUSINESS.markets[key]||{enabled:false,configured:false,config:{}};
 const marketEnabled=key=>activeMarket(key).enabled===true;
 const marketLabel=key=>activeMarket(key).name||key;
@@ -102,11 +103,20 @@ async function saveDisabledMarketIntegration(key,message=''){
   },{merge:true});
 }
 
+if(!ACTIVE_BUSINESS.enabled){
+  console.error(
+    `선택한 사업자 ${ACTIVE_BUSINESS.name} (${ACTIVE_BUSINESS.key})는 OFF 상태입니다. `+
+    `${ACTIVE_BUSINESS.prefix}_PROFILE_ENABLED=1로 켠 뒤 다시 실행하세요.`
+  );
+  process.exit(2);
+}
+
 admin.initializeApp({credential:admin.credential.cert(serviceAccount())});
 
 const db=admin.firestore();
 
-console.log(`활성 사업자: ${ACTIVE_BUSINESS.name} (${ACTIVE_BUSINESS.key})`);
+console.log(`활성 사업자: ${ACTIVE_BUSINESS.name} (${ACTIVE_BUSINESS.key}) · 프로필 ON`);
+console.log(`사업자 상태: 올데이픽 ${BUSINESS_PROFILES.alldaypick.enabled?'ON':'OFF'} · 데일리픽 ${BUSINESS_PROFILES.dailypick.enabled?'ON':'OFF'}`);
 
 
 const DAILY_METRICS_MARKETS={
@@ -183,6 +193,7 @@ const SMARTSTORE_INQUIRY_429_COOLDOWN_MS=Math.max(
 let quotaBlockedUntil=0;
 let quotaResumeTimer=null;
 let quotaSkipLoggedAt=0;
+let quotaSkipNoticeShown=false;
 let agentLockReleased=false;
 
 function defaultSmartstoreInquiryState(){
@@ -293,6 +304,7 @@ function scheduleQuotaResume(){
       return;
     }
     quotaBlockedUntil=0;
+    quotaSkipNoticeShown=false;
     saveQuotaState();
     console.log('[무료 한도 복구 예상 시각 도달] 자동 동기화를 다시 시작합니다.');
     run('startup').catch(error=>{
@@ -304,6 +316,7 @@ function scheduleQuotaResume(){
 function inQuotaCooldown(){
   if(quotaBlockedUntil&&Date.now()>=quotaBlockedUntil){
     quotaBlockedUntil=0;
+    quotaSkipNoticeShown=false;
     saveQuotaState();
   }
   return Date.now()<quotaBlockedUntil;
@@ -319,27 +332,31 @@ function markQuotaCooldown(error){
   saveQuotaState();
   scheduleQuotaResume();
 
+  quotaSkipNoticeShown=true;
   console.error(
     `[Firestore 무료 한도 초과] 반복 재시도를 중단합니다. `+
-    `${quotaResumeLabel()} 이후 자동 재시도합니다.`
+    `${quotaResumeLabel()} 이후 자동 재시도합니다. · 이후 반복 로그 생략`
   );
 
   return true;
 }
 
 function logQuotaSkip(label='수집'){
+  if(quotaSkipNoticeShown) return;
   if(Date.now()-quotaSkipLoggedAt<5*60*1000) return;
   quotaSkipLoggedAt=Date.now();
+  quotaSkipNoticeShown=true;
   console.log(
-    `[무료 한도 보호 중] ${label} 건너뜀 · 재개 예정 ${quotaResumeLabel()}`
+    `[무료 한도 보호 중] ${label} 건너뜀 · 재개 예정 ${quotaResumeLabel()} · 이후 반복 로그 생략`
   );
 }
 
 quotaBlockedUntil=loadQuotaState();
 if(quotaBlockedUntil){
   console.log(
-    `[Firestore 무료 한도 보호 상태] ${quotaResumeLabel()} 이후 자동 재개 예정`
+    `[Firestore 무료 한도 보호 상태] ${quotaResumeLabel()} 이후 자동 재개 예정 · 반복 로그 생략`
   );
+  quotaSkipNoticeShown=true;
   scheduleQuotaResume();
 }
 
@@ -1079,10 +1096,9 @@ async function backfillActiveOrderThumbnails(reason='startup'){
   if(activeThumbnailBackfillRunning||inQuotaCooldown()) return null;
   activeThumbnailBackfillRunning=true;
   try{
-    const snapshot=await db.collection('orders')
-      .where('activeState','==',true)
-      .limit(300)
-      .get();
+    let query=db.collection('orders').where('activeState','==',true);
+    if(ACTIVE_BUSINESS.key==='dailypick') query=query.where('businessKey','==','dailypick');
+    const snapshot=await query.limit(300).get();
     const now=Date.now();
     const candidates=[];
     snapshot.docs.forEach(doc=>{
@@ -1203,7 +1219,9 @@ async function backfillStatisticsOrderThumbnails(reason='startup'){
   if(statisticsThumbnailBackfillRunning||inQuotaCooldown()) return null;
   statisticsThumbnailBackfillRunning=true;
   try{
-    const snapshot=await db.collection('orders').limit(STATISTICS_THUMBNAIL_MAX_DOCS).get();
+    let query=db.collection('orders');
+    if(ACTIVE_BUSINESS.key==='dailypick') query=query.where('businessKey','==','dailypick');
+    const snapshot=await query.limit(STATISTICS_THUMBNAIL_MAX_DOCS).get();
     const groups=new Map();
     snapshot.docs.forEach(doc=>{
       const order={id:doc.id,...(doc.data()||{})};
@@ -2568,18 +2586,22 @@ async function refreshEsmStatus(){
   try{
     await setOnlyWhenChanged(db.collection('system').doc('integrations'),{
       activeBusiness:{
-        key:ACTIVE_BUSINESS.key,name:ACTIVE_BUSINESS.name,
+        key:ACTIVE_BUSINESS.key,name:ACTIVE_BUSINESS.name,enabled:true,
         updatedAt:new Date().toISOString()
+      },
+      businessProfiles:{
+        alldaypick:BUSINESS_PROFILES.alldaypick,
+        dailypick:BUSINESS_PROFILES.dailypick
       },
       gmarket:{
         name:'G마켓',connected:false,configured:false,disabled:true,
         businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
-        lastRun:new Date().toISOString(),message:'현재 주문 API 없음 · 미연동'
+        lastRun:new Date().toISOString(),message:'ESM API 승인 대기 · 미연동'
       },
       auction:{
         name:'옥션',connected:false,configured:false,disabled:true,
         businessKey:ACTIVE_BUSINESS.key,businessName:ACTIVE_BUSINESS.name,
-        lastRun:new Date().toISOString(),message:'현재 주문 API 없음 · 미연동'
+        lastRun:new Date().toISOString(),message:'ESM API 승인 대기 · 미연동'
       }
     },{merge:true});
   }catch(error){
@@ -2641,7 +2663,7 @@ async function writeDiagnostics(reason='sync'){
       counts[key]=(counts[key]||0)+1;
     });
     await db.collection('system').doc('diagnostics').set({
-      version:'FINAL-7.7.34',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
+      version:'FINAL-7.7.35',reason,generatedAt:admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso:new Date().toISOString(),documentCount:snapshot.size,counts
     },{merge:true});
   }catch(error){
@@ -2661,7 +2683,7 @@ async function writeAgentHeartbeat(reason='interval'){
     online:true,
     channel:'telegram',
     telegramConfigured:telegramConfigured(),
-    version:'FINAL-7.7.34',
+    version:'FINAL-7.7.35',
     pid:process.pid,
     host:process.env.COMPUTERNAME||process.env.HOSTNAME||'unknown',
     heartbeatReason:reason,

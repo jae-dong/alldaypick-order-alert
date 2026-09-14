@@ -21,6 +21,20 @@ function profileInfo(key){
   return {key:'alldaypick',name:'올데이픽',prefix:'ALLDAYPICK'};
 }
 
+function profileEnabled(env,profile){
+  // v7.7.35 운영 기본값: 데일리픽 ON, 올데이픽 OFF.
+  // 올데이픽을 다시 쓸 때만 ALLDAYPICK_PROFILE_ENABLED=1로 명시적으로 켭니다.
+  const defaultValue=profile.key==='dailypick';
+  return boolValue(env[`${profile.prefix}_PROFILE_ENABLED`],defaultValue);
+}
+
+export function businessProfilesState(env=process.env){
+  return {
+    alldaypick:{key:'alldaypick',name:'올데이픽',enabled:profileEnabled(env,profileInfo('alldaypick'))},
+    dailypick:{key:'dailypick',name:'데일리픽',enabled:profileEnabled(env,profileInfo('dailypick'))}
+  };
+}
+
 function readProfileValue(env,profile,name){
   const prefixed=text(env[`${profile.prefix}_${name}`]);
   if(prefixed) return prefixed;
@@ -35,9 +49,10 @@ function marketEnabled(env,profile,market,defaultValue){
 
 export function activeBusinessProfile(env=process.env){
   const key=normalizeBusinessKey(
-    env.ORDER_ALERT_BUSINESS_PROFILE||env.ACTIVE_BUSINESS||'ALLDAYPICK'
+    env.ORDER_ALERT_BUSINESS_PROFILE||env.ACTIVE_BUSINESS||'DAILYPICK'
   );
   const profile=profileInfo(key);
+  const enabled=profileEnabled(env,profile);
 
   const coupang={
     accessKey:readProfileValue(env,profile,'COUPANG_ACCESS_KEY'),
@@ -64,39 +79,39 @@ export function activeBusinessProfile(env=process.env){
   const markets={
     coupang:{
       name:'쿠팡',
-      enabled:marketEnabled(env,profile,'coupang',!dailypick),
+      enabled:enabled&&marketEnabled(env,profile,'coupang',!dailypick),
       configured:Boolean(coupang.accessKey&&coupang.secretKey&&coupang.vendorId),
       config:coupang
     },
     smartstore:{
       name:'스마트스토어',
-      enabled:marketEnabled(env,profile,'smartstore',true),
+      enabled:enabled&&marketEnabled(env,profile,'smartstore',true),
       configured:Boolean(smartstore.clientId&&smartstore.clientSecret),
       config:smartstore
     },
     elevenst:{
       name:'11번가',
-      enabled:marketEnabled(env,profile,'elevenst',true),
+      enabled:enabled&&marketEnabled(env,profile,'elevenst',true),
       configured:Boolean(elevenst.apiKey&&elevenst.sellerId),
       config:elevenst
     },
     lotteon:{
       name:'롯데온',
-      enabled:marketEnabled(env,profile,'lotteon',true),
+      enabled:enabled&&marketEnabled(env,profile,'lotteon',true),
       configured:Boolean(lotteon.apiKey&&lotteon.sellerId),
       config:lotteon
     },
     gmarket:{
       name:'G마켓',enabled:false,configured:false,config:{},
-      reason:'현재 주문 API 없음 · 미연동'
+      reason:'ESM API 승인 대기 · 미연동'
     },
     auction:{
       name:'옥션',enabled:false,configured:false,config:{},
-      reason:'현재 주문 API 없음 · 미연동'
+      reason:'ESM API 승인 대기 · 미연동'
     }
   };
 
-  return {...profile,markets};
+  return {...profile,enabled,markets};
 }
 
 export function activeBusinessKey(env=process.env){

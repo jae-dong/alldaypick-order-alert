@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { workflowFields,isClaimTerminal } from './workflow-model.js';
 import { upsertDocuments,reconcileOpenDocuments,invalidateOrderStoreMirrorCache } from './order-store.js';
-import { documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
+import { activeBusinessKey,documentBelongsToActiveBusiness,namespaceDocumentId } from './business-profile.js';
 import { enrichWithParentOrderContext } from './parent-order-context.js';
 import { isBeforeExchangeBaseline } from './exchange-baseline.js';
 
@@ -400,9 +400,9 @@ async function forceCloseStaleCoupangExchanges(db,currentDocuments,{complete=tru
   // A single-field activeState query is intentionally used here. It reads only
   // currently open workflow documents and also catches legacy records whose
   // source was stored as Korean "쿠팡" or whose eventType was omitted.
-  const snapshot=await db.collection('orders')
-    .where('activeState','==',true)
-    .get();
+  let query=db.collection('orders').where('activeState','==',true);
+  if(activeBusinessKey(process.env)==='dailypick') query=query.where('businessKey','==','dailypick');
+  const snapshot=await query.get();
 
   const stale=[];
   snapshot.forEach(doc=>{

@@ -1,5 +1,5 @@
-const APP_VERSION='v7.7.34 사업자 프로필';
-const BUILD_DATE='2026-08-20';
+const APP_VERSION='v7.7.35 데일리픽 전용 절전';
+const BUILD_DATE='2026-09-14';
 const firebaseConfig={"apiKey": "AIzaSyCFRmQPRvYznJV-MTzKb__SpYDfvMpmgAo", "authDomain": "alldaypick-order-alert.firebaseapp.com", "projectId": "alldaypick-order-alert", "storageBucket": "alldaypick-order-alert.firebasestorage.app", "messagingSenderId": "549342074740", "appId": "1:549342074740:web:c003e0eb0e75097008be21"};
 let auth=null;
 let db=null;
@@ -48,7 +48,7 @@ const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;'
 const MARKETS=[['coupang','쿠팡'],['smartstore','스마트스토어'],['elevenst','11번가'],['gmarket','G마켓'],['auction','옥션'],['lotteon','롯데온']];
 const STATUS_ITEMS=[['new','신규주문'],['shipping_wait','발송대기'],['cancel','주문취소'],['return','반품요청'],['exchange','교환요청'],['inquiry','문의사항']];
 let orders=[],integrations={},currentUser=null,activeStatus='',activeMarket='',currentPage=1,currentDetail=null,unsubscribeOrders=null,unsubscribeActiveOrders=null,unsubscribeSyncedOrders=null,collectUnsub=null;
-let currentBusinessKey='alldaypick',currentBusinessName='올데이픽';
+let currentBusinessKey='dailypick',currentBusinessName='데일리픽';
 let monthOrderMap=new Map(),activeOrderMap=new Map(),syncedOrderMap=new Map();
 let statisticsOrderMap=new Map(),statisticsLoaded=false,statisticsLoading=false,statisticsLoadedAt=0,statisticsLoadToken=0;
 const DESKTOP_PAGE_SIZE=40;
@@ -3871,6 +3871,86 @@ function monthStartIso(){
   return `${monthKey()}-01T00:00:00+09:00`;
 }
 
+const DAILYPICK_DATA_START_ISO='2026-09-13T00:00:00+09:00';
+function currentBusinessWindowStartIso(){
+  if(currentBusinessKey!=='dailypick') return monthStartIso();
+  return new Date(monthStartIso()).getTime()>new Date(DAILYPICK_DATA_START_ISO).getTime()
+    ?monthStartIso()
+    :DAILYPICK_DATA_START_ISO;
+}
+
+function stopBusinessOrderListeners(){
+  if(unsubscribeOrders){unsubscribeOrders();unsubscribeOrders=null;}
+  if(unsubscribeActiveOrders){unsubscribeActiveOrders();unsubscribeActiveOrders=null;}
+  if(unsubscribeSyncedOrders){unsubscribeSyncedOrders();unsubscribeSyncedOrders=null;}
+  monthOrderMap=new Map();
+  activeOrderMap=new Map();
+  syncedOrderMap=new Map();
+}
+
+function startBusinessOrderListeners(){
+  stopBusinessOrderListeners();
+  const startIso=currentBusinessWindowStartIso();
+
+  // 데일리픽은 2026-09-13부터 운영 시작했고 올데이픽 프로필은 OFF 상태입니다.
+  // 따라서 해당 시점 이후의 주문만 구독해 과거 올데이픽 문서를 읽지 않습니다.
+  unsubscribeOrders=db.collection('orders')
+    .where('datetime','>=',startIso)
+    .orderBy('datetime','desc')
+    .limit(currentBusinessKey==='dailypick'?700:1300)
+    .onSnapshot(
+      snapshot=>{
+        replaceSnapshotMap(monthOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+        cloudMessage(
+          snapshot.metadata.fromCache
+            ?'클라우드 연결됨 · 캐시 동기화 중'
+            :currentBusinessKey==='dailypick'?'클라우드 연결됨 · 데일리픽 절전모드':'클라우드 연결됨 · 무료한도 모드',
+          true
+        );
+      },
+      error=>{
+        console.error('Monthly order listener error:',error);
+        cloudMessage(
+          orders.length
+            ?'월 주문 재연결 중 · 저장된 데이터 표시'
+            :'월 주문 연결 오류 · '+readableCloudError(error),
+          false
+        );
+        retryCloud(60000);
+      }
+    );
+
+  if(currentBusinessKey==='dailypick') return;
+
+  // 올데이픽을 명시적으로 다시 켰을 때만 기존 과거 미완료/동기화 보조구독을 사용합니다.
+  unsubscribeActiveOrders=db.collection('orders')
+    .where('activeState','==',true)
+    .limit(300)
+    .onSnapshot(
+      snapshot=>{
+        replaceSnapshotMap(activeOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+      },
+      error=>{
+        console.error('Active order listener error:',error);
+        retryCloud(60000);
+      }
+    );
+
+  unsubscribeSyncedOrders=db.collection('orders')
+    .where('syncedAt','>=',monthStartIso())
+    .orderBy('syncedAt','desc')
+    .limit(900)
+    .onSnapshot(
+      snapshot=>{
+        replaceSnapshotMap(syncedOrderMap,snapshot);
+        refreshOrdersFromCloudMaps();
+      },
+      error=>console.warn('Synced order recovery listener error:',error)
+    );
+}
+
 function refreshOrdersFromCloudMaps(){
   const merged=new Map(monthOrderMap);
   // 일부 마켓은 상세/배송상태 응답에서 datetime이 비어 월 쿼리에서 빠질 수 있습니다.
@@ -3899,6 +3979,11 @@ function startCloudListeners(){
   stopCloudListeners();
 
   restoreCloudCache();
+  const cachedBusiness=integrations?.activeBusiness||{};
+  if(cachedBusiness.key||cachedBusiness.name){
+    currentBusinessKey=normalizedBusinessKey(cachedBusiness.key||cachedBusiness.name);
+    currentBusinessName=String(cachedBusiness.name||(currentBusinessKey==='dailypick'?'데일리픽':'올데이픽'));
+  }
   render();
 
   cloudMessage(
@@ -3908,83 +3993,26 @@ function startCloudListeners(){
     false
   );
 
-  // 무료 한도 보호: 월 통계에 필요한 이번 달 문서만 구독합니다.
-  // 오래된 미완료 주문/클레임은 아래 activeState 구독으로 보완합니다.
-  unsubscribeOrders=db.collection('orders')
-    .where('datetime','>=',monthStartIso())
-    .orderBy('datetime','desc')
-    .limit(1300)
-    .onSnapshot(
-      snapshot=>{
-        replaceSnapshotMap(monthOrderMap,snapshot);
-        refreshOrdersFromCloudMaps();
-        cloudMessage(
-          snapshot.metadata.fromCache
-            ?'클라우드 연결됨 · 캐시 동기화 중'
-            :'클라우드 연결됨 · 무료한도 모드',
-          true
-        );
-      },
-      error=>{
-        console.error('Monthly order listener error:',error);
-        cloudMessage(
-          orders.length
-            ?'월 주문 재연결 중 · 저장된 데이터 표시'
-            :'월 주문 연결 오류 · '+readableCloudError(error),
-          false
-        );
-        retryCloud(60000);
-      }
-    );
-
-  unsubscribeActiveOrders=db.collection('orders')
-    .where('activeState','==',true)
-    .limit(300)
-    .onSnapshot(
-      snapshot=>{
-        replaceSnapshotMap(activeOrderMap,snapshot);
-        refreshOrdersFromCloudMaps();
-      },
-      error=>{
-        console.error('Active order listener error:',error);
-        cloudMessage(
-          orders.length
-            ?'미완료 주문 재연결 중 · 저장된 데이터 표시'
-            :'미완료 주문 연결 오류 · '+readableCloudError(error),
-          false
-        );
-        retryCloud(60000);
-      }
-    );
-
-  unsubscribeSyncedOrders=db.collection('orders')
-    .where('syncedAt','>=',monthStartIso())
-    .orderBy('syncedAt','desc')
-    .limit(900)
-    .onSnapshot(
-      snapshot=>{
-        replaceSnapshotMap(syncedOrderMap,snapshot);
-        refreshOrdersFromCloudMaps();
-      },
-      error=>{
-        console.warn('Synced order recovery listener error:',error);
-        // 보조 구독 실패는 기존 월/미완료 구독을 중단시키지 않습니다.
-      }
-    );
-
+  // 사업자 상태를 먼저 구독한 뒤 해당 사업자의 주문만 구독합니다.
   integrationUnsubscribe=db.collection('system')
     .doc('integrations')
     .onSnapshot(
       snapshot=>{
         integrations=snapshot.exists?snapshot.data():{};
         const business=integrations.activeBusiness||{};
-        currentBusinessKey=normalizedBusinessKey(business.key||business.name||'alldaypick');
-        currentBusinessName=String(business.name|| (currentBusinessKey==='dailypick'?'데일리픽':'올데이픽'));
+        const nextBusinessKey=normalizedBusinessKey(business.key||business.name||'dailypick');
+        const nextBusinessName=String(business.name||(nextBusinessKey==='dailypick'?'데일리픽':'올데이픽'));
+        const changed=nextBusinessKey!==currentBusinessKey;
+        currentBusinessKey=nextBusinessKey;
+        currentBusinessName=nextBusinessName;
+        const businessTitle=`${currentBusinessName} 주문알림`;
+        if($('businessTitle')) $('businessTitle').textContent=businessTitle;
+        document.title=`${businessTitle} · ${APP_VERSION}`;
+        if(changed||!unsubscribeOrders) startBusinessOrderListeners();
         refreshOrdersFromCloudMaps();
         statisticsLoaded=false;
         statisticsOrderMap=new Map();
         saveCloudCache();
-        // 공식 API 직접검증 orderLines가 갱신되면 오늘/월 주문·매출도 즉시 다시 계산합니다.
         render();
       },
       error=>{
@@ -4171,7 +4199,7 @@ $('openMarketBtn').onclick=()=>{if(currentDetail) openMarketplaceForOrder(curren
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations()
     .then(regs=>Promise.all(regs.map(reg=>reg.update().catch(()=>{}))))
-    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.34-business-profile',{updateViaCache:'none'}))
+    .finally(()=>navigator.serviceWorker.register('./sw.js?v=v7.7.35-dailypick-only',{updateViaCache:'none'}))
     .catch(console.warn);
 }
 render();window.addEventListener('online',()=>{

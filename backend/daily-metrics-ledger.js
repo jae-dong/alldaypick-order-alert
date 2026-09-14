@@ -211,11 +211,12 @@ function saveLedger(ledger){
   fs.renameSync(temporary,file);
 }
 async function sourceDocuments(db,source){
+  const business=activeBusinessKey(process.env);
   let query=db.collection('orders').where('source','==',source);
+  if(business==='dailypick') query=query.where('businessKey','==','dailypick');
   if(typeof query.limit==='function') query=query.limit(MAX_SOURCE_DOCS);
   const snapshot=await query.get();
   const documents=[];
-  const business=activeBusinessKey(process.env);
   snapshot.forEach(doc=>{
     const data={id:doc.id,...(doc.data()||{})};
     if(documentBusinessKey(data)===business) documents.push(data);
@@ -234,7 +235,7 @@ export function buildDailySnapshot(rows,{day=kstDay(),generatedAt=new Date().toI
   }
   const allRows=active.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
   return {
-    version:2,appVersion:'v7.7.34',businessKey:activeBusinessKey(process.env),day,generatedAt,
+    version:2,appVersion:'v7.7.35',businessKey:activeBusinessKey(process.env),day,generatedAt,
     basis:'공식 API 저장 상품주문 행 일일 원장 · 송장번호/주문자 수가 아닌 상품주문 처리행 기준',
     excludedMarkets:['G마켓','옥션'],
     count:allRows.length,

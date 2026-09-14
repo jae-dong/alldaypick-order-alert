@@ -7,8 +7,8 @@ const stop=fs.readFileSync(new URL('../STOP_AGENT.cmd',import.meta.url),'utf8');
 const cleanup=fs.readFileSync(new URL('../cleanup-junk.ps1',import.meta.url),'utf8');
 const pkg=JSON.parse(fs.readFileSync(new URL('../backend/package.json',import.meta.url),'utf8'));
 
-assert.equal(pkg.version,'7.7.34');
-assert.match(app,/v7\.7\.34 사업자 프로필/);
+assert.equal(pkg.version,'7.7.35');
+assert.match(app,/v7\.7\.35 데일리픽 전용 절전/);
 assert.match(app,/latestIntegrationTime\(\)/);
 assert.match(app,/freshestAge<=15\*60\*1000/);
 assert.match(start,/AUTO RECOVERY/);

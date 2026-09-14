@@ -1,7 +1,7 @@
 {
-  "name": "주문알림 v7.7.34 사업자 프로필",
-  "short_name": "주문알림 v7.7.34",
-  "start_url": "./?v=v7.7.34-business-profile",
+  "name": "주문알림 v7.7.35 데일리픽 전용 절전",
+  "short_name": "주문알림 v7.7.35",
+  "start_url": "./?v=v7.7.35-business-profile",
   "scope": "./",
   "display": "standalone",
   "background_color": "#fff7e8",
